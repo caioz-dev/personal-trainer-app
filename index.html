@@ -262,6 +262,9 @@
         <button id="signup-btn" type="submit" class="btn btn-primary btn-block">Criar Conta</button>
       </form>
 
+      <div id="auth-slow-msg" style="display:none;text-align:center;font-size:.82rem;color:var(--text-muted);margin-top:.875rem">
+        ⏳ Conectando ao servidor, aguarde…
+      </div>
       <div id="auth-msg" class="msg"></div>
     </div>
   </div>
@@ -433,6 +436,18 @@ function switchTab(t) {
   setMsg('')
 }
 
+function withSlowFeedback(promise) {
+  const slowEl = document.getElementById('auth-slow-msg')
+  const slowTimer = setTimeout(() => { slowEl.style.display = 'block' }, 3000)
+  const timeout  = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('TIMEOUT')), 10000)
+  )
+  return Promise.race([promise, timeout]).finally(() => {
+    clearTimeout(slowTimer)
+    slowEl.style.display = 'none'
+  })
+}
+
 function setMsg(txt, type = 'error') {
   const el = document.getElementById('auth-msg')
   el.textContent = txt
@@ -443,11 +458,23 @@ async function doLogin(e) {
   e.preventDefault()
   const btn = document.getElementById('login-btn')
   btn.textContent = 'Entrando…'; btn.disabled = true
-  const { error } = await sb.auth.signInWithPassword({
-    email:    document.getElementById('l-email').value,
-    password: document.getElementById('l-pass').value
-  })
-  if (error) { setMsg(xlErr(error.message)); btn.textContent = 'Entrar'; btn.disabled = false }
+
+  let result
+  try {
+    result = await withSlowFeedback(
+      sb.auth.signInWithPassword({
+        email:    document.getElementById('l-email').value,
+        password: document.getElementById('l-pass').value
+      })
+    )
+  } catch {
+    setMsg('O servidor demorou para responder. Aguarde alguns segundos e tente novamente.')
+    btn.textContent = 'Entrar'; btn.disabled = false
+    return
+  }
+
+  if (result.error) { setMsg(xlErr(result.error.message)) }
+  btn.textContent = 'Entrar'; btn.disabled = false
 }
 
 async function doSignup(e) {
@@ -462,7 +489,18 @@ async function doSignup(e) {
 
   if (!role) { setMsg('Selecione o tipo de conta.'); btn.textContent = 'Criar Conta'; btn.disabled = false; return }
 
-  const { data, error } = await sb.auth.signUp({ email, password: pass })
+  let authResult
+  try {
+    authResult = await withSlowFeedback(
+      sb.auth.signUp({ email, password: pass })
+    )
+  } catch {
+    setMsg('O servidor demorou para responder. Aguarde alguns segundos e tente novamente.')
+    btn.textContent = 'Criar Conta'; btn.disabled = false
+    return
+  }
+
+  const { data, error } = authResult
   if (error) { setMsg(xlErr(error.message)); btn.textContent = 'Criar Conta'; btn.disabled = false; return }
 
   const userId = data.user?.id
