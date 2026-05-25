@@ -439,10 +439,7 @@ function switchTab(t) {
 function withSlowFeedback(promise) {
   const slowEl = document.getElementById('auth-slow-msg')
   const slowTimer = setTimeout(() => { slowEl.style.display = 'block' }, 3000)
-  const timeout  = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('TIMEOUT')), 10000)
-  )
-  return Promise.race([promise, timeout]).finally(() => {
+  return promise.finally(() => {
     clearTimeout(slowTimer)
     slowEl.style.display = 'none'
   })
@@ -468,7 +465,7 @@ async function doLogin(e) {
       })
     )
   } catch {
-    setMsg('O servidor demorou para responder. Aguarde alguns segundos e tente novamente.')
+    setMsg('Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.')
     btn.textContent = 'Entrar'; btn.disabled = false
     return
   }
@@ -495,7 +492,7 @@ async function doSignup(e) {
       sb.auth.signUp({ email, password: pass })
     )
   } catch {
-    setMsg('O servidor demorou para responder. Aguarde alguns segundos e tente novamente.')
+    setMsg('Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.')
     btn.textContent = 'Criar Conta'; btn.disabled = false
     return
   }
