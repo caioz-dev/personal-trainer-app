@@ -61,6 +61,8 @@
     .btn-outline  { background:none; border:1.5px solid var(--border); color:var(--text); }
     .btn-outline:hover { background:var(--bg); }
     .btn-sm       { padding:.35rem .75rem; font-size:.82rem; }
+    .btn-ghost-danger { background:none; border:1.5px solid #fca5a5; color:var(--danger); }
+    .btn-ghost-danger:hover:not(:disabled) { background:#fef2f2; border-color:var(--danger); }
 
     .msg { margin-top:1rem; padding:.75rem 1rem; border-radius:8px; font-size:.875rem; display:none; }
     .msg.error   { background:#fef2f2; color:#dc2626; border:1px solid #fecaca; display:block; }
@@ -130,6 +132,22 @@
     .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:1rem; }
     .form-full  { grid-column:1 / -1; }
 
+    /* ---- EXERCISE ROWS ---- */
+    .exercise-list { display:flex; flex-direction:column; gap:.875rem; margin:.5rem 0; }
+    .exercise-row { background:var(--bg); border:1.5px solid var(--border); border-radius:10px; padding:1rem 1.1rem; }
+    .exercise-row-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem; }
+    .exercise-num-label { font-size:.78rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:.06em; }
+    .exercise-vol-display { background:var(--primary-light); border:1.5px solid #c7d2fe; border-radius:8px;
+      padding:.5rem .75rem; font-size:.88rem; font-weight:700; color:var(--primary);
+      text-align:center; min-height:42px; display:flex; align-items:center; justify-content:center; }
+    .total-vol-bar { background:linear-gradient(135deg,var(--primary),#7c3aed); border-radius:10px;
+      padding:1rem 1.25rem; display:flex; align-items:center; justify-content:space-between;
+      color:#fff; margin:1rem 0 .75rem; }
+    .total-vol-label { font-size:.78rem; opacity:.85; text-transform:uppercase; letter-spacing:.06em; }
+    .total-vol-value { font-size:1.4rem; font-weight:800; }
+    .add-ex-bar { display:flex; align-items:center; justify-content:space-between; margin:1.25rem 0 .5rem; }
+    .add-ex-title { font-size:.9rem; font-weight:700; color:var(--text); }
+
     /* ---- TABLE ---- */
     .table-wrap { overflow-x:auto; }
     table { width:100%; border-collapse:collapse; }
@@ -138,15 +156,24 @@
       text-transform:uppercase; letter-spacing:.05em; white-space:nowrap; }
     td { padding:.8rem 1rem; border-bottom:1px solid var(--border); font-size:.88rem; }
     tr:last-child td { border-bottom:none; }
-    tr:hover td { background:var(--bg); }
     .vol-cell { font-weight:700; color:var(--primary); }
     .badge    { display:inline-flex; align-items:center; gap:.2rem; padding:.2rem .55rem; border-radius:20px; font-size:.75rem; font-weight:700; }
     .badge-up   { background:#dcfce7; color:#16a34a; }
     .badge-down { background:#fee2e2; color:#dc2626; }
     .badge-same { background:#f1f5f9; color:#64748b; }
+    .expand-icon { display:inline-block; transition:transform .2s; color:var(--text-muted); font-size:.75rem; }
+    .history-main-row { cursor:pointer; }
+    .history-main-row:hover td { background:var(--bg); }
+    .history-detail-row td { padding:0; }
+    .history-detail-inner { background:#f8fafc; border-bottom:2px solid var(--border); }
+    .history-detail-inner table { background:transparent; }
+    .history-detail-inner th { background:#f1f5f9; padding:.45rem 1rem; font-size:.72rem; }
+    .history-detail-inner td { padding:.55rem 1rem; font-size:.83rem; border-bottom:1px solid #e2e8f0; color:var(--text-muted); }
+    .history-detail-inner tr:last-child td { border-bottom:none; }
+    .history-detail-inner .vol-cell { color:var(--primary); font-weight:700; }
 
     /* ---- CALCULATOR ---- */
-    .calc-wrap   { max-width:480px; }
+    .calc-wrap   { max-width:520px; }
     .calc-result { background:linear-gradient(135deg,var(--primary),#7c3aed); border-radius:var(--radius);
       padding:2rem; text-align:center; color:#fff; margin-top:1.5rem; }
     .calc-reps   { font-size:4.5rem; font-weight:900; line-height:1; }
@@ -171,10 +198,6 @@
     .spinner     { width:26px; height:26px; border:3px solid var(--border); border-top-color:var(--primary);
       border-radius:50%; animation:spin .7s linear infinite; margin:0 auto .75rem; }
     @keyframes spin { to { transform:rotate(360deg); } }
-
-    /* ---- VOLUME PREVIEW ---- */
-    .vol-preview { background:var(--primary-light); border:1.5px solid #c7d2fe; border-radius:8px;
-      padding:.75rem 1rem; font-size:.9rem; color:var(--primary); font-weight:600; margin:1rem 0; }
 
     /* ---- TOASTS ---- */
     .toast-wrap { position:fixed; bottom:1.5rem; right:1.5rem; z-index:9999; display:flex; flex-direction:column; gap:.5rem; }
@@ -318,7 +341,7 @@
 
         <!-- VIEW: Novo Treino -->
         <div id="view-workout" class="view" style="display:none">
-          <div class="card" style="max-width:580px">
+          <div class="card" style="max-width:700px">
             <div class="card-header">
               <div class="card-title">Registrar Novo Treino</div>
             </div>
@@ -326,29 +349,31 @@
               <div class="form-grid">
                 <div class="form-group form-full" id="wf-student-group">
                   <label>Aluno</label>
-                  <select id="wf-student" class="form-control" required></select>
+                  <select id="wf-student" class="form-control"></select>
                 </div>
                 <div class="form-group">
                   <label>Data</label>
                   <input id="wf-date" type="date" class="form-control" required>
                 </div>
-                <div class="form-group">
-                  <label>Peso (kg)</label>
-                  <input id="wf-weight" type="number" class="form-control" placeholder="Ex: 80" step="0.5" min="0.5" required oninput="refreshVolPreview()">
-                </div>
-                <div class="form-group">
-                  <label>Repetições</label>
-                  <input id="wf-reps" type="number" class="form-control" placeholder="Ex: 12" min="1" required oninput="refreshVolPreview()">
-                </div>
                 <div class="form-group form-full">
-                  <label>Observações (opcional)</label>
-                  <input id="wf-notes" type="text" class="form-control" placeholder="Ex: Supino reto, série A...">
+                  <label>Observações gerais (opcional)</label>
+                  <input id="wf-notes" type="text" class="form-control" placeholder="Ex: Treino A, foco em peito…">
                 </div>
               </div>
-              <div id="vol-preview" class="vol-preview" style="display:none">
-                Volume calculado: <strong id="vol-val">0</strong> kg
+
+              <div class="add-ex-bar">
+                <span class="add-ex-title">🏋️ Exercícios</span>
+                <button type="button" class="btn btn-outline btn-sm" onclick="addExercise()">+ Adicionar exercício</button>
               </div>
-              <button type="submit" id="wf-btn" class="btn btn-primary" style="margin-top:.25rem">Salvar Treino</button>
+
+              <div id="exercise-list" class="exercise-list"></div>
+
+              <div class="total-vol-bar">
+                <span class="total-vol-label">Volume Total do Treino</span>
+                <span class="total-vol-value" id="total-vol-preview">0 kg</span>
+              </div>
+
+              <button type="submit" id="wf-btn" class="btn btn-primary">Salvar Treino</button>
             </form>
           </div>
         </div>
@@ -360,14 +385,18 @@
               <div class="card-title">🧮 Calculadora de Repetições</div>
             </div>
             <p style="font-size:.875rem;color:var(--text-muted);margin-bottom:1.25rem">
-              Descubra quantas repetições mínimas são necessárias para superar o treino anterior.
+              Informe o exercício e o peso de hoje para descobrir o mínimo de repetições necessárias para superar o volume anterior.
             </p>
             <div id="calc-student-group" class="form-group">
               <label>Aluno</label>
               <select id="calc-student" class="form-control" onchange="clearCalcResult()"></select>
             </div>
             <div class="form-group">
-              <label>Peso de hoje (kg)</label>
+              <label>Exercício</label>
+              <input id="calc-exercise" type="text" class="form-control" placeholder="Ex: Supino Reto" oninput="clearCalcResult()">
+            </div>
+            <div class="form-group">
+              <label>Carga de hoje (kg)</label>
               <input id="calc-weight" type="number" class="form-control" placeholder="Ex: 85" step="0.5" min="0.5">
             </div>
             <button class="btn btn-primary" onclick="runCalc()">Calcular</button>
@@ -393,6 +422,7 @@ const SUPA_URL = 'https://kdmcaksypdjsnwufkxng.supabase.co'
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtkbWNha3N5cGRqc253dWZreG5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3MTc1NzgsImV4cCI6MjA5NTI5MzU3OH0.K9Gc4qX9bNONk7Yx3QbW_W6KiyvTYhsp67YweOTAr6k'
 
 let sb, me, profile, students = [], chart = null
+let exerciseCounter = 0
 
 // ─────────────────────────────────────────────
 // BOOT
@@ -492,9 +522,7 @@ async function doSignup(e) {
 
   let authResult
   try {
-    authResult = await withSlowFeedback(
-      sb.auth.signUp({ email, password: pass })
-    )
+    authResult = await withSlowFeedback(sb.auth.signUp({ email, password: pass }))
   } catch {
     setMsg('Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.')
     btn.textContent = 'Criar Conta'; btn.disabled = false
@@ -597,7 +625,8 @@ async function fetchStudents() {
 }
 
 async function fetchWorkouts(studentId) {
-  const { data } = await sb.from('workouts').select('*')
+  const { data } = await sb.from('workouts')
+    .select('*, workout_exercises(*)')
     .eq('student_id', studentId)
     .order('date', { ascending: true })
     .order('created_at', { ascending: true })
@@ -605,7 +634,8 @@ async function fetchWorkouts(studentId) {
 }
 
 async function fetchLastWorkout(studentId) {
-  const { data } = await sb.from('workouts').select('*')
+  const { data } = await sb.from('workouts')
+    .select('*, workout_exercises(*)')
     .eq('student_id', studentId)
     .order('date', { ascending: false })
     .order('created_at', { ascending: false })
@@ -613,19 +643,11 @@ async function fetchLastWorkout(studentId) {
   return data || null
 }
 
-async function insertWorkout({ student_id, date, weight_kg, reps, notes }) {
-  const volume = parseFloat((weight_kg * reps).toFixed(2))
-  const { data, error } = await sb.from('workouts').insert({
-    student_id,
-    date,
-    weight_kg: parseFloat(weight_kg),
-    reps:      parseInt(reps),
-    volume,
-    notes:     notes || null,
-    created_by: me.id
-  }).select().single()
-  if (error) throw error
-  return data
+function getWorkoutVolume(w) {
+  if (!w) return 0
+  // Prefer total_volume (new schema), fall back to volume (legacy)
+  const v = w.total_volume ?? w.volume ?? 0
+  return parseFloat(v) || 0
 }
 
 // ─────────────────────────────────────────────
@@ -658,13 +680,14 @@ async function renderStudents() {
     <div class="students-grid">
       ${withLast.map(s => {
         const ini = s.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase()
+        const vol = s.last ? getWorkoutVolume(s.last) : null
         return `<div class="student-card"
             onclick="navigateTo('student-detail',{id:'${s.id}',name:'${s.name.replace(/'/g,"\\'")}' })">
           <div class="student-avatar">${ini}</div>
           <div class="student-name">${s.name}</div>
           <div class="student-meta">
             Último treino: ${s.last ? fmtDate(s.last.date) : '—'}<br>
-            Volume: ${s.last ? s.last.volume.toLocaleString('pt-BR') + ' kg' : '—'}
+            Volume: ${vol !== null ? vol.toLocaleString('pt-BR') + ' kg' : '—'}
           </div>
         </div>`
       }).join('')}
@@ -701,41 +724,87 @@ function historyHTML(ws, name) {
     <p>Nenhum treino registrado ainda para ${name}.<br>
     Use "Novo Treino" para registrar o primeiro!</p></div>`
 
-  const total  = ws.reduce((s,w) => s + w.volume, 0)
-  const maxVol = Math.max(...ws.map(w => w.volume))
+  const total  = ws.reduce((s, w) => s + getWorkoutVolume(w), 0)
+  const maxVol = Math.max(...ws.map(w => getWorkoutVolume(w)))
   const last   = ws[ws.length - 1]
 
   const reversed = [...ws].reverse()
   const rows = reversed.map((w, i) => {
-    const prev = reversed[i + 1]
+    const prev    = reversed[i + 1]
+    const vol     = getWorkoutVolume(w)
+    const prevVol = prev ? getWorkoutVolume(prev) : null
+
     let badge = '<span style="color:var(--text-muted)">—</span>'
-    if (prev) {
-      const diff = (w.volume - prev.volume).toFixed(0)
-      if (w.volume > prev.volume)      badge = `<span class="badge badge-up">↑ ${diff} kg</span>`
-      else if (w.volume < prev.volume) badge = `<span class="badge badge-down">↓ ${Math.abs(diff)} kg</span>`
-      else                             badge = `<span class="badge badge-same">= 0 kg</span>`
+    if (prevVol !== null) {
+      const diff = (vol - prevVol).toFixed(0)
+      if (vol > prevVol)      badge = `<span class="badge badge-up">↑ ${diff} kg</span>`
+      else if (vol < prevVol) badge = `<span class="badge badge-down">↓ ${Math.abs(diff)} kg</span>`
+      else                    badge = `<span class="badge badge-same">= 0 kg</span>`
     }
-    return `<tr>
-      <td>${fmtDate(w.date)}</td>
-      <td>${w.weight_kg} kg</td>
-      <td>${w.reps} reps</td>
-      <td class="vol-cell">${w.volume.toLocaleString('pt-BR')} kg</td>
-      <td>${badge}</td>
-      ${w.notes ? `<td style="color:var(--text-muted);font-size:.82rem">${w.notes}</td>` : '<td>—</td>'}
-    </tr>`
+
+    const exes    = w.workout_exercises || []
+    const exCount = exes.length
+    const exLabel = exCount > 0
+      ? `${exCount} ${exCount === 1 ? 'exercício' : 'exercícios'}`
+      : (w.notes || '<span style="color:var(--text-muted)">—</span>')
+
+    // Inner exercise detail rows
+    const exDetailRows = exCount > 0
+      ? exes.map(ex => `
+          <tr>
+            <td style="padding-left:2rem;font-weight:500;color:var(--text)">${ex.exercise_name}</td>
+            <td>${ex.sets} série${ex.sets > 1 ? 's' : ''}</td>
+            <td>${ex.weight_kg} kg × ${ex.reps} reps</td>
+            <td class="vol-cell">${parseFloat(ex.volume).toLocaleString('pt-BR')} kg</td>
+          </tr>`).join('')
+      : `<tr><td colspan="4" style="padding:.75rem 1rem 1rem;font-style:italic;color:var(--text-muted)">
+            Treino no formato legado — sem detalhes por exercício
+         </td></tr>`
+
+    const uid = w.id.replace(/-/g, '')
+
+    return `
+      <tr class="history-main-row" onclick="toggleWorkoutDetail('${uid}')">
+        <td><strong>${fmtDate(w.date)}</strong></td>
+        <td style="color:var(--text-muted);font-size:.83rem">${exLabel}</td>
+        <td class="vol-cell">${vol.toLocaleString('pt-BR')} kg</td>
+        <td>${badge}</td>
+        <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">▶</span></td>
+      </tr>
+      <tr id="wd-${uid}" style="display:none" class="history-detail-row">
+        <td colspan="5">
+          <div class="history-detail-inner">
+            <table>
+              <thead><tr>
+                <th style="padding-left:2rem">Exercício</th>
+                <th>Séries</th>
+                <th>Carga × Reps</th>
+                <th>Volume</th>
+              </tr></thead>
+              <tbody>${exDetailRows}</tbody>
+            </table>
+          </div>
+        </td>
+      </tr>`
   }).join('')
 
   return `
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-value">${ws.length}</div><div class="stat-label">Treinos realizados</div></div>
+      <div class="stat-card">
+        <div class="stat-value">${ws.length}</div>
+        <div class="stat-label">Treinos realizados</div>
+      </div>
       <div class="stat-card" style="border-left-color:var(--success)">
-        <div class="stat-value">${last.volume.toLocaleString('pt-BR')} kg</div><div class="stat-label">Último volume</div>
+        <div class="stat-value">${getWorkoutVolume(last).toLocaleString('pt-BR')} kg</div>
+        <div class="stat-label">Último volume</div>
       </div>
       <div class="stat-card" style="border-left-color:var(--warning)">
-        <div class="stat-value">${maxVol.toLocaleString('pt-BR')} kg</div><div class="stat-label">Maior volume</div>
+        <div class="stat-value">${maxVol.toLocaleString('pt-BR')} kg</div>
+        <div class="stat-label">Maior volume</div>
       </div>
       <div class="stat-card" style="border-left-color:var(--danger)">
-        <div class="stat-value">${total.toLocaleString('pt-BR')} kg</div><div class="stat-label">Volume total acumulado</div>
+        <div class="stat-value">${total.toLocaleString('pt-BR')} kg</div>
+        <div class="stat-label">Volume total acumulado</div>
       </div>
     </div>
 
@@ -746,16 +815,28 @@ function historyHTML(ws, name) {
       </div>
       <div class="card">
         <div class="card-header"><div class="card-title">📋 Histórico de Treinos</div></div>
+        <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:1rem">
+          Clique em um treino para ver os exercícios.
+        </p>
         <div class="table-wrap">
           <table>
             <thead><tr>
-              <th>Data</th><th>Peso</th><th>Reps</th><th>Volume</th><th>Progressão</th><th>Obs.</th>
+              <th>Data</th><th>Exercícios</th><th>Volume</th><th>Progressão</th><th></th>
             </tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
       </div>
     </div>`
+}
+
+function toggleWorkoutDetail(uid) {
+  const row  = document.getElementById(`wd-${uid}`)
+  const icon = document.getElementById(`wi-${uid}`)
+  if (!row) return
+  const isOpen = row.style.display !== 'none'
+  row.style.display = isOpen ? 'none' : 'table-row'
+  if (icon) icon.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)'
 }
 
 // ─────────────────────────────────────────────
@@ -771,7 +852,7 @@ function initChart(canvasId, ws) {
       labels: ws.map(w => fmtDate(w.date)),
       datasets: [{
         label: 'Volume (kg)',
-        data:  ws.map(w => w.volume),
+        data:  ws.map(w => getWorkoutVolume(w)),
         borderColor: '#4f46e5',
         backgroundColor: 'rgba(79,70,229,.08)',
         borderWidth: 2.5,
@@ -799,7 +880,7 @@ function initChart(canvasId, ws) {
 }
 
 // ─────────────────────────────────────────────
-// VIEW: NOVO TREINO
+// VIEW: NOVO TREINO — formulário dinâmico
 // ─────────────────────────────────────────────
 function setupWorkoutForm() {
   const grp = document.getElementById('wf-student-group')
@@ -816,23 +897,109 @@ function setupWorkoutForm() {
     sel.required = false
   }
 
-  document.getElementById('wf-date').value   = today()
-  document.getElementById('wf-weight').value = ''
-  document.getElementById('wf-reps').value   = ''
-  document.getElementById('wf-notes').value  = ''
-  document.getElementById('vol-preview').style.display = 'none'
+  document.getElementById('wf-date').value  = today()
+  document.getElementById('wf-notes').value = ''
+
+  // Reset exercise list
+  const list = document.getElementById('exercise-list')
+  list.innerHTML = ''
+  exerciseCounter = 0
+  addExercise()
+  refreshTotalVolume()
 }
 
-function refreshVolPreview() {
-  const w = parseFloat(document.getElementById('wf-weight').value)
-  const r = parseInt(document.getElementById('wf-reps').value)
-  const preview = document.getElementById('vol-preview')
-  if (w > 0 && r > 0) {
-    document.getElementById('vol-val').textContent = (w * r).toLocaleString('pt-BR')
-    preview.style.display = 'block'
-  } else {
-    preview.style.display = 'none'
-  }
+function addExercise() {
+  exerciseCounter++
+  const id   = exerciseCounter
+  const list = document.getElementById('exercise-list')
+  const num  = list.children.length + 1
+
+  const div = document.createElement('div')
+  div.className = 'exercise-row'
+  div.id = `ex-${id}`
+  div.innerHTML = `
+    <div class="exercise-row-header">
+      <span class="exercise-num-label" id="ex-num-${id}">Exercício ${num}</span>
+      <button type="button" class="btn btn-sm btn-ghost-danger remove-ex-btn"
+              onclick="removeExercise(${id})" style="display:none">✕ Remover</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group form-full">
+        <label>Nome do exercício</label>
+        <input type="text" class="form-control ex-name" placeholder="Ex: Supino Reto" required>
+      </div>
+      <div class="form-group">
+        <label>Séries</label>
+        <input type="number" class="form-control ex-sets" placeholder="4" min="1" max="99" required
+               oninput="refreshExerciseVolume(${id})">
+      </div>
+      <div class="form-group">
+        <label>Carga (kg)</label>
+        <input type="number" class="form-control ex-weight" placeholder="80" step="0.5" min="0" required
+               oninput="refreshExerciseVolume(${id})">
+      </div>
+      <div class="form-group">
+        <label>Repetições</label>
+        <input type="number" class="form-control ex-reps" placeholder="12" min="1" required
+               oninput="refreshExerciseVolume(${id})">
+      </div>
+      <div class="form-group">
+        <label>Volume</label>
+        <div class="exercise-vol-display" id="ex-vol-${id}">—</div>
+      </div>
+    </div>`
+
+  list.appendChild(div)
+  updateRemoveButtons()
+  div.querySelector('.ex-name').focus()
+}
+
+function removeExercise(id) {
+  const el = document.getElementById(`ex-${id}`)
+  if (el) el.remove()
+  updateExerciseNumbers()
+  updateRemoveButtons()
+  refreshTotalVolume()
+}
+
+function updateExerciseNumbers() {
+  document.querySelectorAll('#exercise-list .exercise-row').forEach((row, i) => {
+    const lbl = row.querySelector('.exercise-num-label')
+    if (lbl) lbl.textContent = `Exercício ${i + 1}`
+  })
+}
+
+function updateRemoveButtons() {
+  const rows = document.querySelectorAll('#exercise-list .exercise-row')
+  rows.forEach(row => {
+    const btn = row.querySelector('.remove-ex-btn')
+    if (btn) btn.style.display = rows.length > 1 ? 'inline-flex' : 'none'
+  })
+}
+
+function refreshExerciseVolume(id) {
+  const row = document.getElementById(`ex-${id}`)
+  if (!row) return
+  const sets   = parseInt(row.querySelector('.ex-sets').value)   || 0
+  const weight = parseFloat(row.querySelector('.ex-weight').value) || 0
+  const reps   = parseInt(row.querySelector('.ex-reps').value)   || 0
+  const vol    = sets * weight * reps
+  const el     = document.getElementById(`ex-vol-${id}`)
+  if (el) el.textContent = (sets > 0 && weight > 0 && reps > 0)
+    ? vol.toLocaleString('pt-BR') + ' kg' : '—'
+  refreshTotalVolume()
+}
+
+function refreshTotalVolume() {
+  let total = 0
+  document.querySelectorAll('#exercise-list .exercise-row').forEach(row => {
+    const sets   = parseInt(row.querySelector('.ex-sets')?.value)   || 0
+    const weight = parseFloat(row.querySelector('.ex-weight')?.value) || 0
+    const reps   = parseInt(row.querySelector('.ex-reps')?.value)   || 0
+    total += sets * weight * reps
+  })
+  const el = document.getElementById('total-vol-preview')
+  if (el) el.textContent = total.toLocaleString('pt-BR') + ' kg'
 }
 
 async function saveWorkout(e) {
@@ -844,24 +1011,63 @@ async function saveWorkout(e) {
     ? document.getElementById('wf-student').value
     : profile.id
 
-  if (!studentId) { toast('Selecione um aluno.','error'); btn.textContent='Salvar Treino'; btn.disabled=false; return }
+  if (!studentId) {
+    toast('Selecione um aluno.', 'error')
+    btn.textContent = 'Salvar Treino'; btn.disabled = false
+    return
+  }
+
+  const date  = document.getElementById('wf-date').value
+  const notes = document.getElementById('wf-notes').value.trim()
+
+  // Collect and validate exercises
+  const rows      = document.querySelectorAll('#exercise-list .exercise-row')
+  const exercises = []
+  let totalVolume = 0
+  let allValid    = true
+
+  rows.forEach(row => {
+    const name   = row.querySelector('.ex-name').value.trim()
+    const sets   = parseInt(row.querySelector('.ex-sets').value)
+    const weight = parseFloat(row.querySelector('.ex-weight').value)
+    const reps   = parseInt(row.querySelector('.ex-reps').value)
+    if (!name || !sets || !weight || !reps || sets < 1 || reps < 1 || weight <= 0) {
+      allValid = false; return
+    }
+    const volume = parseFloat((sets * weight * reps).toFixed(2))
+    totalVolume += volume
+    exercises.push({ exercise_name: name, sets, weight_kg: weight, reps, volume })
+  })
+
+  if (!allValid || exercises.length === 0) {
+    toast('Preencha todos os campos de todos os exercícios.', 'error')
+    btn.textContent = 'Salvar Treino'; btn.disabled = false
+    return
+  }
 
   try {
-    await insertWorkout({
-      student_id: studentId,
-      date:       document.getElementById('wf-date').value,
-      weight_kg:  document.getElementById('wf-weight').value,
-      reps:       document.getElementById('wf-reps').value,
-      notes:      document.getElementById('wf-notes').value
-    })
-    toast('Treino registrado com sucesso!','success')
-    document.getElementById('workout-form').reset()
-    document.getElementById('wf-date').value = today()
-    document.getElementById('vol-preview').style.display = 'none'
-    if (profile.role === 'personal') setupWorkoutForm()
-  } catch(err) {
-    toast('Erro: ' + err.message, 'error')
+    // Insert workout session
+    const { data: workout, error: wErr } = await sb.from('workouts').insert({
+      student_id:   studentId,
+      date,
+      total_volume: parseFloat(totalVolume.toFixed(2)),
+      notes:        notes || null,
+      created_by:   me.id
+    }).select().single()
+    if (wErr) throw wErr
+
+    // Insert all exercises linked to this session
+    const { error: exErr } = await sb.from('workout_exercises').insert(
+      exercises.map(ex => ({ ...ex, workout_id: workout.id }))
+    )
+    if (exErr) throw exErr
+
+    toast('Treino registrado com sucesso!', 'success')
+    setupWorkoutForm()
+  } catch (err) {
+    toast('Erro ao salvar: ' + err.message, 'error')
   }
+
   btn.textContent = 'Salvar Treino'; btn.disabled = false
 }
 
@@ -880,7 +1086,9 @@ function setupCalc() {
     grp.style.display = 'none'
     sel.innerHTML = `<option value="${profile.id}" selected></option>`
   }
-  document.getElementById('calc-weight').value = ''
+
+  document.getElementById('calc-exercise').value = ''
+  document.getElementById('calc-weight').value   = ''
   clearCalcResult()
 }
 
@@ -893,24 +1101,40 @@ async function runCalc() {
     ? document.getElementById('calc-student').value
     : profile.id
 
-  const weight = parseFloat(document.getElementById('calc-weight').value)
+  const exerciseName = document.getElementById('calc-exercise').value.trim()
+  const weight       = parseFloat(document.getElementById('calc-weight').value)
 
-  if (profile.role === 'personal' && !sid) { toast('Selecione um aluno.','error'); return }
-  if (!weight || weight <= 0)              { toast('Informe o peso de hoje.','error'); return }
+  if (profile.role === 'personal' && !sid) { toast('Selecione um aluno.', 'error'); return }
+  if (!exerciseName)                        { toast('Informe o nome do exercício.', 'error'); return }
+  if (!weight || weight <= 0)               { toast('Informe o peso de hoje.', 'error'); return }
 
-  const last = await fetchLastWorkout(sid)
-  const out  = document.getElementById('calc-out')
+  const out = document.getElementById('calc-out')
+  out.innerHTML = '<div class="loading"><div class="spinner"></div>Buscando…</div>'
 
-  if (!last) {
+  const workouts = await fetchWorkouts(sid)
+
+  // Find the most recent exercise matching the name (case-insensitive)
+  let lastExercise = null
+  let lastDate     = null
+
+  for (const w of [...workouts].reverse()) {
+    if (!w.workout_exercises || !w.workout_exercises.length) continue
+    const ex = w.workout_exercises.find(e =>
+      e.exercise_name.trim().toLowerCase() === exerciseName.toLowerCase()
+    )
+    if (ex) { lastExercise = ex; lastDate = w.date; break }
+  }
+
+  if (!lastExercise) {
     out.innerHTML = `<div class="calc-no-prev">
-      <p style="font-size:1.1rem;font-weight:600">Nenhum treino anterior</p>
-      <p style="font-size:.85rem;margin-top:.4rem">Este será o treino de referência!</p>
+      <p style="font-size:1.1rem;font-weight:600">Nenhum registro para "${exerciseName}"</p>
+      <p style="font-size:.85rem;margin-top:.4rem">Este será o primeiro treino deste exercício!</p>
     </div>`
     return
   }
 
-  const minReps  = Math.ceil(last.volume / weight) + 1
-  const minVolume = (weight * minReps).toFixed(2)
+  const minReps   = Math.ceil(lastExercise.volume / weight) + 1
+  const minVolume = parseFloat((weight * minReps).toFixed(2))
 
   out.innerHTML = `
     <div class="calc-result">
@@ -918,9 +1142,10 @@ async function runCalc() {
       <div class="calc-reps">${minReps}</div>
       <div class="calc-sub">reps com ${weight.toLocaleString('pt-BR')} kg</div>
       <div class="calc-detail">
-        Treino anterior: <strong>${last.volume.toLocaleString('pt-BR')} kg</strong>
-        (${last.weight_kg} kg × ${last.reps} reps em ${fmtDate(last.date)})<br>
-        Volume mínimo alvo: <strong>${parseFloat(minVolume).toLocaleString('pt-BR')} kg</strong>
+        Exercício: <strong>${lastExercise.exercise_name}</strong> — ${fmtDate(lastDate)}<br>
+        Treino anterior: <strong>${parseFloat(lastExercise.volume).toLocaleString('pt-BR')} kg</strong>
+        (${lastExercise.sets} × ${lastExercise.weight_kg} kg × ${lastExercise.reps} reps)<br>
+        Volume mínimo alvo: <strong>${minVolume.toLocaleString('pt-BR')} kg</strong>
       </div>
     </div>`
 }
@@ -930,7 +1155,7 @@ async function runCalc() {
 // ─────────────────────────────────────────────
 function fmtDate(s) {
   if (!s) return '—'
-  const [y,m,d] = s.split('-')
+  const [y, m, d] = s.split('-')
   return `${d}/${m}/${y}`
 }
 
@@ -942,7 +1167,7 @@ function toast(msg, type = 'info') {
   const icons = { success:'✅', error:'❌', info:'ℹ️' }
   const el = document.createElement('div')
   el.className = `toast ${type}`
-  el.innerHTML = `<span>${icons[type]||'ℹ️'}</span><span>${msg}</span>`
+  el.innerHTML = `<span>${icons[type] || 'ℹ️'}</span><span>${msg}</span>`
   document.getElementById('toasts').appendChild(el)
   setTimeout(() => {
     el.style.transition = 'opacity .3s, transform .3s'
