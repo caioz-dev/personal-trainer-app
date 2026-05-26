@@ -508,7 +508,11 @@ async function doSignup(e) {
   if (userId) {
     const { error: pe } = await sb.from('profiles').insert({ id: userId, name, role, email })
     if (pe) { setMsg('Conta criada, mas erro ao salvar perfil: ' + pe.message, 'error') }
-    else if (!data.session) setMsg('Conta criada! Verifique seu e-mail para confirmar.', 'info')
+    else {
+      document.getElementById('signup-form').reset()
+      switchTab('login')
+      setMsg('Conta criada com sucesso! Faça login para continuar.', 'success')
+    }
   }
   btn.textContent = 'Criar Conta'; btn.disabled = false
 }
