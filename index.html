@@ -431,6 +431,7 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 let sb, me, profile, students = [], chart = null
 let exerciseCounter = 0
 let historyCtx = null
+let navGen = 0        // incremented on every navigation; render fns bail if stale
 
 // ─────────────────────────────────────────────
 // BOOT
@@ -604,6 +605,8 @@ const VIEW_TITLES = {
 }
 
 async function navigateTo(view, opts = {}) {
+  const gen = ++navGen   // any in-flight render with a smaller gen will abort
+
   document.querySelectorAll('.view').forEach(v => v.style.display = 'none')
   document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'))
 
@@ -615,11 +618,13 @@ async function navigateTo(view, opts = {}) {
   const el = document.getElementById('view-' + view)
   if (el) el.style.display = 'block'
 
-  if      (view === 'students')       await renderStudents()
-  else if (view === 'student-detail') await renderDetail(opts.id, opts.name)
-  else if (view === 'workout')        setupWorkoutForm()
-  else if (view === 'calculator')     setupCalc()
-  else if (view === 'history')        await renderHistory(profile.id)
+  try {
+    if      (view === 'students')       await renderStudents(gen)
+    else if (view === 'student-detail') await renderDetail(opts.id, opts.name, gen)
+    else if (view === 'workout')        setupWorkoutForm()
+    else if (view === 'calculator')     setupCalc()
+    else if (view === 'history')        await renderHistory(profile.id, gen)
+  } catch { /* each render fn already handles its own errors */ }
 
   closeSidebar()
 }
@@ -661,71 +666,102 @@ function getWorkoutVolume(w) {
 // ─────────────────────────────────────────────
 // VIEW: ALUNOS
 // ─────────────────────────────────────────────
-async function renderStudents() {
+async function renderStudents(gen = 0) {
   const body = document.getElementById('students-body')
   body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando alunos…</div>'
-  await fetchStudents()
 
-  if (!students.length) {
-    body.innerHTML = `<div class="empty-state"><div class="empty-icon">👤</div>
-      <p>Nenhum aluno cadastrado ainda.</p>
-      <p style="font-size:.82rem;margin-top:.5rem">Compartilhe o link de cadastro com seus alunos.</p></div>`
-    return
-  }
+  try {
+    await fetchStudents()
+    if (gen && navGen !== gen) return
 
-  const withLast = await Promise.all(students.map(async s => ({
-    ...s, last: await fetchLastWorkout(s.id)
-  })))
+    if (!students.length) {
+      body.innerHTML = `<div class="empty-state"><div class="empty-icon">👤</div>
+        <p>Nenhum aluno cadastrado ainda.</p>
+        <p style="font-size:.82rem;margin-top:.5rem">Compartilhe o link de cadastro com seus alunos.</p></div>`
+      return
+    }
 
-  const withData = withLast.filter(s => s.last).length
-  body.innerHTML = `
-    <div class="stats-grid">
-      <div class="stat-card"><div class="stat-value">${students.length}</div><div class="stat-label">Alunos cadastrados</div></div>
-      <div class="stat-card" style="border-left-color:var(--success)">
-        <div class="stat-value">${withData}</div><div class="stat-label">Com treinos registrados</div>
+    const withLast = await Promise.all(students.map(async s => ({
+      ...s, last: await fetchLastWorkout(s.id)
+    })))
+    if (gen && navGen !== gen) return
+
+    const withData = withLast.filter(s => s.last).length
+    body.innerHTML = `
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-value">${students.length}</div><div class="stat-label">Alunos cadastrados</div></div>
+        <div class="stat-card" style="border-left-color:var(--success)">
+          <div class="stat-value">${withData}</div><div class="stat-label">Com treinos registrados</div>
+        </div>
       </div>
-    </div>
-    <div class="students-grid">
-      ${withLast.map(s => {
-        const ini = s.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase()
-        const vol = s.last ? getWorkoutVolume(s.last) : null
-        return `<div class="student-card"
-            onclick="navigateTo('student-detail',{id:'${s.id}',name:'${s.name.replace(/'/g,"\\'")}' })">
-          <div class="student-avatar">${ini}</div>
-          <div class="student-name">${s.name}</div>
-          <div class="student-meta">
-            Último treino: ${s.last ? fmtDate(s.last.date) : '—'}<br>
-            Volume: ${vol !== null ? vol.toLocaleString('pt-BR') + ' kg' : '—'}
-          </div>
-        </div>`
-      }).join('')}
-    </div>`
+      <div class="students-grid">
+        ${withLast.map(s => {
+          const ini = s.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase()
+          const vol = s.last ? getWorkoutVolume(s.last) : null
+          return `<div class="student-card"
+              onclick="navigateTo('student-detail',{id:'${s.id}',name:'${s.name.replace(/'/g,"\\'")}' })">
+            <div class="student-avatar">${ini}</div>
+            <div class="student-name">${s.name}</div>
+            <div class="student-meta">
+              Último treino: ${s.last ? fmtDate(s.last.date) : '—'}<br>
+              Volume: ${vol !== null ? vol.toLocaleString('pt-BR') + ' kg' : '—'}
+            </div>
+          </div>`
+        }).join('')}
+      </div>`
+  } catch (err) {
+    if (gen && navGen !== gen) return
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <p>Erro ao carregar alunos.</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
+              onclick="renderStudents()">Tentar novamente</button></div>`
+  }
 }
 
 // ─────────────────────────────────────────────
 // VIEW: DETALHE DO ALUNO
 // ─────────────────────────────────────────────
-async function renderDetail(studentId, studentName) {
+async function renderDetail(studentId, studentName, gen = 0) {
   historyCtx = { studentId, name: studentName, isDetail: true }
   const body = document.getElementById('detail-body')
   body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando…</div>'
-  const workouts = await fetchWorkouts(studentId)
-  body.innerHTML = `
-    <button class="back-btn" onclick="navigateTo('students')">← Voltar para Alunos</button>
-    ${historyHTML(workouts, studentName)}`
-  if (workouts.length) initChart('evo-chart', workouts)
+
+  try {
+    const workouts = await fetchWorkouts(studentId)
+    if (gen && navGen !== gen) return
+    body.innerHTML = `
+      <button class="back-btn" onclick="navigateTo('students')">← Voltar para Alunos</button>
+      ${historyHTML(workouts, studentName)}`
+    if (workouts.length) initChart('evo-chart', workouts)
+  } catch (err) {
+    if (gen && navGen !== gen) return
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <p>Erro ao carregar treinos.</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
+              onclick="renderDetail('${studentId}','${studentName}')">Tentar novamente</button></div>`
+  }
 }
 
 // ─────────────────────────────────────────────
 // VIEW: HISTÓRICO (aluno)
 // ─────────────────────────────────────────────
-async function renderHistory(studentId) {
+async function renderHistory(studentId, gen = 0) {
   historyCtx = { studentId, name: profile.name, isDetail: false }
   const body = document.getElementById('history-body')
   body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando histórico…</div>'
-  const workouts = await fetchWorkouts(studentId)
-  body.innerHTML = historyHTML(workouts, profile.name)
-  if (workouts.length) initChart('evo-chart', workouts)
+
+  try {
+    const workouts = await fetchWorkouts(studentId)
+    if (gen && navGen !== gen) return
+    body.innerHTML = historyHTML(workouts, profile.name)
+    if (workouts.length) initChart('evo-chart', workouts)
+  } catch (err) {
+    if (gen && navGen !== gen) return
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <p>Erro ao carregar histórico.</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
+              onclick="renderHistory('${studentId}')">Tentar novamente</button></div>`
+  }
 }
 
 function historyHTML(ws, name) {
@@ -855,6 +891,7 @@ async function deleteWorkout(workoutId) {
   const { error } = await sb.from('workouts').delete().eq('id', workoutId)
   if (error) { toast('Erro ao excluir: ' + error.message, 'error'); return }
   toast('Treino excluído com sucesso!', 'success')
+  navGen++  // cancel any in-flight navigation
   if (historyCtx?.isDetail) await renderDetail(historyCtx.studentId, historyCtx.name)
   else await renderHistory(historyCtx?.studentId ?? profile.id)
 }
@@ -1095,21 +1132,25 @@ async function saveWorkout(e) {
 // VIEW: CALCULADORA
 // ─────────────────────────────────────────────
 function setupCalc() {
-  const grp = document.getElementById('calc-student-group')
-  const sel = document.getElementById('calc-student')
+  try {
+    const grp = document.getElementById('calc-student-group')
+    const sel = document.getElementById('calc-student')
 
-  if (profile.role === 'personal') {
-    grp.style.display = 'block'
-    sel.innerHTML = '<option value="">Selecione o aluno…</option>' +
-      students.map(s => `<option value="${s.id}">${s.name}</option>`).join('')
-  } else {
-    grp.style.display = 'none'
-    sel.innerHTML = `<option value="${profile.id}" selected></option>`
+    if (profile.role === 'personal') {
+      grp.style.display = 'block'
+      sel.innerHTML = '<option value="">Selecione o aluno…</option>' +
+        students.map(s => `<option value="${s.id}">${s.name}</option>`).join('')
+    } else {
+      grp.style.display = 'none'
+      sel.innerHTML = `<option value="${profile.id}" selected></option>`
+    }
+
+    document.getElementById('calc-exercise').value = ''
+    document.getElementById('calc-weight').value   = ''
+    clearCalcResult()
+  } catch (err) {
+    toast('Erro ao carregar calculadora.', 'error')
   }
-
-  document.getElementById('calc-exercise').value = ''
-  document.getElementById('calc-weight').value   = ''
-  clearCalcResult()
 }
 
 function clearCalcResult() {
