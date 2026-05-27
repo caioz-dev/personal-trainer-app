@@ -208,6 +208,12 @@
     .toast.error   { border-left-color:var(--danger);  }
     @keyframes slideIn { from { transform:translateX(110%); opacity:0; } to { transform:translateX(0); opacity:1; } }
 
+    /* ---- DELETE BTN ---- */
+    .del-btn { background:none; border:none; cursor:pointer; padding:.25rem .4rem; border-radius:6px;
+      font-size:.95rem; line-height:1; opacity:0; transition:opacity .15s, background .15s; }
+    .history-main-row:hover .del-btn { opacity:1; }
+    .del-btn:hover { background:#fef2f2; }
+
     /* ---- RESPONSIVE ---- */
     .hamburger { display:none; flex-direction:column; gap:5px; background:none; border:none; cursor:pointer; padding:.2rem; }
     .hamburger span { display:block; width:22px; height:2px; background:var(--text); border-radius:2px; }
@@ -224,6 +230,7 @@
       .section-grid { grid-template-columns:1fr; }
       .form-grid    { grid-template-columns:1fr; }
       .hamburger    { display:flex; }
+      .del-btn      { opacity:1; }
     }
     @media (max-width:1100px) { .section-grid { grid-template-columns:1fr; } }
   </style>
@@ -423,6 +430,7 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 
 let sb, me, profile, students = [], chart = null
 let exerciseCounter = 0
+let historyCtx = null
 
 // ─────────────────────────────────────────────
 // BOOT
@@ -698,6 +706,7 @@ async function renderStudents() {
 // VIEW: DETALHE DO ALUNO
 // ─────────────────────────────────────────────
 async function renderDetail(studentId, studentName) {
+  historyCtx = { studentId, name: studentName, isDetail: true }
   const body = document.getElementById('detail-body')
   body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando…</div>'
   const workouts = await fetchWorkouts(studentId)
@@ -711,6 +720,7 @@ async function renderDetail(studentId, studentName) {
 // VIEW: HISTÓRICO (aluno)
 // ─────────────────────────────────────────────
 async function renderHistory(studentId) {
+  historyCtx = { studentId, name: profile.name, isDetail: false }
   const body = document.getElementById('history-body')
   body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando histórico…</div>'
   const workouts = await fetchWorkouts(studentId)
@@ -770,9 +780,10 @@ function historyHTML(ws, name) {
         <td class="vol-cell">${vol.toLocaleString('pt-BR')} kg</td>
         <td>${badge}</td>
         <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">▶</span></td>
+        <td style="text-align:center"><button class="del-btn" onclick="event.stopPropagation();deleteWorkout('${w.id}')" title="Excluir treino">🗑️</button></td>
       </tr>
       <tr id="wd-${uid}" style="display:none" class="history-detail-row">
-        <td colspan="5">
+        <td colspan="6">
           <div class="history-detail-inner">
             <table>
               <thead><tr>
@@ -821,7 +832,7 @@ function historyHTML(ws, name) {
         <div class="table-wrap">
           <table>
             <thead><tr>
-              <th>Data</th><th>Exercícios</th><th>Volume</th><th>Progressão</th><th></th>
+              <th>Data</th><th>Exercícios</th><th>Volume</th><th>Progressão</th><th></th><th></th>
             </tr></thead>
             <tbody>${rows}</tbody>
           </table>
@@ -837,6 +848,15 @@ function toggleWorkoutDetail(uid) {
   const isOpen = row.style.display !== 'none'
   row.style.display = isOpen ? 'none' : 'table-row'
   if (icon) icon.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)'
+}
+
+async function deleteWorkout(workoutId) {
+  if (!confirm('Tem certeza que deseja excluir este treino?')) return
+  const { error } = await sb.from('workouts').delete().eq('id', workoutId)
+  if (error) { toast('Erro ao excluir: ' + error.message, 'error'); return }
+  toast('Treino excluído com sucesso!', 'success')
+  if (historyCtx?.isDetail) await renderDetail(historyCtx.studentId, historyCtx.name)
+  else await renderHistory(historyCtx?.studentId ?? profile.id)
 }
 
 // ─────────────────────────────────────────────
