@@ -679,10 +679,19 @@ function getWorkoutVolume(w) {
 async function renderStudents(gen = 0) {
   const body = document.getElementById('students-body')
   body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando alunos…</div>'
+  console.log('[renderStudents] início, gen=' + gen + ', navGen=' + navGen)
+
+  // Só cancela se navGen avançou E o usuário já saiu da tela de alunos.
+  // Navegações redundantes para 'students' (ex: duplo boot do Supabase auth)
+  // não devem abortar o render que já está em andamento.
+  function isStale() {
+    return gen && navGen !== gen && currentView !== 'students'
+  }
 
   try {
     await fetchStudents()
-    if (gen && navGen !== gen) return
+    console.log('[renderStudents] fetchStudents ok, total=' + students.length + ', navGen=' + navGen)
+    if (isStale()) { console.log('[renderStudents] guard cancelou após fetchStudents'); return }
 
     if (!students.length) {
       body.innerHTML = `<div class="empty-state"><div class="empty-icon">👤</div>
@@ -694,7 +703,8 @@ async function renderStudents(gen = 0) {
     const withLast = await Promise.all(students.map(async s => ({
       ...s, last: await fetchLastWorkout(s.id)
     })))
-    if (gen && navGen !== gen) return
+    console.log('[renderStudents] fetchLastWorkout ok para ' + withLast.length + ' alunos, navGen=' + navGen)
+    if (isStale()) { console.log('[renderStudents] guard cancelou após fetchLastWorkout'); return }
 
     const withData = withLast.filter(s => s.last).length
     body.innerHTML = `
@@ -719,8 +729,10 @@ async function renderStudents(gen = 0) {
           </div>`
         }).join('')}
       </div>`
+    console.log('[renderStudents] renderizado com sucesso')
   } catch (err) {
-    if (gen && navGen !== gen) return
+    console.error('[renderStudents] erro capturado:', err)
+    if (isStale()) { console.log('[renderStudents] guard cancelou no catch'); return }
     body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
       <p>Erro ao carregar alunos.</p>
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
