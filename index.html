@@ -454,7 +454,7 @@ async function boot() {
   if (!session) { showAuthSection(); return }
   me = session.user
 
-  const { data, error } = await sb.from('profiles').select('*').eq('id', me.id).single()
+  const { data, error } = await sb.from('profiles').select('*').eq('id', me.id).maybeSingle()
   if (error || !data) { showAuthSection(); return }
   profile = data
   buildSidebar()
@@ -652,7 +652,7 @@ async function fetchLastWorkout(studentId) {
     .eq('student_id', studentId)
     .order('date', { ascending: false })
     .order('created_at', { ascending: false })
-    .limit(1).single()
+    .limit(1).maybeSingle()
   return data || null
 }
 
@@ -1110,7 +1110,7 @@ async function saveWorkout(e) {
       total_volume: parseFloat(totalVolume.toFixed(2)),
       notes:        notes || null,
       created_by:   me.id
-    }).select().single()
+    }).select().maybeSingle()
     if (wErr) throw wErr
 
     // Insert all exercises linked to this session
