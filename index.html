@@ -425,8 +425,8 @@
 // ─────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────
-const SUPA_URL = 'https://kdmcaksypdjsnwufkxng.supabase.co'
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtkbWNha3N5cGRqc253dWZreG5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3MTc1NzgsImV4cCI6MjA5NTI5MzU3OH0.K9Gc4qX9bNONk7Yx3QbW_W6KiyvTYhsp67YweOTAr6k'
+const SUPA_URL = '__SUPABASE_URL__'
+const SUPA_KEY = '__SUPABASE_KEY__'
 
 let sb, me, profile, students = [], chart = null
 let exerciseCounter = 0
@@ -458,9 +458,9 @@ async function boot() {
   if (error || !data) { showAuthSection(); return }
   profile = data
   buildSidebar()
-  navigateTo(profile.role === 'personal' ? 'students' : 'history')
   document.getElementById('auth-section').style.display = 'none'
   document.getElementById('app-section').style.display  = 'block'
+  navigateTo(profile.role === 'personal' ? 'students' : 'history')
 }
 
 // ─────────────────────────────────────────────
@@ -621,8 +621,8 @@ async function navigateTo(view, opts = {}) {
   try {
     if      (view === 'students')       await renderStudents(gen)
     else if (view === 'student-detail') await renderDetail(opts.id, opts.name, gen)
-    else if (view === 'workout')        setupWorkoutForm()
-    else if (view === 'calculator')     setupCalc()
+    else if (view === 'workout')        await setupWorkoutForm()
+    else if (view === 'calculator')     await setupCalc()
     else if (view === 'history')        await renderHistory(profile.id, gen)
   } catch { /* each render fn already handles its own errors */ }
 
@@ -798,7 +798,7 @@ function historyHTML(ws, name) {
     const exDetailRows = exCount > 0
       ? exes.map(ex => `
           <tr>
-            <td style="padding-left:2rem;font-weight:500;color:var(--text)">${ex.exercise_name}</td>
+            <td style="padding-left:2rem;font-weight:500;color:var(--text)">${ex.name}</td>
             <td>${ex.sets} série${ex.sets > 1 ? 's' : ''}</td>
             <td>${ex.weight_kg} kg × ${ex.reps} reps</td>
             <td class="vol-cell">${parseFloat(ex.volume).toLocaleString('pt-BR')} kg</td>
@@ -939,11 +939,12 @@ function initChart(canvasId, ws) {
 // ─────────────────────────────────────────────
 // VIEW: NOVO TREINO — formulário dinâmico
 // ─────────────────────────────────────────────
-function setupWorkoutForm() {
+async function setupWorkoutForm() {
   const grp = document.getElementById('wf-student-group')
   const sel = document.getElementById('wf-student')
 
   if (profile.role === 'personal') {
+    if (!students.length) await fetchStudents()
     grp.style.display = 'block'
     sel.innerHTML = '<option value="">Selecione o aluno…</option>' +
       students.map(s => `<option value="${s.id}">${s.name}</option>`).join('')
@@ -1084,16 +1085,16 @@ async function saveWorkout(e) {
   let allValid    = true
 
   rows.forEach(row => {
-    const name   = row.querySelector('.ex-name').value.trim()
+    const exName = row.querySelector('.ex-name').value.trim()
     const sets   = parseInt(row.querySelector('.ex-sets').value)
     const weight = parseFloat(row.querySelector('.ex-weight').value)
     const reps   = parseInt(row.querySelector('.ex-reps').value)
-    if (!name || !sets || !weight || !reps || sets < 1 || reps < 1 || weight <= 0) {
+    if (!exName || !sets || !weight || !reps || sets < 1 || reps < 1 || weight <= 0) {
       allValid = false; return
     }
     const volume = parseFloat((sets * weight * reps).toFixed(2))
     totalVolume += volume
-    exercises.push({ exercise_name: name, sets, weight_kg: weight, reps, volume })
+    exercises.push({ name: exName, sets, weight_kg: weight, reps, volume })
   })
 
   if (!allValid || exercises.length === 0) {
@@ -1112,6 +1113,7 @@ async function saveWorkout(e) {
       created_by:   me.id
     }).select().maybeSingle()
     if (wErr) throw wErr
+    if (!workout) throw new Error('Não foi possível obter o ID do treino salvo.')
 
     // Insert all exercises linked to this session
     const { error: exErr } = await sb.from('workout_exercises').insert(
@@ -1131,12 +1133,13 @@ async function saveWorkout(e) {
 // ─────────────────────────────────────────────
 // VIEW: CALCULADORA
 // ─────────────────────────────────────────────
-function setupCalc() {
+async function setupCalc() {
   try {
     const grp = document.getElementById('calc-student-group')
     const sel = document.getElementById('calc-student')
 
     if (profile.role === 'personal') {
+      if (!students.length) await fetchStudents()
       grp.style.display = 'block'
       sel.innerHTML = '<option value="">Selecione o aluno…</option>' +
         students.map(s => `<option value="${s.id}">${s.name}</option>`).join('')
@@ -1172,43 +1175,50 @@ async function runCalc() {
   const out = document.getElementById('calc-out')
   out.innerHTML = '<div class="loading"><div class="spinner"></div>Buscando…</div>'
 
-  const workouts = await fetchWorkouts(sid)
+  try {
+    const workouts = await fetchWorkouts(sid)
 
-  // Find the most recent exercise matching the name (case-insensitive)
-  let lastExercise = null
-  let lastDate     = null
+    // Find the most recent exercise matching the name (case-insensitive)
+    let lastExercise = null
+    let lastDate     = null
 
-  for (const w of [...workouts].reverse()) {
-    if (!w.workout_exercises || !w.workout_exercises.length) continue
-    const ex = w.workout_exercises.find(e =>
-      e.exercise_name.trim().toLowerCase() === exerciseName.toLowerCase()
-    )
-    if (ex) { lastExercise = ex; lastDate = w.date; break }
-  }
+    for (const w of [...workouts].reverse()) {
+      if (!w.workout_exercises || !w.workout_exercises.length) continue
+      const ex = w.workout_exercises.find(e =>
+        e.name.trim().toLowerCase() === exerciseName.toLowerCase()
+      )
+      if (ex) { lastExercise = ex; lastDate = w.date; break }
+    }
 
-  if (!lastExercise) {
+    if (!lastExercise) {
+      out.innerHTML = `<div class="calc-no-prev">
+        <p style="font-size:1.1rem;font-weight:600">Nenhum registro para "${exerciseName}"</p>
+        <p style="font-size:.85rem;margin-top:.4rem">Este será o primeiro treino deste exercício!</p>
+      </div>`
+      return
+    }
+
+    const minReps   = Math.ceil(lastExercise.volume / weight) + 1
+    const minVolume = parseFloat((weight * minReps).toFixed(2))
+
+    out.innerHTML = `
+      <div class="calc-result">
+        <div style="font-size:.82rem;opacity:.8;letter-spacing:.1em;text-transform:uppercase">Mínimo de Repetições</div>
+        <div class="calc-reps">${minReps}</div>
+        <div class="calc-sub">reps com ${weight.toLocaleString('pt-BR')} kg</div>
+        <div class="calc-detail">
+          Exercício: <strong>${lastExercise.name}</strong> — ${fmtDate(lastDate)}<br>
+          Treino anterior: <strong>${parseFloat(lastExercise.volume).toLocaleString('pt-BR')} kg</strong>
+          (${lastExercise.sets} × ${lastExercise.weight_kg} kg × ${lastExercise.reps} reps)<br>
+          Volume mínimo alvo: <strong>${minVolume.toLocaleString('pt-BR')} kg</strong>
+        </div>
+      </div>`
+  } catch (err) {
     out.innerHTML = `<div class="calc-no-prev">
-      <p style="font-size:1.1rem;font-weight:600">Nenhum registro para "${exerciseName}"</p>
-      <p style="font-size:.85rem;margin-top:.4rem">Este será o primeiro treino deste exercício!</p>
+      <p style="font-weight:600">Erro ao buscar histórico.</p>
+      <p style="font-size:.85rem;margin-top:.4rem">Verifique sua conexão e tente novamente.</p>
     </div>`
-    return
   }
-
-  const minReps   = Math.ceil(lastExercise.volume / weight) + 1
-  const minVolume = parseFloat((weight * minReps).toFixed(2))
-
-  out.innerHTML = `
-    <div class="calc-result">
-      <div style="font-size:.82rem;opacity:.8;letter-spacing:.1em;text-transform:uppercase">Mínimo de Repetições</div>
-      <div class="calc-reps">${minReps}</div>
-      <div class="calc-sub">reps com ${weight.toLocaleString('pt-BR')} kg</div>
-      <div class="calc-detail">
-        Exercício: <strong>${lastExercise.exercise_name}</strong> — ${fmtDate(lastDate)}<br>
-        Treino anterior: <strong>${parseFloat(lastExercise.volume).toLocaleString('pt-BR')} kg</strong>
-        (${lastExercise.sets} × ${lastExercise.weight_kg} kg × ${lastExercise.reps} reps)<br>
-        Volume mínimo alvo: <strong>${minVolume.toLocaleString('pt-BR')} kg</strong>
-      </div>
-    </div>`
 }
 
 // ─────────────────────────────────────────────

@@ -1,3 +1,15 @@
+-- Adaptar workouts para sessões de treino com múltiplos exercícios
+ALTER TABLE public.workouts ALTER COLUMN weight_kg DROP NOT NULL;
+ALTER TABLE public.workouts ALTER COLUMN reps       DROP NOT NULL;
+ALTER TABLE public.workouts ALTER COLUMN volume     DROP NOT NULL;
+
+ALTER TABLE public.workouts
+  ADD COLUMN IF NOT EXISTS total_volume NUMERIC(10,2) DEFAULT 0;
+
+UPDATE public.workouts
+  SET total_volume = COALESCE(volume, 0)
+  WHERE total_volume = 0 OR total_volume IS NULL;
+
 -- Nova tabela de exercícios por treino
 CREATE TABLE IF NOT EXISTS public.workout_exercises (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
