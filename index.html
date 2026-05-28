@@ -1189,21 +1189,23 @@ async function fetchStudents() {
 }
 
 async function fetchWorkouts(studentId) {
-  const { data } = await sb.from('workouts')
+  const { data, error } = await sb.from('workouts')
     .select('*, workout_exercises(*)')
     .eq('student_id', studentId)
-    .order('date', { ascending: true })
-    .order('created_at', { ascending: true })
+    .order('date', { ascending: false })
+    .order('created_at', { ascending: false })
+  if (error) throw error
   return data || []
 }
 
 async function fetchLastWorkout(studentId) {
-  const { data } = await sb.from('workouts')
+  const { data, error } = await sb.from('workouts')
     .select('*, workout_exercises(*)')
     .eq('student_id', studentId)
     .order('date', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(1).maybeSingle()
+  if (error) throw error
   return data || null
 }
 
@@ -1270,6 +1272,11 @@ async function renderStudents() {
           <div class="stat-value">${withData}</div>
           <div class="stat-label">Com treinos registrados</div>
         </div>
+      </div>
+      <div class="form-group reveal" style="margin:.75rem 0">
+        <input id="student-search" type="text" class="form-control"
+               placeholder="🔍 Buscar aluno pelo nome…"
+               oninput="filterStudents(this.value)">
       </div>
       <div class="students-grid reveal-stagger">
         ${withLast.map((s, i) => {
@@ -1338,6 +1345,14 @@ async function addStudentByEmail() {
   }
 }
 
+function filterStudents(q) {
+  const term = q.trim().toLowerCase()
+  document.querySelectorAll('#students-body .student-card').forEach(card => {
+    const name = card.querySelector('.student-name')?.textContent.toLowerCase() || ''
+    card.style.display = (!term || name.includes(term)) ? '' : 'none'
+  })
+}
+
 // ─────────────────────────────────────────────
 // VIEW: DETALHE DO ALUNO
 // ─────────────────────────────────────────────
@@ -1352,7 +1367,7 @@ async function renderDetail(studentId, studentName, gen = 0) {
     body.innerHTML = `
       <button class="back-btn" onclick="navigateTo('students')">← Voltar para Alunos</button>
       ${historyHTML(workouts, studentName)}`
-    if (workouts.length) initChart('evo-chart', workouts)
+    if (workouts.length) initChart('evo-chart', [...workouts].reverse())
   } catch (err) {
     if (gen && navGen !== gen) return
     body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
@@ -1374,7 +1389,7 @@ async function renderHistory(studentId, gen = 0) {
     const workouts = await fetchWorkouts(studentId)
     if (gen && navGen !== gen) return
     body.innerHTML = historyHTML(workouts, profile.name)
-    if (workouts.length) initChart('evo-chart', workouts)
+    if (workouts.length) initChart('evo-chart', [...workouts].reverse())
   } catch (err) {
     if (gen && navGen !== gen) return
     body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
@@ -1392,11 +1407,10 @@ function historyHTML(ws, name) {
 
   const total  = ws.reduce((s, w) => s + getWorkoutVolume(w), 0)
   const maxVol = Math.max(...ws.map(w => getWorkoutVolume(w)))
-  const last   = ws[ws.length - 1]
+  const last   = ws[0]
 
-  const reversed = [...ws].reverse()
-  const rows = reversed.map((w, i) => {
-    const prev    = reversed[i + 1]
+  const rows = ws.map((w, i) => {
+    const prev    = ws[i + 1]
     const vol     = getWorkoutVolume(w)
     const prevVol = prev ? getWorkoutVolume(prev) : null
 
@@ -1568,7 +1582,10 @@ async function setupWorkoutForm() {
   const sel = document.getElementById('wf-student')
 
   if (profile.role === 'personal') {
-    if (!students.length) await fetchStudents()
+    if (!students.length) {
+      try { await fetchStudents() }
+      catch (err) { toast('Erro ao carregar lista de alunos: ' + err.message, 'error') }
+    }
     grp.style.display = 'block'
     sel.innerHTML = '<option value="">Selecione o aluno…</option>' +
       students.map(s => `<option value="${s.id}">${s.name}</option>`).join('')
@@ -1817,7 +1834,7 @@ async function runCalc() {
     let lastExercise = null
     let lastDate     = null
 
-    for (const w of [...workouts].reverse()) {
+    for (const w of workouts) {
       if (!w.workout_exercises || !w.workout_exercises.length) continue
       const ex = w.workout_exercises.find(e =>
         e.exercise_name.trim().toLowerCase() === exerciseName.toLowerCase()
