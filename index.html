@@ -676,8 +676,8 @@
 
     @keyframes slideIn { from { transform: translateX(110%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
-    /* ---- DELETE BTN ---- */
-    .del-btn {
+    /* ---- ACTION BTNS (edit / delete) ---- */
+    .del-btn, .edit-btn {
       background: none;
       border: none;
       cursor: pointer;
@@ -689,8 +689,60 @@
       transition: opacity var(--transition), background var(--transition);
     }
 
-    .history-main-row:hover .del-btn { opacity: 1; }
-    .del-btn:hover { background: rgba(239,68,68,0.1); }
+    .history-main-row:hover .del-btn,
+    .history-main-row:hover .edit-btn { opacity: 1; }
+    .del-btn:hover  { background: rgba(239,68,68,0.1); }
+    .edit-btn:hover { background: rgba(86,115,255,0.12); }
+
+    /* ---- NEW WORKOUT BADGE / ALERT ---- */
+    .new-badge {
+      display: inline-block;
+      padding: .12rem .45rem;
+      background: var(--success);
+      color: #01040C;
+      font-size: .62rem;
+      font-weight: 800;
+      border-radius: var(--radius-pill);
+      margin-left: .4rem;
+      vertical-align: middle;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .new-workout-alert {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      background: rgba(74,222,128,0.08);
+      border: 1px solid rgba(74,222,128,0.22);
+      border-radius: var(--radius-lg);
+      padding: .875rem 1.25rem;
+      color: var(--success);
+      font-size: .875rem;
+      font-weight: 600;
+      margin-bottom: 1.25rem;
+    }
+
+    /* ---- STUDENT SHEET ---- */
+    .student-sheet-overlay {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,0.65);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      display: flex; justify-content: flex-end;
+    }
+
+    .student-sheet-panel {
+      width: min(640px, 100%);
+      height: 100vh;
+      background: #050810;
+      border-left: 1px solid var(--border-subtle);
+      overflow-y: auto;
+      padding: 1.75rem 1.5rem;
+      animation: sheetSlideIn .32s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    @keyframes sheetSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
 
     /* ---- REVEAL ANIMATIONS ---- */
     .reveal {
@@ -729,7 +781,8 @@
       .section-grid { grid-template-columns: 1fr; }
       .form-grid { grid-template-columns: 1fr; }
       .hamburger { display: flex; }
-      .del-btn { opacity: 1; }
+      .del-btn, .edit-btn { opacity: 1; }
+      .student-sheet-panel { width: 100%; border-left: none; }
     }
 
     @media (max-width: 1100px) { .section-grid { grid-template-columns: 1fr; } }
@@ -927,6 +980,14 @@
   </div>
 </div>
 
+<!-- STUDENT SHEET MODAL -->
+<div id="student-sheet" class="student-sheet-overlay" style="display:none"
+     onclick="if(event.target===this)closeStudentSheet()">
+  <div class="student-sheet-panel">
+    <div id="student-sheet-body"></div>
+  </div>
+</div>
+
 <script>
 // ─────────────────────────────────────────────
 // CONFIG
@@ -934,12 +995,13 @@
 const SUPA_URL = 'https://kdmcaksypdjsnwufkxng.supabase.co'
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtkbWNha3N5cGRqc253dWZreG5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3MTc1NzgsImV4cCI6MjA5NTI5MzU3OH0.K9Gc4qX9bNONk7Yx3QbW_W6KiyvTYhsp67YweOTAr6k'
 
-let sb, me, profile, students = [], chart = null
+let sb, me, profile, students = [], chart = null, sheetChart = null
 let exerciseCounter = 0
 let historyCtx = null
 let navGen = 0        // incremented on every navigation; render fns bail if stale
 let currentView = null, currentViewOpts = {}
 let booted = false    // prevents double-boot when onAuthStateChange fires SIGNED_IN
+let editingWorkoutId = null
 
 // ─────────────────────────────────────────────
 // BOOT
@@ -979,6 +1041,7 @@ async function boot() {
   document.getElementById('auth-section').style.display = 'none'
   document.getElementById('app-section').style.display  = 'block'
   navigateTo(profile.role === 'personal' ? 'students' : 'history')
+  if (profile.role === 'student') checkNewWorkout()
 }
 
 // ─────────────────────────────────────────────
@@ -1283,7 +1346,7 @@ async function renderStudents() {
           const ini = s.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase()
           const vol = s.last ? getWorkoutVolume(s.last) : null
           return `<div class="student-card stagger-item" style="--stagger-index:${i}"
-              onclick="navigateTo('student-detail',{id:'${s.id}',name:'${s.name.replace(/'/g,"\\'")}' })">
+              onclick="openStudentSheet('${s.id}','${s.name.replace(/'/g,"\\'")}')">
             <div class="student-avatar">${ini}</div>
             <div class="student-name">${s.name}</div>
             <div class="student-meta">
@@ -1388,7 +1451,17 @@ async function renderHistory(studentId, gen = 0) {
   try {
     const workouts = await fetchWorkouts(studentId)
     if (gen && navGen !== gen) return
-    body.innerHTML = historyHTML(workouts, profile.name)
+    let bannerHTML = ''
+    if (workouts.length) {
+      const diffHours = (Date.now() - new Date(workouts[0].created_at).getTime()) / 36e5
+      if (diffHours < 24) {
+        bannerHTML = `<div class="new-workout-alert">
+          <span style="font-size:1.2rem">🏋️</span>
+          <span>Novo treino disponível! Seu personal registrou um treino em ${fmtDate(workouts[0].date)}.</span>
+        </div>`
+      }
+    }
+    body.innerHTML = bannerHTML + historyHTML(workouts, profile.name)
     if (workouts.length) initChart('evo-chart', [...workouts].reverse())
   } catch (err) {
     if (gen && navGen !== gen) return
@@ -1399,7 +1472,7 @@ async function renderHistory(studentId, gen = 0) {
   }
 }
 
-function historyHTML(ws, name) {
+function historyHTML(ws, name, canvasId = 'evo-chart') {
   if (!ws.length) return `<div class="empty-state">
     <div class="empty-icon">🏋️</div>
     <p>Nenhum treino registrado ainda para ${name}.<br>
@@ -1451,7 +1524,7 @@ function historyHTML(ws, name) {
         <td class="vol-cell">${vol.toLocaleString('pt-BR')} kg</td>
         <td>${badge}</td>
         <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">▶</span></td>
-        <td style="text-align:center">${profile.role === 'personal' ? `<button class="del-btn" onclick="event.stopPropagation();deleteWorkout('${w.id}')" title="Excluir treino">🗑️</button>` : ''}</td>
+        <td style="text-align:center;white-space:nowrap">${profile.role === 'personal' ? `<button class="edit-btn" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar treino">✏️</button><button class="del-btn" onclick="event.stopPropagation();deleteWorkout('${w.id}')" title="Excluir treino">🗑️</button>` : ''}</td>
       </tr>
       <tr id="wd-${uid}" style="display:none" class="history-detail-row">
         <td colspan="6">
@@ -1496,7 +1569,7 @@ function historyHTML(ws, name) {
     <div class="section-grid reveal">
       <div class="card">
         <div class="card-header"><div class="card-title">📈 Evolução do Volume</div></div>
-        <div class="chart-container"><canvas id="evo-chart"></canvas></div>
+        <div class="chart-container"><canvas id="${canvasId}"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header"><div class="card-title">📋 Histórico de Treinos</div></div>
@@ -1532,6 +1605,178 @@ async function deleteWorkout(workoutId) {
   navGen++  // cancel any in-flight navigation
   if (historyCtx?.isDetail) await renderDetail(historyCtx.studentId, historyCtx.name)
   else await renderHistory(historyCtx?.studentId ?? profile.id)
+}
+
+async function editWorkout(workoutId) {
+  if (profile.role !== 'personal') return
+  const { data: workout, error } = await sb
+    .from('workouts')
+    .select('*, workout_exercises(*)')
+    .eq('id', workoutId)
+    .maybeSingle()
+  if (error || !workout) { toast('Erro ao carregar treino para edição.', 'error'); return }
+
+  await navigateTo('workout')
+
+  editingWorkoutId = workoutId
+  document.querySelector('#view-workout .card-title').textContent    = 'Editar Treino'
+  document.querySelector('#view-workout .section-label').textContent = 'Editar Atividade'
+  document.getElementById('wf-btn').textContent = 'Atualizar Treino'
+
+  if (profile.role === 'personal') {
+    document.getElementById('wf-student').value = workout.student_id
+  }
+  document.getElementById('wf-date').value  = workout.date
+  document.getElementById('wf-notes').value = workout.notes || ''
+
+  const list = document.getElementById('exercise-list')
+  list.innerHTML = ''
+  exerciseCounter = 0
+
+  const exes = (workout.workout_exercises || []).slice().sort((a, b) => (a.id > b.id ? 1 : -1))
+  if (!exes.length) {
+    addExercise()
+  } else {
+    exes.forEach(ex => {
+      addExercise()
+      const row = document.getElementById(`ex-${exerciseCounter}`)
+      row.querySelector('.ex-name').value     = ex.exercise_name
+      row.querySelector('.ex-sets').value     = ex.sets
+      row.querySelector('.ex-weight').value   = ex.weight_kg
+      row.querySelector('.ex-reps').value     = ex.reps
+      row.querySelector('.ex-cadencia').value = ex.cadencia || ''
+      row.querySelector('.ex-descanso').value = ex.tempo_descanso != null ? ex.tempo_descanso : ''
+      refreshExerciseVolume(exerciseCounter)
+    })
+  }
+  refreshTotalVolume()
+}
+
+async function openStudentSheet(studentId, studentName) {
+  historyCtx = { studentId, name: studentName, isDetail: true }
+  const overlay = document.getElementById('student-sheet')
+  const body    = document.getElementById('student-sheet-body')
+  overlay.style.display = 'flex'
+  document.body.style.overflow = 'hidden'
+
+  const ini = studentName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+  const header = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem">
+      <div style="display:flex;align-items:center;gap:.875rem">
+        <div class="student-avatar" style="margin-bottom:0">${ini}</div>
+        <div>
+          <div class="section-label" style="margin-bottom:.25rem">Ficha do Aluno</div>
+          <div style="font-size:1.05rem;font-weight:800;letter-spacing:-0.02em">${studentName}</div>
+        </div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="closeStudentSheet()">✕ Fechar</button>
+    </div>`
+
+  body.innerHTML = header + '<div class="loading"><div class="spinner"></div>Carregando histórico…</div>'
+
+  try {
+    const workouts = await fetchWorkouts(studentId)
+
+    if (!workouts.length) {
+      body.innerHTML = header + `<div class="empty-state"><div class="empty-icon">🏋️</div>
+        <p>Nenhum treino registrado para ${studentName}.</p></div>`
+      return
+    }
+
+    const total = workouts.reduce((s, w) => s + getWorkoutVolume(w), 0)
+
+    const rows = workouts.map(w => {
+      const exes = w.workout_exercises || []
+      const vol  = getWorkoutVolume(w)
+      const uid  = 'sh' + w.id.replace(/-/g, '')
+      const exRows = exes.length
+        ? exes.map(ex => `
+            <tr>
+              <td style="padding-left:1.5rem;font-weight:500;color:var(--text-secondary)">${ex.exercise_name}</td>
+              <td>${ex.sets}×${ex.reps} @ ${ex.weight_kg} kg</td>
+              <td class="vol-cell">${parseFloat(ex.volume).toLocaleString('pt-BR')} kg</td>
+            </tr>`).join('')
+        : `<tr><td colspan="3" style="padding:.75rem 1rem;font-style:italic;color:var(--text-muted)">Sem detalhes disponíveis</td></tr>`
+      const editBtn = profile.role === 'personal'
+        ? `<button class="edit-btn" style="opacity:1" onclick="event.stopPropagation();closeStudentSheet();editWorkout('${w.id}')" title="Editar">✏️</button>`
+        : ''
+      return `
+        <tr class="history-main-row" onclick="toggleWorkoutDetail('${uid}')">
+          <td><strong>${fmtDate(w.date)}</strong></td>
+          <td style="color:var(--text-muted);font-size:.83rem">${exes.length} exercício${exes.length !== 1 ? 's' : ''}</td>
+          <td class="vol-cell">${vol.toLocaleString('pt-BR')} kg</td>
+          <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">▶</span></td>
+          <td style="text-align:center">${editBtn}</td>
+        </tr>
+        <tr id="wd-${uid}" style="display:none" class="history-detail-row">
+          <td colspan="5">
+            <div class="history-detail-inner">
+              <table>
+                <thead><tr>
+                  <th style="padding-left:1.5rem">Exercício</th>
+                  <th>Série × Reps @ Carga</th>
+                  <th>Volume</th>
+                </tr></thead>
+                <tbody>${exRows}</tbody>
+              </table>
+            </div>
+          </td>
+        </tr>`
+    }).join('')
+
+    body.innerHTML = `${header}
+      <div class="stats-grid" style="margin-bottom:1.25rem">
+        <div class="stat-card" style="padding:1rem 1.25rem">
+          <div class="stat-value" style="font-size:1.6rem">${workouts.length}</div>
+          <div class="stat-label">Treinos</div>
+        </div>
+        <div class="stat-card" style="padding:1rem 1.25rem;border-left-color:var(--success)">
+          <div class="stat-value" style="font-size:1.3rem">${total.toLocaleString('pt-BR')} kg</div>
+          <div class="stat-label">Volume acumulado</div>
+        </div>
+      </div>
+      <div class="section-label" style="margin-bottom:.75rem">Histórico de Treinos</div>
+      <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:.875rem">Clique em um treino para ver os exercícios.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Data</th><th>Exercícios</th><th>Volume Total</th><th></th><th></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`
+  } catch (err) {
+    body.innerHTML = `${header}<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <p>Erro ao carregar histórico.</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
+              onclick="openStudentSheet('${studentId}','${studentName.replace(/'/g, "\\'")}')">Tentar novamente</button></div>`
+  }
+}
+
+function closeStudentSheet() {
+  document.getElementById('student-sheet').style.display = 'none'
+  document.body.style.overflow = ''
+  if (sheetChart) { sheetChart.destroy(); sheetChart = null }
+}
+
+async function checkNewWorkout() {
+  try {
+    const { data, error } = await sb
+      .from('workouts')
+      .select('id, created_at')
+      .eq('student_id', profile.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (error || !data) return
+    const diffHours = (Date.now() - new Date(data.created_at).getTime()) / 36e5
+    if (diffHours < 24) {
+      const navEl = document.getElementById('nav-history')
+      if (navEl && !navEl.querySelector('.new-badge')) {
+        navEl.insertAdjacentHTML('beforeend', '<span class="new-badge">Novo</span>')
+      }
+    }
+  } catch {}
 }
 
 // ─────────────────────────────────────────────
@@ -1578,6 +1823,11 @@ function initChart(canvasId, ws) {
 // VIEW: NOVO TREINO — formulário dinâmico
 // ─────────────────────────────────────────────
 async function setupWorkoutForm() {
+  editingWorkoutId = null
+  document.querySelector('#view-workout .card-title').textContent    = 'Novo Treino'
+  document.querySelector('#view-workout .section-label').textContent = 'Registrar Atividade'
+  document.getElementById('wf-btn').textContent = 'Salvar Treino'
+
   const grp = document.getElementById('wf-student-group')
   const sel = document.getElementById('wf-student')
 
@@ -1756,30 +2006,53 @@ async function saveWorkout(e) {
   }
 
   try {
-    // Insert workout session
-    const { data: workout, error: wErr } = await sb.from('workouts').insert({
-      student_id:   studentId,
-      date,
-      total_volume: parseFloat(totalVolume.toFixed(2)),
-      notes:        notes || null,
-      created_by:   me.id
-    }).select().maybeSingle()
-    if (wErr) throw wErr
-    if (!workout) throw new Error('Não foi possível obter o ID do treino salvo.')
+    if (editingWorkoutId) {
+      const { error: wErr } = await sb.from('workouts').update({
+        student_id:   studentId,
+        date,
+        total_volume: parseFloat(totalVolume.toFixed(2)),
+        notes:        notes || null
+      }).eq('id', editingWorkoutId)
+      if (wErr) throw wErr
 
-    // Insert all exercises linked to this session
-    const { error: exErr } = await sb.from('workout_exercises').insert(
-      exercises.map(ex => ({ ...ex, workout_id: workout.id }))
-    )
-    if (exErr) throw exErr
+      const { error: delErr } = await sb.from('workout_exercises').delete().eq('workout_id', editingWorkoutId)
+      if (delErr) throw delErr
 
-    toast('Treino registrado com sucesso!', 'success')
-    await setupWorkoutForm()
+      const { error: exErr } = await sb.from('workout_exercises').insert(
+        exercises.map(ex => ({ ...ex, workout_id: editingWorkoutId }))
+      )
+      if (exErr) throw exErr
+
+      toast('Treino atualizado com sucesso!', 'success')
+      const ctx = historyCtx
+      editingWorkoutId = null
+      if (ctx?.isDetail) navigateTo('student-detail', { id: ctx.studentId, name: ctx.name })
+      else navigateTo('students')
+    } else {
+      const { data: workout, error: wErr } = await sb.from('workouts').insert({
+        student_id:   studentId,
+        date,
+        total_volume: parseFloat(totalVolume.toFixed(2)),
+        notes:        notes || null,
+        created_by:   me.id
+      }).select().maybeSingle()
+      if (wErr) throw wErr
+      if (!workout) throw new Error('Não foi possível obter o ID do treino salvo.')
+
+      const { error: exErr } = await sb.from('workout_exercises').insert(
+        exercises.map(ex => ({ ...ex, workout_id: workout.id }))
+      )
+      if (exErr) throw exErr
+
+      toast('Treino registrado com sucesso!', 'success')
+      await setupWorkoutForm()
+    }
   } catch (err) {
     toast('Erro ao salvar: ' + err.message, 'error')
   }
 
-  btn.textContent = 'Salvar Treino'; btn.disabled = false
+  btn.textContent = editingWorkoutId ? 'Atualizar Treino' : 'Salvar Treino'
+  btn.disabled = false
 }
 
 // ─────────────────────────────────────────────
