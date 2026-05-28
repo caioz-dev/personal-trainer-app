@@ -789,6 +789,140 @@
       .student-sheet-panel { width: 100%; border-left: none; }
     }
 
+    /* ---- WORKOUT TIMER ---- */
+    .workout-start-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      background: rgba(74,222,128,0.05);
+      border: 1px solid rgba(74,222,128,0.18);
+      border-radius: var(--radius-xl);
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .btn-start-workout {
+      background: rgba(74,222,128,0.1);
+      color: var(--success);
+      border: 1px solid rgba(74,222,128,0.28);
+      border-radius: var(--radius-pill);
+      padding: .65rem 1.5rem;
+      font-size: .875rem;
+      font-weight: 700;
+      font-family: 'Montserrat', system-ui, sans-serif;
+      cursor: pointer;
+      transition: all var(--transition);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .btn-start-workout:hover:not(:disabled) { background: rgba(74,222,128,0.2); border-color: rgba(74,222,128,0.45); }
+    .btn-start-workout:disabled { opacity: .5; cursor: not-allowed; }
+
+    .workout-timer-widget {
+      position: fixed;
+      bottom: 5.5rem;
+      right: 1.5rem;
+      z-index: 500;
+      background: rgba(8,12,26,0.98);
+      border: 1px solid rgba(74,222,128,0.28);
+      border-left: 3px solid var(--success);
+      border-radius: var(--radius-xl);
+      padding: 1.1rem 1.25rem;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .625rem;
+      min-width: 210px;
+      animation: slideIn .3s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .timer-header {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      font-size: .63rem;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--success);
+    }
+
+    .timer-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--success);
+      flex-shrink: 0;
+      animation: timerPulse 1s ease-in-out infinite;
+    }
+
+    @keyframes timerPulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: .3; transform: scale(.6); }
+    }
+
+    .timer-display {
+      font-size: 2.6rem;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      color: var(--text-primary);
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .btn-finish-workout {
+      width: 100%;
+      background: rgba(239,68,68,0.1);
+      color: var(--danger);
+      border: 1px solid rgba(239,68,68,0.28);
+      border-radius: var(--radius-pill);
+      padding: .5rem .875rem;
+      font-size: .8rem;
+      font-weight: 700;
+      font-family: 'Montserrat', system-ui, sans-serif;
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+
+    .btn-finish-workout:hover { background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.45); }
+
+    .timer-modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9500;
+      background: rgba(0,0,0,0.72);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .timer-modal-card {
+      background: rgba(8,12,26,0.99);
+      border: 1px solid rgba(74,222,128,0.22);
+      border-radius: var(--radius-xl);
+      padding: 2.5rem 2rem;
+      text-align: center;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.75);
+      max-width: 360px;
+      width: calc(100% - 2rem);
+      animation: scaleIn .3s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    @keyframes scaleIn {
+      from { transform: scale(.88); opacity: 0; }
+      to   { transform: scale(1);  opacity: 1; }
+    }
+
+    .timer-modal-icon  { font-size: 3rem; margin-bottom: .75rem; line-height: 1; }
+    .timer-modal-title { font-size: 1.2rem; font-weight: 800; color: var(--text-primary); margin-bottom: .35rem; letter-spacing: -0.02em; }
+    .timer-modal-sub   { font-size: .82rem; color: var(--text-muted); margin-bottom: 1.25rem; }
+    .timer-modal-time  { font-size: 3.8rem; font-weight: 900; color: var(--success); letter-spacing: -0.04em; line-height: 1; margin-bottom: 1.75rem; font-variant-numeric: tabular-nums; }
+
     @media (max-width: 480px) {
       .auth-card { padding: 1.5rem 1.25rem; }
       .stats-grid { grid-template-columns: 1fr; }
@@ -808,6 +942,10 @@
       .section-grid { gap: 1rem; }
       .prog-controls { flex-direction: column; align-items: stretch; }
       .prog-controls select { width: 100%; }
+      .workout-timer-widget { right: .75rem; bottom: 4.5rem; min-width: unset; width: calc(100vw - 1.5rem); }
+      .workout-timer-widget .timer-display { font-size: 2rem; }
+      .workout-start-card { flex-direction: column; align-items: flex-start; }
+      .btn-start-workout { width: 100%; justify-content: center; }
     }
   </style>
 </head>
@@ -1016,6 +1154,27 @@
   </div>
 </div>
 
+<!-- WORKOUT TIMER WIDGET (floating, persists across navigation) -->
+<div id="workout-timer-widget" class="workout-timer-widget" style="display:none">
+  <div class="timer-header">
+    <span class="timer-dot"></span>Treino em andamento
+  </div>
+  <div class="timer-display" id="timer-display">00:00:00</div>
+  <button class="btn-finish-workout" onclick="stopWorkoutTimer()">■ Finalizar Treino</button>
+</div>
+
+<!-- TIMER COMPLETION MODAL -->
+<div id="timer-modal-overlay" class="timer-modal-overlay" style="display:none">
+  <div class="timer-modal-card">
+    <div class="timer-modal-icon">🏆</div>
+    <div class="timer-modal-title">Treino Concluído!</div>
+    <div class="timer-modal-sub">Tempo total de treino</div>
+    <div class="timer-modal-time" id="timer-modal-time">00:00:00</div>
+    <button class="btn btn-success btn-block" style="margin-top:0"
+            onclick="dismissTimerModal()">Fechar</button>
+  </div>
+</div>
+
 <script>
 // ─────────────────────────────────────────────
 // CONFIG
@@ -1030,6 +1189,8 @@ let navGen = 0        // incremented on every navigation; render fns bail if sta
 let currentView = null, currentViewOpts = {}
 let booted = false    // prevents double-boot when onAuthStateChange fires SIGNED_IN
 let editingWorkoutId = null
+let timerInterval = null
+let timerSeconds  = 0
 
 // ─────────────────────────────────────────────
 // BOOT
@@ -1491,7 +1652,18 @@ async function renderHistory(studentId, gen = 0) {
         </div>`
       }
     }
-    body.innerHTML = bannerHTML + historyHTML(workouts, profile.name)
+    const timerCard = `
+      <div class="workout-start-card reveal">
+        <div>
+          <div style="font-size:.875rem;font-weight:700;color:var(--text-primary);margin-bottom:.25rem">Pronto para treinar?</div>
+          <div style="font-size:.78rem;color:var(--text-muted)">Inicie o cronômetro para acompanhar a duração do seu treino.</div>
+        </div>
+        <button id="timer-start-btn" class="btn-start-workout"
+                onclick="startWorkoutTimer()" ${timerInterval ? 'disabled' : ''}>
+          ${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar Treino'}
+        </button>
+      </div>`
+    body.innerHTML = bannerHTML + timerCard + historyHTML(workouts, profile.name)
     if (workouts.length) initChart('evo-chart', [...workouts].reverse())
   } catch (err) {
     if (gen && navGen !== gen) return
@@ -2361,6 +2533,57 @@ function toast(msg, type = 'info') {
     el.style.transform  = 'translateX(110%)'
     setTimeout(() => el.remove(), 300)
   }, 3500)
+}
+
+// ─────────────────────────────────────────────
+// WORKOUT TIMER
+// ─────────────────────────────────────────────
+function startWorkoutTimer() {
+  if (timerInterval) return
+  timerSeconds = 0
+  updateTimerDisplay()
+
+  const startBtn = document.getElementById('timer-start-btn')
+  if (startBtn) { startBtn.disabled = true; startBtn.textContent = '⏱ Em andamento…' }
+
+  document.getElementById('workout-timer-widget').style.display = 'flex'
+
+  timerInterval = setInterval(() => {
+    timerSeconds++
+    updateTimerDisplay()
+  }, 1000)
+}
+
+function updateTimerDisplay() {
+  const h   = Math.floor(timerSeconds / 3600)
+  const m   = Math.floor((timerSeconds % 3600) / 60)
+  const s   = timerSeconds % 60
+  const fmt = [h, m, s].map(v => String(v).padStart(2, '0')).join(':')
+  const el  = document.getElementById('timer-display')
+  if (el) el.textContent = fmt
+}
+
+function stopWorkoutTimer() {
+  if (!timerInterval) return
+  clearInterval(timerInterval)
+  timerInterval = null
+
+  const finalTime = document.getElementById('timer-display')?.textContent || '00:00:00'
+
+  document.getElementById('workout-timer-widget').style.display = 'none'
+
+  const startBtn = document.getElementById('timer-start-btn')
+  if (startBtn) { startBtn.disabled = false; startBtn.textContent = '▶ Iniciar Treino' }
+
+  document.getElementById('timer-modal-time').textContent = finalTime
+  document.getElementById('timer-modal-overlay').style.display = 'flex'
+}
+
+function dismissTimerModal() {
+  document.getElementById('timer-modal-overlay').style.display = 'none'
+  timerSeconds = 0
+  const el = document.getElementById('timer-display')
+  if (el) el.textContent = '00:00:00'
 }
 </script>
 </body>
