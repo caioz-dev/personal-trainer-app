@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR">2
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -771,6 +771,10 @@
     .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 99; backdrop-filter: blur(4px); }
     .overlay.show { display: block; }
 
+    .link-form-row { display: flex; gap: .75rem; align-items: flex-end; }
+
+    @media (max-width: 1100px) { .section-grid { grid-template-columns: 1fr; } }
+
     @media (max-width: 768px) {
       .sidebar { transform: translateX(-100%); }
       .sidebar.open { transform: translateX(0); }
@@ -785,7 +789,26 @@
       .student-sheet-panel { width: 100%; border-left: none; }
     }
 
-    @media (max-width: 1100px) { .section-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 480px) {
+      .auth-card { padding: 1.5rem 1.25rem; }
+      .stats-grid { grid-template-columns: 1fr; }
+      .students-grid { grid-template-columns: 1fr; }
+      .content-body { padding: .875rem; }
+      .content-header { padding: .75rem .875rem; }
+      .content-header h1 { font-size: .875rem; }
+      .card { padding: 1.1rem; }
+      .stat-value { font-size: 1.8rem; }
+      .toast-wrap { left: .75rem; right: .75rem; bottom: 1rem; }
+      .toast { min-width: unset; width: 100%; }
+      .link-form-row { flex-direction: column; align-items: stretch; }
+      .link-form-row .btn { width: 100%; justify-content: center; }
+      .total-vol-bar { flex-direction: column; gap: .5rem; text-align: center; align-items: center; }
+      .add-ex-bar { flex-wrap: wrap; gap: .5rem; }
+      .student-sheet-panel { padding: 1.25rem 1rem; }
+      .section-grid { gap: 1rem; }
+      .prog-controls { flex-direction: column; align-items: stretch; }
+      .prog-controls select { width: 100%; }
+    }
   </style>
 </head>
 <body>
@@ -975,6 +998,11 @@
           <div id="history-body"></div>
         </div>
 
+        <!-- VIEW: Dashboard de Progresso -->
+        <div id="view-progress" class="view" style="display:none">
+          <div id="progress-body"></div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -995,7 +1023,7 @@
 const SUPA_URL = 'https://kdmcaksypdjsnwufkxng.supabase.co'
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtkbWNha3N5cGRqc253dWZreG5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3MTc1NzgsImV4cCI6MjA5NTI5MzU3OH0.K9Gc4qX9bNONk7Yx3QbW_W6KiyvTYhsp67YweOTAr6k'
 
-let sb, me, profile, students = [], chart = null, sheetChart = null
+let sb, me, profile, students = [], chart = null, sheetChart = null, progressChart = null
 let exerciseCounter = 0
 let historyCtx = null
 let navGen = 0        // incremented on every navigation; render fns bail if stale
@@ -1157,8 +1185,8 @@ function buildSidebar() {
   badge.className   = `role-badge ${isP ? 'role-personal' : 'role-student'}`
 
   const items = isP
-    ? [['students','👥','Alunos'],['workout','➕','Novo Treino'],['calculator','🧮','Calculadora']]
-    : [['history','📊','Meu Histórico'],['calculator','🧮','Calculadora']]
+    ? [['students','👥','Alunos'],['workout','➕','Novo Treino'],['calculator','🧮','Calculadora'],['progress','📈','Progresso']]
+    : [['history','📊','Meu Histórico'],['calculator','🧮','Calculadora'],['progress','📈','Progresso']]
 
   document.getElementById('nav-list').innerHTML = items.map(([id, icon, label]) => `
     <li class="nav-item">
@@ -1182,7 +1210,8 @@ function closeSidebar() {
 // ─────────────────────────────────────────────
 const VIEW_TITLES = {
   students: 'Alunos', workout: 'Novo Treino',
-  calculator: 'Calculadora', history: 'Meu Histórico'
+  calculator: 'Calculadora', history: 'Meu Histórico',
+  progress: 'Dashboard de Progresso'
 }
 
 async function navigateTo(view, opts = {}) {
@@ -1207,6 +1236,7 @@ async function navigateTo(view, opts = {}) {
     else if (view === 'workout')        await setupWorkoutForm()
     else if (view === 'calculator')     await setupCalc()
     else if (view === 'history')        await renderHistory(profile.id, gen)
+    else if (view === 'progress')       await renderProgress()
   } catch { /* each render fn already handles its own errors */ }
 
   // Activate reveal animations on newly rendered content
@@ -1300,7 +1330,7 @@ async function renderStudents() {
         <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">
           Insira o e-mail de um aluno já cadastrado para adicioná-lo à sua lista.
         </p>
-        <div style="display:flex;gap:.75rem;align-items:flex-end">
+        <div class="link-form-row">
           <div class="form-group" style="flex:1;margin-bottom:0">
             <label>E-mail do aluno</label>
             <input id="link-student-email" type="email" class="form-control" placeholder="aluno@email.com"
@@ -1814,6 +1844,166 @@ function initChart(canvasId, ws) {
         x: { grid: { color: 'rgba(144,158,186,0.06)' }, ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)', maxRotation: 45 } },
         y: { grid: { color: 'rgba(144,158,186,0.06)' }, ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)',
                callback: v => v.toLocaleString('pt-BR') + ' kg' } }
+      }
+    }
+  })
+}
+
+// ─────────────────────────────────────────────
+// VIEW: DASHBOARD DE PROGRESSO
+// ─────────────────────────────────────────────
+async function renderProgress(studentIdOverride) {
+  const body = document.getElementById('progress-body')
+  body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando…</div>'
+
+  try {
+    let studentId
+    let studentSelectorHTML = ''
+
+    if (profile.role === 'personal') {
+      if (!students.length) await fetchStudents()
+      if (!students.length) {
+        body.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div>
+          <p>Nenhum aluno vinculado ainda.</p></div>`
+        return
+      }
+      studentId = studentIdOverride || students[0]?.id || null
+      studentSelectorHTML = `
+        <div class="form-group" style="max-width:300px;margin-bottom:1.5rem">
+          <label>Aluno</label>
+          <select class="form-control" id="prog-student" onchange="renderProgress(this.value)">
+            ${students.map(s => `<option value="${s.id}"${s.id === studentId ? ' selected' : ''}>${s.name}</option>`).join('')}
+          </select>
+        </div>`
+    } else {
+      studentId = profile.id
+    }
+
+    if (!studentId) {
+      body.innerHTML = studentSelectorHTML + `<div class="empty-state"><div class="empty-icon">👥</div>
+        <p>Selecione um aluno.</p></div>`
+      return
+    }
+
+    const workouts = await fetchWorkouts(studentId)
+    window._progressWorkouts = workouts
+
+    if (!workouts.length) {
+      body.innerHTML = studentSelectorHTML + `<div class="empty-state"><div class="empty-icon">🏋️</div>
+        <p>Nenhum treino registrado ainda para gerar o gráfico.</p></div>`
+      return
+    }
+
+    const exerciseNames = [...new Set(
+      workouts.flatMap(w => (w.workout_exercises || []).map(ex => ex.exercise_name))
+    )].sort()
+
+    if (!exerciseNames.length) {
+      body.innerHTML = studentSelectorHTML + `<div class="empty-state"><div class="empty-icon">🏋️</div>
+        <p>Nenhum exercício encontrado nos treinos registrados.</p></div>`
+      return
+    }
+
+    body.innerHTML = `
+      ${studentSelectorHTML}
+      <div class="card reveal">
+        <div class="card-header" style="flex-wrap:wrap;gap:.75rem">
+          <div>
+            <div class="section-label">Evolução por Exercício</div>
+            <div class="card-title">📈 Progressão de Carga</div>
+          </div>
+          <select class="form-control" id="prog-metric"
+                  style="width:auto;font-size:.82rem;padding:.4rem .75rem"
+                  onchange="updateProgressChart()">
+            <option value="weight">Carga máx (kg)</option>
+            <option value="volume">Volume total (kg)</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:.75rem 0 1.25rem;max-width:400px">
+          <label>Exercício</label>
+          <select class="form-control" id="prog-exercise" onchange="updateProgressChart()">
+            ${exerciseNames.map(n => `<option value="${n}">${n}</option>`).join('')}
+          </select>
+        </div>
+        <div class="chart-container" style="height:320px"><canvas id="progress-chart"></canvas></div>
+        <p id="prog-no-data" style="display:none;text-align:center;color:var(--text-muted);
+           font-size:.85rem;margin-top:1rem;padding-bottom:.5rem">
+          Nenhum dado encontrado para o exercício selecionado.
+        </p>
+      </div>`
+
+    observeRevealElements()
+    updateProgressChart()
+  } catch (err) {
+    console.error('[renderProgress]', err)
+    document.getElementById('progress-body').innerHTML =
+      `<div class="empty-state"><div class="empty-icon">⚠️</div>
+        <p>Erro ao carregar dados de progresso.</p>
+        <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
+                onclick="renderProgress()">Tentar novamente</button></div>`
+  }
+}
+
+function updateProgressChart() {
+  const exerciseName = document.getElementById('prog-exercise')?.value
+  const metric       = document.getElementById('prog-metric')?.value || 'weight'
+  const workouts     = window._progressWorkouts || []
+
+  const sorted = [...workouts].sort((a, b) => a.date.localeCompare(b.date))
+  const points  = []
+
+  for (const w of sorted) {
+    const exes = (w.workout_exercises || []).filter(ex => ex.exercise_name === exerciseName)
+    if (!exes.length) continue
+    const value = metric === 'weight'
+      ? Math.max(...exes.map(ex => parseFloat(ex.weight_kg) || 0))
+      : exes.reduce((s, ex) => s + (parseFloat(ex.volume) || 0), 0)
+    points.push({ date: w.date, value })
+  }
+
+  const noData = document.getElementById('prog-no-data')
+  const ctx    = document.getElementById('progress-chart')
+  if (!ctx) return
+
+  if (progressChart) { progressChart.destroy(); progressChart = null }
+
+  if (!points.length) {
+    if (noData) noData.style.display = 'block'
+    return
+  }
+  if (noData) noData.style.display = 'none'
+
+  const label = metric === 'weight' ? 'Carga máx (kg)' : 'Volume (kg)'
+
+  progressChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels:   points.map(p => fmtDate(p.date)),
+      datasets: [{
+        label:               label,
+        data:                points.map(p => p.value),
+        borderColor:         '#4ADE80',
+        backgroundColor:     'rgba(74,222,128,0.07)',
+        borderWidth:         2,
+        pointBackgroundColor:'#4ADE80',
+        pointRadius:         5,
+        pointHoverRadius:    8,
+        fill:                true,
+        tension:             0.3
+      }]
+    },
+    options: {
+      responsive:          true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => ` ${c.parsed.y.toLocaleString('pt-BR')} kg` } }
+      },
+      scales: {
+        x: { grid: { color: 'rgba(144,158,186,0.06)' }, ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)', maxRotation: 45 } },
+        y: { grid: { color: 'rgba(144,158,186,0.06)' }, beginAtZero: false,
+             ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)',
+                      callback: v => v.toLocaleString('pt-BR') + ' kg' } }
       }
     }
   })
