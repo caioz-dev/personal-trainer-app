@@ -947,6 +947,13 @@ let booted = false    // prevents double-boot when onAuthStateChange fires SIGNE
 window.addEventListener('DOMContentLoaded', async () => {
   sb = window.supabase.createClient(SUPA_URL, SUPA_KEY)
 
+  // Check for new columns; log migration SQL if missing
+  const { error: colCheck } = await sb.from('workout_exercises').select('cadencia, tempo_descanso').limit(0)
+  if (colCheck) {
+    console.warn('⚠️ AÇÃO NECESSÁRIA: Execute o SQL abaixo no painel do Supabase (SQL Editor) antes de continuar:')
+    console.warn('ALTER TABLE workout_exercises\n  ADD COLUMN IF NOT EXISTS cadencia text,\n  ADD COLUMN IF NOT EXISTS tempo_descanso integer;')
+  }
+
   const { data: { session } } = await sb.auth.getSession()
   if (session) { me = session.user; await boot() }
   else showAuthSection()
@@ -1088,7 +1095,7 @@ function buildSidebar() {
 
   const items = isP
     ? [['students','👥','Alunos'],['workout','➕','Novo Treino'],['calculator','🧮','Calculadora']]
-    : [['history','📊','Meu Histórico'],['workout','➕','Novo Treino'],['calculator','🧮','Calculadora']]
+    : [['history','📊','Meu Histórico'],['calculator','🧮','Calculadora']]
 
   document.getElementById('nav-list').innerHTML = items.map(([id, icon, label]) => `
     <li class="nav-item">
@@ -1116,6 +1123,7 @@ const VIEW_TITLES = {
 }
 
 async function navigateTo(view, opts = {}) {
+  if (view === 'workout' && profile?.role !== 'personal') return
   currentView = view; currentViewOpts = opts
   const gen = ++navGen   // any in-flight render with a smaller gen will abort
 
@@ -1337,9 +1345,11 @@ function historyHTML(ws, name) {
             <td style="padding-left:2rem;font-weight:500;color:var(--text-secondary)">${ex.exercise_name}</td>
             <td>${ex.sets} série${ex.sets > 1 ? 's' : ''}</td>
             <td>${ex.weight_kg} kg × ${ex.reps} reps</td>
+            <td>${ex.cadencia || '—'}</td>
+            <td>${ex.tempo_descanso != null ? ex.tempo_descanso + 's' : '—'}</td>
             <td class="vol-cell">${parseFloat(ex.volume).toLocaleString('pt-BR')} kg</td>
           </tr>`).join('')
-      : `<tr><td colspan="4" style="padding:.75rem 1rem 1rem;font-style:italic;color:var(--text-muted)">
+      : `<tr><td colspan="6" style="padding:.75rem 1rem 1rem;font-style:italic;color:var(--text-muted)">
             Treino no formato legado — sem detalhes por exercício
          </td></tr>`
 
@@ -1352,7 +1362,7 @@ function historyHTML(ws, name) {
         <td class="vol-cell">${vol.toLocaleString('pt-BR')} kg</td>
         <td>${badge}</td>
         <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">▶</span></td>
-        <td style="text-align:center"><button class="del-btn" onclick="event.stopPropagation();deleteWorkout('${w.id}')" title="Excluir treino">🗑️</button></td>
+        <td style="text-align:center">${profile.role === 'personal' ? `<button class="del-btn" onclick="event.stopPropagation();deleteWorkout('${w.id}')" title="Excluir treino">🗑️</button>` : ''}</td>
       </tr>
       <tr id="wd-${uid}" style="display:none" class="history-detail-row">
         <td colspan="6">
@@ -1362,6 +1372,8 @@ function historyHTML(ws, name) {
                 <th style="padding-left:2rem">Exercício</th>
                 <th>Séries</th>
                 <th>Carga × Reps</th>
+                <th>Cadência</th>
+                <th>Descanso</th>
                 <th>Volume</th>
               </tr></thead>
               <tbody>${exDetailRows}</tbody>
@@ -1539,6 +1551,14 @@ function addExercise() {
                oninput="refreshExerciseVolume(${id})">
       </div>
       <div class="form-group">
+        <label>Cadência (opcional)</label>
+        <input type="text" class="form-control ex-cadencia" placeholder="Ex: 2-1-2">
+      </div>
+      <div class="form-group">
+        <label>Descanso — seg (opcional)</label>
+        <input type="number" class="form-control ex-descanso" placeholder="60" min="0">
+      </div>
+      <div class="form-group">
         <label>Volume</label>
         <div class="exercise-vol-display" id="ex-vol-${id}">—</div>
       </div>
@@ -1629,9 +1649,12 @@ async function saveWorkout(e) {
     if (!exName || !sets || !weight || !reps || sets < 1 || reps < 1 || weight <= 0) {
       allValid = false; return
     }
-    const volume = parseFloat((sets * weight * reps).toFixed(2))
+    const volume   = parseFloat((sets * weight * reps).toFixed(2))
+    const cadencia = row.querySelector('.ex-cadencia').value.trim() || null
+    const descanso = row.querySelector('.ex-descanso').value
     totalVolume += volume
-    exercises.push({ exercise_name: exName, sets, weight_kg: weight, reps, volume })
+    exercises.push({ exercise_name: exName, sets, weight_kg: weight, reps, volume,
+      cadencia: cadencia || null, tempo_descanso: descanso ? parseInt(descanso) : null })
   })
 
   if (!allValid || exercises.length === 0) {
