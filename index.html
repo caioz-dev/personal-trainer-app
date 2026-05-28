@@ -449,13 +449,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (event === 'SIGNED_OUT')            { me = null; profile = null; students = []; showAuthSection() }
   })
 
-  document.addEventListener('visibilitychange', async () => {
-    if (document.visibilityState !== 'visible') return
-    if (document.getElementById('app-section').style.display === 'none') return
-    const { data: { session } } = await sb.auth.getSession()
-    if (!session) { me = null; profile = null; students = []; showAuthSection(); return }
-    if (currentView) await navigateTo(currentView, currentViewOpts)
-  })
 })
 
 async function boot() {
