@@ -670,26 +670,39 @@ function getWorkoutVolume(w) {
 // VIEW: ALUNOS
 // ─────────────────────────────────────────────
 async function renderStudents(gen = 0) {
-  const body = document.getElementById('students-body')
-  body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando alunos…</div>'
   console.log('[renderStudents] início, gen=' + gen + ', navGen=' + navGen)
 
   // Só cancela se navGen avançou E o usuário já saiu da tela de alunos.
-  // Navegações redundantes para 'students' (ex: duplo boot do Supabase auth)
-  // não devem abortar o render que já está em andamento.
   function isStale() {
     return gen && navGen !== gen && currentView !== 'students'
   }
+
+  // Re-busca o elemento a cada uso para garantir que a referência é válida
+  // mesmo que o DOM tenha sido alterado por outra navegação concorrente.
+  function getBody() {
+    const el = document.getElementById('students-body')
+    if (!el) console.warn('[renderStudents] students-body não encontrado no DOM, gen=' + gen)
+    return el
+  }
+
+  let body = getBody()
+  if (!body) return
+  body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando alunos…</div>'
+  console.log('[renderStudents] loading state definido')
 
   try {
     await fetchStudents()
     console.log('[renderStudents] fetchStudents ok, total=' + students.length + ', navGen=' + navGen)
     if (isStale()) { console.log('[renderStudents] guard cancelou após fetchStudents'); return }
 
+    body = getBody()
+    if (!body) return
+
     if (!students.length) {
       body.innerHTML = `<div class="empty-state"><div class="empty-icon">👤</div>
         <p>Nenhum aluno cadastrado ainda.</p>
         <p style="font-size:.82rem;margin-top:.5rem">Compartilhe o link de cadastro com seus alunos.</p></div>`
+      console.log('[renderStudents] estado vazio definido')
       return
     }
 
@@ -698,6 +711,10 @@ async function renderStudents(gen = 0) {
     })))
     console.log('[renderStudents] fetchLastWorkout ok para ' + withLast.length + ' alunos, navGen=' + navGen)
     if (isStale()) { console.log('[renderStudents] guard cancelou após fetchLastWorkout'); return }
+
+    // Re-busca o elemento após todos os awaits antes de escrever o resultado final
+    body = getBody()
+    if (!body) return
 
     const withData = withLast.filter(s => s.last).length
     body.innerHTML = `
@@ -722,10 +739,13 @@ async function renderStudents(gen = 0) {
           </div>`
         }).join('')}
       </div>`
+    console.log('[renderStudents] innerHTML atribuído, filhos=' + body.children.length + ', gen=' + gen)
     console.log('[renderStudents] renderizado com sucesso')
   } catch (err) {
     console.error('[renderStudents] erro capturado:', err)
     if (isStale()) { console.log('[renderStudents] guard cancelou no catch'); return }
+    body = getBody()
+    if (!body) return
     body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
       <p>Erro ao carregar alunos.</p>
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
