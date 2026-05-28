@@ -433,6 +433,7 @@ let exerciseCounter = 0
 let historyCtx = null
 let navGen = 0        // incremented on every navigation; render fns bail if stale
 let currentView = null, currentViewOpts = {}
+let booted = false    // prevents double-boot when onAuthStateChange fires SIGNED_IN
 
 // ─────────────────────────────────────────────
 // BOOT
@@ -446,14 +447,16 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   sb.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN'  && session) { me = session.user; await boot() }
-    if (event === 'SIGNED_OUT')            { me = null; profile = null; students = []; showAuthSection() }
+    if (event === 'SIGNED_OUT')            { booted = false; me = null; profile = null; students = []; showAuthSection() }
   })
 
 })
 
 async function boot() {
+  if (booted) return
+  booted = true
   const { data: { session } } = await sb.auth.getSession()
-  if (!session) { showAuthSection(); return }
+  if (!session) { booted = false; showAuthSection(); return }
   me = session.user
 
   const { data, error } = await sb.from('profiles').select('*').eq('id', me.id).maybeSingle()
@@ -636,7 +639,8 @@ async function navigateTo(view, opts = {}) {
 // DATA
 // ─────────────────────────────────────────────
 async function fetchStudents() {
-  const { data } = await sb.from('profiles').select('*').eq('role','student').order('name')
+  const { data, error } = await sb.from('profiles').select('*').eq('role','student').order('name')
+  if (error) throw error
   students = data || []
 }
 
@@ -799,7 +803,7 @@ function historyHTML(ws, name) {
     const exDetailRows = exCount > 0
       ? exes.map(ex => `
           <tr>
-            <td style="padding-left:2rem;font-weight:500;color:var(--text)">${ex.name}</td>
+            <td style="padding-left:2rem;font-weight:500;color:var(--text)">${ex.exercise_name}</td>
             <td>${ex.sets} série${ex.sets > 1 ? 's' : ''}</td>
             <td>${ex.weight_kg} kg × ${ex.reps} reps</td>
             <td class="vol-cell">${parseFloat(ex.volume).toLocaleString('pt-BR')} kg</td>
@@ -1095,7 +1099,7 @@ async function saveWorkout(e) {
     }
     const volume = parseFloat((sets * weight * reps).toFixed(2))
     totalVolume += volume
-    exercises.push({ name: exName, sets, weight_kg: weight, reps, volume })
+    exercises.push({ exercise_name: exName, sets, weight_kg: weight, reps, volume })
   })
 
   if (!allValid || exercises.length === 0) {
@@ -1186,7 +1190,7 @@ async function runCalc() {
     for (const w of [...workouts].reverse()) {
       if (!w.workout_exercises || !w.workout_exercises.length) continue
       const ex = w.workout_exercises.find(e =>
-        e.name.trim().toLowerCase() === exerciseName.toLowerCase()
+        e.exercise_name.trim().toLowerCase() === exerciseName.toLowerCase()
       )
       if (ex) { lastExercise = ex; lastDate = w.date; break }
     }
@@ -1208,7 +1212,7 @@ async function runCalc() {
         <div class="calc-reps">${minReps}</div>
         <div class="calc-sub">reps com ${weight.toLocaleString('pt-BR')} kg</div>
         <div class="calc-detail">
-          Exercício: <strong>${lastExercise.name}</strong> — ${fmtDate(lastDate)}<br>
+          Exercício: <strong>${lastExercise.exercise_name}</strong> — ${fmtDate(lastDate)}<br>
           Treino anterior: <strong>${parseFloat(lastExercise.volume).toLocaleString('pt-BR')} kg</strong>
           (${lastExercise.sets} × ${lastExercise.weight_kg} kg × ${lastExercise.reps} reps)<br>
           Volume mínimo alvo: <strong>${minVolume.toLocaleString('pt-BR')} kg</strong>
