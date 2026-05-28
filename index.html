@@ -1174,7 +1174,16 @@ function observeRevealElements() {
 // DATA
 // ─────────────────────────────────────────────
 async function fetchStudents() {
-  const { data, error } = await sb.from('profiles').select('*').eq('role','student').order('name')
+  const { data: links, error: lErr } = await sb
+    .from('personal_students')
+    .select('student_id')
+    .eq('personal_id', me.id)
+  if (lErr) throw lErr
+
+  const ids = (links || []).map(l => l.student_id)
+  if (!ids.length) { students = []; return }
+
+  const { data, error } = await sb.from('profiles').select('*').in('id', ids).order('name')
   if (error) throw error
   students = data || []
 }
@@ -1215,10 +1224,32 @@ async function renderStudents() {
   try {
     await fetchStudents()
 
+    const linkForm = `
+      <div class="card reveal" style="margin-bottom:1.5rem">
+        <div class="card-header" style="margin-bottom:.75rem">
+          <div>
+            <div class="section-label">Gestão de Acesso</div>
+            <div class="card-title">Vincular Aluno</div>
+          </div>
+        </div>
+        <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">
+          Insira o e-mail de um aluno já cadastrado para adicioná-lo à sua lista.
+        </p>
+        <div style="display:flex;gap:.75rem;align-items:flex-end">
+          <div class="form-group" style="flex:1;margin-bottom:0">
+            <label>E-mail do aluno</label>
+            <input id="link-student-email" type="email" class="form-control" placeholder="aluno@email.com"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();addStudentByEmail()}">
+          </div>
+          <button id="link-student-btn" class="btn btn-primary" onclick="addStudentByEmail()">Vincular</button>
+        </div>
+      </div>`
+
     if (!students.length) {
-      body.innerHTML = `<div class="empty-state"><div class="empty-icon">👤</div>
-        <p>Nenhum aluno cadastrado ainda.</p>
-        <p style="font-size:.82rem;margin-top:.5rem">Compartilhe o link de cadastro com seus alunos.</p></div>`
+      body.innerHTML = `${linkForm}
+        <div class="empty-state"><div class="empty-icon">👤</div>
+        <p>Nenhum aluno vinculado ainda.</p>
+        <p style="font-size:.82rem;margin-top:.5rem">Use o formulário acima para vincular seus alunos.</p></div>`
       return
     }
 
@@ -1228,11 +1259,12 @@ async function renderStudents() {
 
     const withData = withLast.filter(s => s.last).length
     body.innerHTML = `
+      ${linkForm}
       <div class="section-label reveal">Gestão de Alunos</div>
       <div class="stats-grid reveal-stagger">
         <div class="stat-card stagger-item" style="--stagger-index:0">
           <div class="stat-value">${students.length}</div>
-          <div class="stat-label">Alunos cadastrados</div>
+          <div class="stat-label">Alunos vinculados</div>
         </div>
         <div class="stat-card stagger-item" style="--stagger-index:1;border-left-color:var(--success)">
           <div class="stat-value">${withData}</div>
@@ -1260,6 +1292,49 @@ async function renderStudents() {
       <p>Erro ao carregar alunos.</p>
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
               onclick="renderStudents()">Tentar novamente</button></div>`
+  }
+}
+
+async function addStudentByEmail() {
+  const input = document.getElementById('link-student-email')
+  const btn   = document.getElementById('link-student-btn')
+  const email = input?.value.trim().toLowerCase()
+  if (!email) return
+
+  btn.textContent = 'Vinculando…'; btn.disabled = true
+
+  try {
+    const { data: found, error: fErr } = await sb
+      .from('profiles')
+      .select('id, name, role')
+      .eq('email', email)
+      .eq('role', 'student')
+      .maybeSingle()
+
+    if (fErr) throw fErr
+    if (!found) { toast('Nenhum aluno encontrado com esse e-mail.', 'error'); return }
+
+    const { data: existing } = await sb
+      .from('personal_students')
+      .select('id')
+      .eq('personal_id', me.id)
+      .eq('student_id', found.id)
+      .maybeSingle()
+
+    if (existing) { toast(`${found.name} já está vinculado à sua conta.`, 'info'); return }
+
+    const { error: lErr } = await sb
+      .from('personal_students')
+      .insert({ personal_id: me.id, student_id: found.id })
+    if (lErr) throw lErr
+
+    toast(`${found.name} vinculado com sucesso!`, 'success')
+    input.value = ''
+    await renderStudents()
+  } catch (err) {
+    toast('Erro ao vincular: ' + err.message, 'error')
+  } finally {
+    if (btn) { btn.textContent = 'Vincular'; btn.disabled = false }
   }
 }
 
