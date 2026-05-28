@@ -1075,13 +1075,17 @@
                   <label>Aluno</label>
                   <select id="wf-student" class="form-control"></select>
                 </div>
+                <div class="form-group form-full">
+                  <label>Nome do treino</label>
+                  <input id="wf-name" type="text" class="form-control" placeholder="Ex: Treino A — Peito e Tríceps" required>
+                </div>
                 <div class="form-group">
                   <label>Data</label>
                   <input id="wf-date" type="date" class="form-control" required>
                 </div>
                 <div class="form-group form-full">
                   <label>Observações gerais (opcional)</label>
-                  <input id="wf-notes" type="text" class="form-control" placeholder="Ex: Treino A, foco em peito…">
+                  <input id="wf-notes" type="text" class="form-control" placeholder="Ex: foco em força, menor volume">
                 </div>
               </div>
 
@@ -1203,6 +1207,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (colCheck) {
     console.warn('⚠️ AÇÃO NECESSÁRIA: Execute o SQL abaixo no painel do Supabase (SQL Editor) antes de continuar:')
     console.warn('ALTER TABLE workout_exercises\n  ADD COLUMN IF NOT EXISTS cadencia text,\n  ADD COLUMN IF NOT EXISTS tempo_descanso integer;')
+  }
+  const { error: nameColCheck } = await sb.from('workouts').select('name').limit(0)
+  if (nameColCheck) {
+    console.warn('⚠️ AÇÃO NECESSÁRIA: Execute o SQL abaixo no painel do Supabase (SQL Editor):')
+    console.warn('ALTER TABLE workouts ADD COLUMN IF NOT EXISTS name text;')
   }
 
   const { data: { session } } = await sb.auth.getSession()
@@ -1652,18 +1661,7 @@ async function renderHistory(studentId, gen = 0) {
         </div>`
       }
     }
-    const timerCard = `
-      <div class="workout-start-card reveal">
-        <div>
-          <div style="font-size:.875rem;font-weight:700;color:var(--text-primary);margin-bottom:.25rem">Pronto para treinar?</div>
-          <div style="font-size:.78rem;color:var(--text-muted)">Inicie o cronômetro para acompanhar a duração do seu treino.</div>
-        </div>
-        <button id="timer-start-btn" class="btn-start-workout"
-                onclick="startWorkoutTimer()" ${timerInterval ? 'disabled' : ''}>
-          ${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar Treino'}
-        </button>
-      </div>`
-    body.innerHTML = bannerHTML + timerCard + historyHTML(workouts, profile.name)
+    body.innerHTML = bannerHTML + historyHTML(workouts, profile.name)
     if (workouts.length) initChart('evo-chart', [...workouts].reverse())
   } catch (err) {
     if (gen && navGen !== gen) return
@@ -1721,7 +1719,10 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
 
     return `
       <tr class="history-main-row" onclick="toggleWorkoutDetail('${uid}')">
-        <td><strong>${fmtDate(w.date)}</strong></td>
+        <td>
+          <strong>${w.name || fmtDate(w.date)}</strong>
+          ${w.name ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">${fmtDate(w.date)}</div>` : ''}
+        </td>
         <td style="color:var(--text-muted);font-size:.83rem">${exLabel}</td>
         <td class="vol-cell">${vol.toLocaleString('pt-BR')} kg</td>
         <td>${badge}</td>
@@ -1742,6 +1743,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
               </tr></thead>
               <tbody>${exDetailRows}</tbody>
             </table>
+            ${profile.role === 'student' ? `<div style="padding:.75rem 1rem .875rem;border-top:1px solid rgba(144,158,186,0.06)"><button class="btn-start-workout workout-timer-btn" style="font-size:.8rem;padding:.5rem 1.25rem" onclick="event.stopPropagation();startWorkoutTimer()" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar Treino'}</button></div>` : ''}
           </div>
         </td>
       </tr>`
@@ -1781,7 +1783,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
         <div class="table-wrap">
           <table>
             <thead><tr>
-              <th>Data</th><th>Exercícios</th><th>Volume</th><th>Progressão</th><th></th><th></th>
+              <th>Treino</th><th>Exercícios</th><th>Volume</th><th>Progressão</th><th></th><th></th>
             </tr></thead>
             <tbody>${rows}</tbody>
           </table>
@@ -1828,6 +1830,7 @@ async function editWorkout(workoutId) {
   if (profile.role === 'personal') {
     document.getElementById('wf-student').value = workout.student_id
   }
+  document.getElementById('wf-name').value  = workout.name || ''
   document.getElementById('wf-date').value  = workout.date
   document.getElementById('wf-notes').value = workout.notes || ''
 
@@ -1904,7 +1907,10 @@ async function openStudentSheet(studentId, studentName) {
         : ''
       return `
         <tr class="history-main-row" onclick="toggleWorkoutDetail('${uid}')">
-          <td><strong>${fmtDate(w.date)}</strong></td>
+          <td>
+            <strong>${w.name || fmtDate(w.date)}</strong>
+            ${w.name ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">${fmtDate(w.date)}</div>` : ''}
+          </td>
           <td style="color:var(--text-muted);font-size:.83rem">${exes.length} exercício${exes.length !== 1 ? 's' : ''}</td>
           <td class="vol-cell">${vol.toLocaleString('pt-BR')} kg</td>
           <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">▶</span></td>
@@ -1942,7 +1948,7 @@ async function openStudentSheet(studentId, studentName) {
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Data</th><th>Exercícios</th><th>Volume Total</th><th></th><th></th>
+            <th>Treino</th><th>Exercícios</th><th>Volume Total</th><th></th><th></th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
@@ -2208,6 +2214,7 @@ async function setupWorkoutForm() {
     sel.required = false
   }
 
+  document.getElementById('wf-name').value  = ''
   document.getElementById('wf-date').value  = today()
   document.getElementById('wf-notes').value = ''
 
@@ -2336,8 +2343,9 @@ async function saveWorkout(e) {
     return
   }
 
-  const date  = document.getElementById('wf-date').value
-  const notes = document.getElementById('wf-notes').value.trim()
+  const workoutName = document.getElementById('wf-name').value.trim()
+  const date        = document.getElementById('wf-date').value
+  const notes       = document.getElementById('wf-notes').value.trim()
 
   // Collect and validate exercises
   const rows      = document.querySelectorAll('#exercise-list .exercise-row')
@@ -2371,6 +2379,7 @@ async function saveWorkout(e) {
     if (editingWorkoutId) {
       const { error: wErr } = await sb.from('workouts').update({
         student_id:   studentId,
+        name:         workoutName || null,
         date,
         total_volume: parseFloat(totalVolume.toFixed(2)),
         notes:        notes || null
@@ -2393,6 +2402,7 @@ async function saveWorkout(e) {
     } else {
       const { data: workout, error: wErr } = await sb.from('workouts').insert({
         student_id:   studentId,
+        name:         workoutName || null,
         date,
         total_volume: parseFloat(totalVolume.toFixed(2)),
         notes:        notes || null,
@@ -2542,16 +2552,12 @@ function startWorkoutTimer() {
   if (timerInterval) return
   timerSeconds = 0
   updateTimerDisplay()
-
-  const startBtn = document.getElementById('timer-start-btn')
-  if (startBtn) { startBtn.disabled = true; startBtn.textContent = '⏱ Em andamento…' }
-
   document.getElementById('workout-timer-widget').style.display = 'flex'
-
   timerInterval = setInterval(() => {
     timerSeconds++
     updateTimerDisplay()
   }, 1000)
+  syncTimerButtons()
 }
 
 function updateTimerDisplay() {
@@ -2567,16 +2573,19 @@ function stopWorkoutTimer() {
   if (!timerInterval) return
   clearInterval(timerInterval)
   timerInterval = null
-
   const finalTime = document.getElementById('timer-display')?.textContent || '00:00:00'
-
   document.getElementById('workout-timer-widget').style.display = 'none'
-
-  const startBtn = document.getElementById('timer-start-btn')
-  if (startBtn) { startBtn.disabled = false; startBtn.textContent = '▶ Iniciar Treino' }
-
+  syncTimerButtons()
   document.getElementById('timer-modal-time').textContent = finalTime
   document.getElementById('timer-modal-overlay').style.display = 'flex'
+}
+
+function syncTimerButtons() {
+  const running = !!timerInterval
+  document.querySelectorAll('.workout-timer-btn').forEach(btn => {
+    btn.disabled = running
+    btn.textContent = running ? '⏱ Em andamento…' : '▶ Iniciar Treino'
+  })
 }
 
 function dismissTimerModal() {
