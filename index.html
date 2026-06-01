@@ -2204,7 +2204,7 @@ async function openStudentSheet(studentId, studentName) {
     const [workouts, execRes] = await Promise.all([
       fetchWorkouts(studentId),
       sb.from('workout_executions')
-        .select('id, workout_id, exercise_id, weight_executed, reps_executed, executed_at, workout_exercises(exercise_name, sets, reps, weight_kg), workouts(name, date)')
+        .select('id, workout_id, exercise_id, weight_executed, reps_executed, duration_executed_min, distance_executed_km, speed_executed_kmh, executed_at, workout_exercises(exercise_name, exercise_type, sets, reps, weight_kg, duration_min, distance_km, speed_kmh), workouts(name, date)')
         .eq('student_id', studentId)
         .order('executed_at', { ascending: false })
     ])
@@ -2275,54 +2275,109 @@ async function openStudentSheet(studentId, studentName) {
         </tr>`
     }).join('')
 
-    // Group executions by workout_id
+    // Agrupa por workout_id + data de execução para separar sessões distintas do mesmo treino
     const execByWorkout = {}
     for (const ex of executions) {
-      if (!execByWorkout[ex.workout_id]) {
-        execByWorkout[ex.workout_id] = {
+      const sessionDate = ex.executed_at ? ex.executed_at.substring(0, 10) : 'unknown'
+      const key = `${ex.workout_id}_${sessionDate}`
+      if (!execByWorkout[key]) {
+        execByWorkout[key] = {
           workoutName: ex.workouts?.name || (ex.workouts?.date ? fmtDate(ex.workouts.date) : '—'),
           executedAt:  ex.executed_at,
           items:       []
         }
       }
-      execByWorkout[ex.workout_id].items.push(ex)
+      // Evita duplicar o mesmo exercise_id na mesma sessão
+      if (!execByWorkout[key].items.some(i => i.exercise_id === ex.exercise_id)) {
+        execByWorkout[key].items.push(ex)
+      }
     }
     const execGroups = Object.values(execByWorkout)
 
     const execSectionHTML = execGroups.length
       ? execGroups.map(group => {
-          let totalPlanned = 0, totalExecuted = 0
+          let totalPlannedMusc = 0, totalExecutedMusc = 0
+          let totalPlannedAero = 0, totalExecutedAero = 0
+
           const exRows = group.items.map(ex => {
-            const we       = ex.workout_exercises
-            const planned  = we ? we.sets * we.reps * parseFloat(we.weight_kg) : 0
-            const executed = we
-              ? we.sets * ex.reps_executed * parseFloat(ex.weight_executed)
-              : ex.reps_executed * parseFloat(ex.weight_executed)
-            totalPlanned  += planned
-            totalExecuted += executed
-            const diff     = executed - planned
-            const diffCell = diff > 0
-              ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>`
-              : diff < 0
-                ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>`
-                : `<span style="color:var(--text-muted)">= 0 kg</span>`
-            return `<tr>
-              <td style="font-weight:500;color:var(--text-secondary)">${we?.exercise_name || '—'}</td>
-              <td>${we?.weight_kg ?? '—'} kg</td>
-              <td style="color:var(--success);font-weight:600">${parseFloat(ex.weight_executed).toLocaleString('pt-BR')} kg</td>
-              <td>${we?.reps ?? '—'}</td>
-              <td style="color:var(--success);font-weight:600">${ex.reps_executed}</td>
-              <td style="color:var(--text-muted)">${planned > 0 ? planned.toLocaleString('pt-BR') + ' kg' : '—'}</td>
-              <td class="vol-cell">${executed.toLocaleString('pt-BR')} kg</td>
-              <td>${diffCell}</td>
-            </tr>`
+            const we     = ex.workout_exercises
+            const isAero = we?.exercise_type === 'aerobico'
+              || we?.duration_min != null
+              || ex.duration_executed_min != null
+
+            if (isAero) {
+              const planDur  = parseFloat(we?.duration_min) || 0
+              const planDist = parseFloat(we?.distance_km)  || 0
+              const planSpd  = parseFloat(we?.speed_kmh)    || 0
+              const execDur  = parseFloat(ex.duration_executed_min) || 0
+              const execDist = parseFloat(ex.distance_executed_km)  || 0
+              const execSpd  = parseFloat(ex.speed_executed_kmh)    || 0
+              const planned  = planDist > 0 ? planDist : planDur
+              const executed = execDist > 0 ? execDist : execDur
+              const unit     = planDist > 0 ? 'km' : 'min'
+              const diff     = executed - planned
+              totalPlannedAero  += planned
+              totalExecutedAero += executed
+
+              const plannedTxt  = [planDur > 0 ? planDur + ' min' : null, planDist > 0 ? planDist + ' km' : null, planSpd > 0 ? planSpd + ' km/h' : null].filter(Boolean).join(' · ') || '—'
+              const executedTxt = [execDur > 0 ? execDur.toLocaleString('pt-BR') + ' min' : null, execDist > 0 ? execDist.toLocaleString('pt-BR') + ' km' : null, execSpd > 0 ? execSpd.toLocaleString('pt-BR') + ' km/h' : null].filter(Boolean).join(' · ') || '—'
+              const diffCell    = diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>`
+                : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} ${unit}</span>`
+                :             `<span style="color:var(--text-muted)">= 0 ${unit}</span>`
+
+              return `<tr>
+                <td style="font-weight:500;color:var(--text-secondary)">🏃 ${we?.exercise_name || '—'}</td>
+                <td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td>
+                <td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td>
+                <td style="font-size:.82rem">${diffCell}</td>
+              </tr>`
+            } else {
+              const planSets   = we?.sets || 0
+              const planWeight = parseFloat(we?.weight_kg) || 0
+              const planReps   = we?.reps || 0
+              const execWeight = parseFloat(ex.weight_executed) || 0
+              const execReps   = ex.reps_executed || 0
+              const planned    = planSets * planReps * planWeight
+              const executed   = planSets * execReps * execWeight
+              const diff       = executed - planned
+              totalPlannedMusc  += planned
+              totalExecutedMusc += executed
+
+              const plannedTxt  = planned > 0 ? `${planWeight} kg × ${planReps} reps = ${planned.toLocaleString('pt-BR')} kg` : '—'
+              const executedTxt = `${execWeight.toLocaleString('pt-BR')} kg × ${execReps} reps = ${executed.toLocaleString('pt-BR')} kg`
+              const diffCell    = diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>`
+                : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>`
+                :             `<span style="color:var(--text-muted)">= 0 kg</span>`
+
+              return `<tr>
+                <td style="font-weight:500;color:var(--text-secondary)">${we?.exercise_name || '—'}</td>
+                <td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td>
+                <td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td>
+                <td style="font-size:.82rem">${diffCell}</td>
+              </tr>`
+            }
           }).join('')
-          const totalDiff = totalExecuted - totalPlanned
-          const totalDiffCell = totalDiff > 0
-            ? `<span style="color:var(--success)">+${totalDiff.toLocaleString('pt-BR')} kg</span>`
-            : totalDiff < 0
-              ? `<span style="color:var(--danger)">${totalDiff.toLocaleString('pt-BR')} kg</span>`
-              : `<span style="color:var(--text-muted)">= 0 kg</span>`
+
+          const footerRows = []
+          if (totalPlannedMusc > 0 || totalExecutedMusc > 0) {
+            const d = totalExecutedMusc - totalPlannedMusc
+            footerRows.push(`<tr style="border-top:1px solid rgba(144,158,186,0.15)">
+              <td style="font-weight:700;color:var(--text-primary);font-size:.82rem">Total musculação</td>
+              <td style="color:var(--text-muted);font-size:.82rem">${totalPlannedMusc.toLocaleString('pt-BR')} kg</td>
+              <td class="vol-cell" style="font-size:.82rem">${totalExecutedMusc.toLocaleString('pt-BR')} kg</td>
+              <td style="font-size:.82rem">${d > 0 ? `<span style="color:var(--success)">+${d.toLocaleString('pt-BR')} kg</span>` : d < 0 ? `<span style="color:var(--danger)">${d.toLocaleString('pt-BR')} kg</span>` : `<span style="color:var(--text-muted)">= 0 kg</span>`}</td>
+            </tr>`)
+          }
+          if (totalPlannedAero > 0 || totalExecutedAero > 0) {
+            const d = totalExecutedAero - totalPlannedAero
+            footerRows.push(`<tr style="border-top:1px solid rgba(144,158,186,0.15)">
+              <td style="font-weight:700;color:var(--text-primary);font-size:.82rem">Total aeróbico</td>
+              <td style="color:var(--text-muted);font-size:.82rem">${totalPlannedAero.toLocaleString('pt-BR')}</td>
+              <td class="vol-cell" style="font-size:.82rem">${totalExecutedAero.toLocaleString('pt-BR')}</td>
+              <td style="font-size:.82rem">${d > 0 ? `<span style="color:var(--success)">+${d.toLocaleString('pt-BR')}</span>` : d < 0 ? `<span style="color:var(--danger)">${d.toLocaleString('pt-BR')}</span>` : `<span style="color:var(--text-muted)">= 0</span>`}</td>
+            </tr>`)
+          }
+
           return `
           <div style="background:rgba(10,16,33,0.5);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:1rem 1.1rem;margin-bottom:.875rem">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
@@ -2332,19 +2387,10 @@ async function openStudentSheet(studentId, studentName) {
             <div class="table-wrap">
               <table>
                 <thead><tr>
-                  <th>Exercício</th><th>Carga prev.</th><th>Carga exec.</th>
-                  <th>Reps prev.</th><th>Reps exec.</th>
-                  <th>Vol. previsto</th><th>Vol. executado</th><th>Diferença</th>
+                  <th>Exercício</th><th>Previsto</th><th>Executado</th><th>Diferença</th>
                 </tr></thead>
                 <tbody>${exRows}</tbody>
-                <tfoot>
-                  <tr style="border-top:1px solid rgba(144,158,186,0.15)">
-                    <td colspan="5" style="font-weight:700;color:var(--text-primary);font-size:.82rem">Total</td>
-                    <td style="color:var(--text-muted);font-size:.82rem">${totalPlanned > 0 ? totalPlanned.toLocaleString('pt-BR') + ' kg' : '—'}</td>
-                    <td class="vol-cell" style="font-size:.82rem">${totalExecuted.toLocaleString('pt-BR')} kg</td>
-                    <td style="font-size:.82rem">${totalDiffCell}</td>
-                  </tr>
-                </tfoot>
+                <tfoot>${footerRows.join('')}</tfoot>
               </table>
             </div>
           </div>`
