@@ -3298,78 +3298,89 @@ function showComparisonModal(finalTime) {
   let totalExecuted = 0
 
   const rows = exes.map(ex => {
-    const exec   = exerciseExecutions[ex.id]
-    const isAero = ex.exercise_type === 'aerobico' ||
-                   (exec && exec.duration_executed_min !== null && exec.weight_executed === null)
+    try {
+      const exec = exerciseExecutions[ex.id]
 
-    let plannedCell, execCell, diffCell, planned, executed
+      // Detecção robusta: aceita exercise_type='aerobico' OU presença de campos aeróbicos
+      // (cobre o caso em que exercise_type chegou null do banco mas os dados aeróbicos existem)
+      const isAero = ex.exercise_type === 'aerobico'
+        || ex.duration_min != null
+        || ex.distance_km  != null
+        || (exec && (exec.duration_executed_min != null || exec.distance_executed_km != null))
 
-    if (isAero) {
-      const planDur  = parseFloat(ex.duration_min)  || 0
-      const planDist = parseFloat(ex.distance_km)   || 0
-      const planSpd  = parseFloat(ex.speed_kmh)     || 0
-      planned = planDist > 0 ? planDist : planDur
-      const unit = planDist > 0 ? 'km' : 'min'
+      let plannedCell, execCell, diffCell, planned, executed
 
-      const execDur  = exec ? (parseFloat(exec.duration_executed_min) || 0) : null
-      const execDist = exec ? (parseFloat(exec.distance_executed_km)  || 0) : null
-      const execSpd  = exec ? (parseFloat(exec.speed_executed_kmh)    || 0) : null
-      executed = exec ? (execDist > 0 ? execDist : execDur) : null
+      if (isAero) {
+        const planDur  = parseFloat(ex.duration_min) || 0
+        const planDist = parseFloat(ex.distance_km)  || 0
+        const planSpd  = parseFloat(ex.speed_kmh)    || 0
+        // Métrica principal para diferença: distância se disponível, senão duração
+        const unit = planDist > 0 ? 'km' : 'min'
+        planned = planDist > 0 ? planDist : planDur
 
-      totalPlanned  += planned
-      if (executed !== null) totalExecuted += executed
-      const diff = (executed !== null && planned > 0) ? executed - planned : null
+        const execDur  = exec != null ? (parseFloat(exec.duration_executed_min) || 0) : null
+        const execDist = exec != null ? (parseFloat(exec.distance_executed_km)  || 0) : null
+        const execSpd  = exec != null ? (parseFloat(exec.speed_executed_kmh)    || 0) : null
+        executed = exec != null ? (execDist > 0 ? execDist : execDur) : null
 
-      plannedCell = [
-        planDur  > 0 ? planDur  + ' min'  : null,
-        planDist > 0 ? planDist + ' km'   : null,
-        planSpd  > 0 ? planSpd  + ' km/h' : null
-      ].filter(Boolean).join(' · ') || '—'
+        totalPlanned  += planned
+        if (executed !== null) totalExecuted += executed
+        const diff = (executed !== null && planned > 0) ? executed - planned : null
 
-      execCell = exec
-        ? [
-            execDur  > 0 ? execDur.toLocaleString('pt-BR')  + ' min'  : null,
-            execDist > 0 ? execDist.toLocaleString('pt-BR') + ' km'   : null,
-            execSpd  > 0 ? execSpd.toLocaleString('pt-BR')  + ' km/h' : null
-          ].filter(Boolean).join(' · ') || '—'
-        : '<span style="color:var(--text-muted)">Não executado</span>'
+        plannedCell = [
+          planDur  > 0 ? planDur  + ' min'  : null,
+          planDist > 0 ? planDist + ' km'   : null,
+          planSpd  > 0 ? planSpd  + ' km/h' : null,
+        ].filter(Boolean).join(' · ') || '—'
 
-      diffCell = diff === null ? '—'
-        : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>`
-        : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} ${unit}</span>`
-        :             `<span style="color:var(--text-muted)">= 0 ${unit}</span>`
-    } else {
-      const sets   = ex.sets   || 0
-      const reps   = ex.reps   || 0
-      const weight = parseFloat(ex.weight_kg) || 0
-      planned  = sets * reps * weight
+        execCell = exec != null
+          ? ([
+              execDur  > 0 ? execDur.toLocaleString('pt-BR')  + ' min'  : null,
+              execDist > 0 ? execDist.toLocaleString('pt-BR') + ' km'   : null,
+              execSpd  > 0 ? execSpd.toLocaleString('pt-BR')  + ' km/h' : null,
+            ].filter(Boolean).join(' · ') || '—')
+          : '<span style="color:var(--text-muted)">Não executado</span>'
 
-      const execWeight = exec ? (parseFloat(exec.weight_executed) || 0) : null
-      const execReps   = exec ? (exec.reps_executed || 0) : null
-      executed = exec ? sets * execReps * execWeight : null
+        diffCell = diff === null ? '—'
+          : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>`
+          : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} ${unit}</span>`
+          :             `<span style="color:var(--text-muted)">= 0 ${unit}</span>`
+      } else {
+        const sets   = ex.sets   || 0
+        const reps   = ex.reps   || 0
+        const weight = parseFloat(ex.weight_kg) || 0
+        planned  = sets * reps * weight
 
-      totalPlanned  += planned
-      if (executed !== null) totalExecuted += executed
-      const diff = executed !== null ? executed - planned : null
+        const execWeight = exec != null ? (parseFloat(exec.weight_executed) || 0) : null
+        const execReps   = exec != null ? (exec.reps_executed || 0)               : null
+        executed = exec != null ? sets * execReps * execWeight : null
 
-      plannedCell = `${sets}×${reps}×${weight} kg = ${planned.toLocaleString('pt-BR')} kg`
+        totalPlanned  += planned
+        if (executed !== null) totalExecuted += executed
+        const diff = executed !== null ? executed - planned : null
 
-      execCell = exec
-        ? `${(execWeight ?? 0).toLocaleString('pt-BR')} kg × ${execReps ?? 0} reps = <strong>${(executed ?? 0).toLocaleString('pt-BR')} kg</strong>`
-        : '<span style="color:var(--text-muted)">Não executado</span>'
+        plannedCell = `${sets}×${reps}×${weight} kg = ${planned.toLocaleString('pt-BR')} kg`
 
-      diffCell = diff === null ? '—'
-        : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>`
-        : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>`
-        :             `<span style="color:var(--text-muted)">= 0 kg</span>`
+        execCell = exec != null
+          ? `${(execWeight ?? 0).toLocaleString('pt-BR')} kg × ${execReps ?? 0} reps = <strong>${(executed ?? 0).toLocaleString('pt-BR')} kg</strong>`
+          : '<span style="color:var(--text-muted)">Não executado</span>'
+
+        diffCell = diff === null ? '—'
+          : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>`
+          : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>`
+          :             `<span style="color:var(--text-muted)">= 0 kg</span>`
+      }
+
+      return `<tr>
+        <td style="font-weight:600;color:var(--text-primary)">${isAero ? '🏃 ' : ''}${ex.exercise_name}</td>
+        <td style="color:var(--text-muted);font-size:.82rem">${plannedCell}</td>
+        <td style="font-size:.82rem">${execCell}</td>
+        <td>${diffCell}</td>
+      </tr>`
+    } catch (err) {
+      console.error('[showComparisonModal] erro ao montar linha de', ex.exercise_name, err)
+      return `<tr><td colspan="4" style="color:var(--danger);font-size:.82rem;padding:.75rem 1rem">⚠️ Erro ao exibir "${ex.exercise_name}": ${err.message}</td></tr>`
     }
-
-    return `<tr>
-      <td style="font-weight:600;color:var(--text-primary)">${isAero ? '🏃 ' : ''}${ex.exercise_name}</td>
-      <td style="color:var(--text-muted);font-size:.82rem">${plannedCell}</td>
-      <td style="font-size:.82rem">${execCell}</td>
-      <td>${diffCell}</td>
-    </tr>`
   }).join('')
 
   document.getElementById('comparison-table-body').innerHTML  = rows
