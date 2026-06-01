@@ -2946,6 +2946,22 @@ async function saveWorkout(e) {
       if (exErr) throw exErr
 
       toast('Treino registrado com sucesso!', 'success')
+
+      // Fire-and-forget: notifica o aluno por e-mail sem bloquear o fluxo
+      fetch(`${SUPA_URL}/functions/v1/notify-new-workout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + SUPA_KEY
+        },
+        body: JSON.stringify({
+          student_id:    studentId,
+          workout_name:  workoutName || 'Treino sem nome',
+          workout_date:  date,
+          personal_name: profile.name
+        })
+      }).catch(err => console.warn('[notify-new-workout] falhou silenciosamente:', err))
+
       await setupWorkoutForm()
     }
   } catch (err) {
