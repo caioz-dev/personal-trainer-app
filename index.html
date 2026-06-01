@@ -2106,6 +2106,22 @@ async function deleteWorkout(workoutId) {
   else await renderHistory(historyCtx?.studentId ?? profile.id)
 }
 
+async function deleteExecutionGroup(workoutId, executedAt, studentId, studentName) {
+  if (!confirm('Apagar esta execução? Os dados de desempenho serão perdidos.')) return
+  // Janela de ±1 hora em torno do executed_at para cobrir micro-variações de timestamp
+  const t    = new Date(executedAt).getTime()
+  const from = new Date(t - 3600000).toISOString()
+  const to   = new Date(t + 3600000).toISOString()
+  const { error } = await sb.from('workout_executions')
+    .delete()
+    .eq('workout_id', workoutId)
+    .gte('executed_at', from)
+    .lte('executed_at', to)
+  if (error) { toast('Erro ao apagar execução: ' + error.message, 'error'); return }
+  toast('Execução apagada com sucesso.', 'success')
+  openStudentSheet(studentId, studentName)
+}
+
 async function deleteWorkoutFromSheet(workoutId, studentId, studentName) {
   if (!confirm('Tem certeza que deseja excluir este treino? Esta ação não pode ser desfeita.')) return
   const err = await _cascadeDeleteWorkout(workoutId)
@@ -2204,7 +2220,7 @@ async function openStudentSheet(studentId, studentName) {
     const [workouts, execRes] = await Promise.all([
       fetchWorkouts(studentId),
       sb.from('workout_executions')
-        .select('id, workout_id, exercise_id, weight_executed, reps_executed, duration_executed_min, distance_executed_km, speed_executed_kmh, executed_at, workout_exercises(exercise_name, exercise_type, sets, reps, weight_kg, duration_min, distance_km, speed_kmh), workouts(name, date)')
+        .select('*, workout_exercises(exercise_name, exercise_type, sets, reps, weight_kg, duration_min, distance_km, speed_kmh), workouts(name, date)')
         .eq('student_id', studentId)
         .order('executed_at', { ascending: false })
     ])
@@ -2275,24 +2291,26 @@ async function openStudentSheet(studentId, studentName) {
         </tr>`
     }).join('')
 
-    // Agrupa por workout_id + data de execução para separar sessões distintas do mesmo treino
+    // Agrupa por workout_id usando Set para deduplicar exercise_id
     const execByWorkout = {}
     for (const ex of executions) {
-      const sessionDate = ex.executed_at ? ex.executed_at.substring(0, 10) : 'unknown'
-      const key = `${ex.workout_id}_${sessionDate}`
+      const key = ex.workout_id
       if (!execByWorkout[key]) {
         execByWorkout[key] = {
+          workoutId:   ex.workout_id,
           workoutName: ex.workouts?.name || (ex.workouts?.date ? fmtDate(ex.workouts.date) : '—'),
           executedAt:  ex.executed_at,
+          seenIds:     new Set(),
           items:       []
         }
       }
-      // Evita duplicar o mesmo exercise_id na mesma sessão
-      if (!execByWorkout[key].items.some(i => i.exercise_id === ex.exercise_id)) {
+      if (!execByWorkout[key].seenIds.has(ex.exercise_id)) {
+        execByWorkout[key].seenIds.add(ex.exercise_id)
         execByWorkout[key].items.push(ex)
       }
     }
     const execGroups = Object.values(execByWorkout)
+    const safeStudentNameExec = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
 
     const execSectionHTML = execGroups.length
       ? execGroups.map(group => {
@@ -2378,11 +2396,18 @@ async function openStudentSheet(studentId, studentName) {
             </tr>`)
           }
 
+          const deleteExecBtn = profile.role === 'personal'
+            ? `<button class="btn btn-sm btn-ghost-danger" onclick="deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}','${safeStudentNameExec}')">🗑️ Apagar execução</button>`
+            : ''
+
           return `
           <div style="background:rgba(10,16,33,0.5);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:1rem 1.1rem;margin-bottom:.875rem">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
               <div style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${group.workoutName}</div>
-              <div style="font-size:.75rem;color:var(--text-muted)">${fmtDateTime(group.executedAt)}</div>
+              <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+                <div style="font-size:.75rem;color:var(--text-muted)">${fmtDateTime(group.executedAt)}</div>
+                ${deleteExecBtn}
+              </div>
             </div>
             <div class="table-wrap">
               <table>
