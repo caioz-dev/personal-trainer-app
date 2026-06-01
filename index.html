@@ -1173,6 +1173,30 @@
       /* student sheet panel */
       .student-sheet-panel { padding: 1rem .75rem; }
     }
+
+    /* ---- REST TIMER (descanso por exercício) ---- */
+    .rest-timer-wrap {
+      margin-top: .75rem;
+      padding-top: .75rem;
+      border-top: 1px solid rgba(144,158,186,0.08);
+    }
+
+    .btn-rest-timer {
+      background: rgba(245,158,11,0.1);
+      color: var(--warning);
+      border: 1px solid rgba(245,158,11,0.22);
+      border-radius: var(--radius-pill);
+      padding: .4rem .875rem;
+      font-size: .82rem;
+      font-weight: 700;
+      font-family: 'Montserrat', system-ui, sans-serif;
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+
+    .btn-rest-timer:hover:not(:disabled) { background: rgba(245,158,11,0.18); border-color: rgba(245,158,11,0.4); }
+    .btn-rest-timer.running { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.4); }
+    .btn-rest-timer:disabled { opacity: .7; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -1523,6 +1547,7 @@ let timerSeconds  = 0
 let currentWorkoutData    = null
 let exerciseExecutions    = {}
 let _completingExerciseId = null
+let restTimers            = {}
 
 // Limpa TODO o estado da sessão anterior — chamado no logout e antes de boot de novo usuário
 function resetAppState() {
@@ -1546,6 +1571,8 @@ function resetAppState() {
   exerciseExecutions    = {}
   _completingExerciseId = null
   editingWorkoutId      = null
+  for (const id in restTimers) { if (restTimers[id]?.intervalId) clearInterval(restTimers[id].intervalId) }
+  restTimers = {}
 
   // Navegação
   historyCtx      = null
@@ -3356,6 +3383,78 @@ function dismissTimerModal() {
 }
 
 // ─────────────────────────────────────────────
+// REST TIMER (descanso por exercício)
+// ─────────────────────────────────────────────
+function toggleRestTimer(exerciseId, totalSeconds) {
+  if (restTimers[exerciseId]?.intervalId) {
+    clearInterval(restTimers[exerciseId].intervalId)
+    delete restTimers[exerciseId]
+    resetRestTimerBtn(exerciseId, totalSeconds)
+  } else {
+    startRestTimer(exerciseId, totalSeconds)
+  }
+}
+
+function startRestTimer(exerciseId, totalSeconds) {
+  restTimers[exerciseId] = { intervalId: null, remaining: totalSeconds, totalSeconds }
+  const btn = document.getElementById(`rest-btn-${exerciseId}`)
+  if (btn) { btn.textContent = `⏱ ${totalSeconds}s`; btn.classList.add('running') }
+
+  restTimers[exerciseId].intervalId = setInterval(() => {
+    if (!restTimers[exerciseId]) return
+    restTimers[exerciseId].remaining--
+    const remaining = restTimers[exerciseId].remaining
+    const btn2 = document.getElementById(`rest-btn-${exerciseId}`)
+
+    if (remaining <= 0) {
+      clearInterval(restTimers[exerciseId].intervalId)
+      delete restTimers[exerciseId]
+      playBeep()
+      if (btn2) {
+        btn2.textContent = '✅ Descansou!'
+        btn2.classList.remove('running')
+        btn2.disabled = true
+        btn2.style.cssText = 'background:rgba(74,222,128,0.1);border-color:rgba(74,222,128,0.22);color:var(--success)'
+      }
+      setTimeout(() => {
+        const btn3 = document.getElementById(`rest-btn-${exerciseId}`)
+        if (btn3) {
+          btn3.textContent = `⏱ Descanso (${totalSeconds}s)`
+          btn3.classList.remove('running')
+          btn3.disabled = false
+          btn3.style.cssText = ''
+        }
+      }, 2000)
+      return
+    }
+    if (btn2) btn2.textContent = `⏱ ${remaining}s`
+  }, 1000)
+}
+
+function resetRestTimerBtn(exerciseId, totalSeconds) {
+  const btn = document.getElementById(`rest-btn-${exerciseId}`)
+  if (!btn) return
+  btn.textContent = `⏱ Descanso (${totalSeconds}s)`
+  btn.classList.remove('running')
+  btn.disabled = false
+  btn.style.cssText = ''
+}
+
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const osc  = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain); gain.connect(ctx.destination)
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(880, ctx.currentTime)
+    gain.gain.setValueAtTime(0.5, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6)
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.6)
+  } catch {}
+}
+
+// ─────────────────────────────────────────────
 // WORKOUT EXECUTION FLOW
 // ─────────────────────────────────────────────
 async function startWorkoutExecution(workoutId) {
@@ -3475,12 +3574,22 @@ function confirmExerciseCompletion() {
     if (btn) { btn.innerHTML = '✅ Concluído'; btn.disabled = true }
     const resultEl = document.getElementById(`exec-ex-result-${exerciseId}`)
     if (resultEl) { resultEl.style.display = 'block'; resultEl.textContent = `Executado: ${resultText}` }
+    const tempoDescanso = ex?.tempo_descanso
+    if (tempoDescanso > 0 && !document.getElementById(`rest-timer-${exerciseId}`)) {
+      const restWrap = document.createElement('div')
+      restWrap.className = 'rest-timer-wrap'
+      restWrap.id = `rest-timer-${exerciseId}`
+      restWrap.innerHTML = `<button class="btn-rest-timer" id="rest-btn-${exerciseId}" onclick="toggleRestTimer('${exerciseId}',${tempoDescanso})">⏱ Descanso (${tempoDescanso}s)</button>`
+      card.appendChild(restWrap)
+    }
   }
   closeExerciseCompletionModal()
 }
 
 function finishWorkout() {
   if (!timerInterval) return
+  for (const id in restTimers) { if (restTimers[id]?.intervalId) clearInterval(restTimers[id].intervalId) }
+  restTimers = {}
   clearInterval(timerInterval)
   timerInterval = null
   const finalTime = document.getElementById('exec-timer-display')?.textContent || '00:00:00'
