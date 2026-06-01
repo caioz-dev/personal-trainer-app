@@ -2155,6 +2155,8 @@ async function openStudentSheet(studentId, studentName) {
 
     const total = workouts.reduce((s, w) => s + getWorkoutVolume(w), 0)
 
+    console.log('[openStudentSheet] profile.role:', profile.role)
+
     const rows = workouts.map(w => {
       const exes = w.workout_exercises || []
       const vol  = getWorkoutVolume(w)
@@ -2169,6 +2171,10 @@ async function openStudentSheet(studentId, studentName) {
         : `<tr><td colspan="3" style="padding:.75rem 1rem;font-style:italic;color:var(--text-muted)">Sem detalhes disponíveis</td></tr>`
       const editBtn = profile.role === 'personal'
         ? `<button class="edit-btn" style="opacity:1" onclick="event.stopPropagation();closeStudentSheet();editWorkout('${w.id}')" title="Editar">✏️</button>`
+        : ''
+      const safeStudentName = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+      const deleteBtn = profile.role === 'personal'
+        ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid rgba(144,158,186,0.06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}','${safeStudentName}')">🗑️ Excluir Treino</button></div>`
         : ''
       return `
         <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
@@ -2192,7 +2198,7 @@ async function openStudentSheet(studentId, studentName) {
                 </tr></thead>
                 <tbody>${exRows}</tbody>
               </table>
-              ${profile.role === 'personal' ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid rgba(144,158,186,0.06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}','${studentName.replace(/'/g, "\\'")}')">🗑️ Excluir Treino</button></div>` : ''}
+              ${deleteBtn}
             </div>
           </td>
         </tr>`
