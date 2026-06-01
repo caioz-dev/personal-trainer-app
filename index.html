@@ -1848,6 +1848,7 @@ async function renderDetail(studentId, studentName, gen = 0) {
       <button class="back-btn" onclick="navigateTo('students')">← Voltar para Alunos</button>
       ${historyHTML(workouts, studentName)}`
     if (workouts.length) initChart('evo-chart', [...workouts].reverse())
+    bindWorkoutRowClicks(body)
   } catch (err) {
     if (gen && navGen !== gen) return
     body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
@@ -1882,6 +1883,7 @@ async function renderHistory(studentId, gen = 0) {
     }
     body.innerHTML = bannerHTML + historyHTML(workouts, profile.name)
     if (workouts.length) initChart('evo-chart', [...workouts].reverse())
+    bindWorkoutRowClicks(body)
   } catch (err) {
     if (gen && navGen !== gen) return
     body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
@@ -1937,7 +1939,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
     const uid = w.id.replace(/-/g, '')
 
     return `
-      <tr class="history-main-row" onclick="toggleWorkoutDetail('${uid}')">
+      <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
         <td>
           <strong>${w.name || fmtDate(w.date)}</strong>
           ${w.name ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">${fmtDate(w.date)}</div>` : ''}
@@ -2009,6 +2011,17 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
         </div>
       </div>
     </div>`
+}
+
+function bindWorkoutRowClicks(container) {
+  const tbody = container.querySelector('tbody')
+  if (!tbody) return
+  tbody.addEventListener('click', function(e) {
+    if (e.target.closest('.edit-btn, .del-btn, .btn-start-workout, .exec-complete-btn')) return
+    const row = e.target.closest('tr[data-uid]')
+    if (!row) return
+    toggleWorkoutDetail(row.dataset.uid)
+  })
 }
 
 function toggleWorkoutDetail(uid) {
@@ -2125,7 +2138,7 @@ async function openStudentSheet(studentId, studentName) {
         ? `<button class="edit-btn" style="opacity:1" onclick="event.stopPropagation();closeStudentSheet();editWorkout('${w.id}')" title="Editar">✏️</button>`
         : ''
       return `
-        <tr class="history-main-row" onclick="toggleWorkoutDetail('${uid}')">
+        <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
           <td>
             <strong>${w.name || fmtDate(w.date)}</strong>
             ${w.name ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">${fmtDate(w.date)}</div>` : ''}
@@ -2172,6 +2185,7 @@ async function openStudentSheet(studentId, studentName) {
           <tbody>${rows}</tbody>
         </table>
       </div>`
+    bindWorkoutRowClicks(body)
   } catch (err) {
     body.innerHTML = `${header}<div class="empty-state"><div class="empty-icon">⚠️</div>
       <p>Erro ao carregar histórico.</p>
