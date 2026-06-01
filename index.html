@@ -46,6 +46,7 @@
       text-rendering: optimizeLegibility;
       -webkit-font-smoothing: antialiased;
       transition: background 0.26s, color 0.26s;
+      overflow-x: hidden;
     }
 
     ::-webkit-scrollbar       { width: 6px; }
@@ -539,7 +540,7 @@
       color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      white-space: nowrap;
+      white-space: nowrap;   /* permite nowrap em desktop onde há espaço */
       border-bottom: 1px solid var(--border-subtle);
     }
 
@@ -1073,6 +1074,104 @@
       .exec-timer-display { font-size: 2rem; text-align: left; }
       .exec-ex-header { flex-wrap: wrap; }
       .comparison-modal-card { padding: 1.25rem 1rem; }
+    }
+
+    /* ════════════════════════════════════════════
+       MOBILE — ELIMINAR SCROLL HORIZONTAL
+    ════════════════════════════════════════════ */
+
+    /* 1. Impede qualquer elemento de estourar a viewport */
+    html { overflow-x: hidden; }
+    body { overflow-x: hidden; max-width: 100vw; }
+
+    /* 2. Containers principais não podem exceder a largura disponível */
+    .main-content,
+    .content-body,
+    .view,
+    .auth-wrapper { max-width: 100%; }
+
+    /* 3. Tabelas sempre rodam dentro do wrapper; wrapper ocupa 100% */
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* 4. Células não empurram a tabela para fora — quebram o texto */
+    td, th { word-break: break-word; overflow-wrap: break-word; }
+
+    /* 5. Modais com tabelas: contém o overflow lateral */
+    .comparison-modal-card { overflow-x: hidden; }
+    .student-sheet-panel   { overflow-x: hidden; max-width: 100vw; }
+    .history-detail-inner  { overflow-x: auto; }
+
+    /* 6. Sidebar: nunca mais larga que a tela */
+    .sidebar { max-width: 100vw; }
+
+    /* ---- BREAKPOINT 600px ---- */
+    @media (max-width: 600px) {
+      /* Sidebar: hambúrguer (já coberto pelo 768px, reforço) */
+      .sidebar { width: 100%; }
+      .sidebar.open { width: min(280px, 100vw); }
+
+      /* Conteúdo principal */
+      .content-body { padding: 1rem; }
+
+      /* Cabeçalhos de card flex → wrap */
+      .card-header { flex-wrap: wrap; gap: .5rem; }
+
+      /* Tabelas: fonte menor para caber mais conteúdo */
+      .table-wrap table { font-size: .78rem; }
+      .table-wrap td,
+      .table-wrap th { padding: .4rem .6rem; white-space: normal; }
+
+      /* Execution panel */
+      .execution-panel { padding: 1rem .875rem 2rem; }
+
+      /* Grids de estatísticas inline (ex: ficha do aluno) */
+      .stats-grid { grid-template-columns: 1fr 1fr; }
+
+      /* Timer widget: ocupa a largura toda no mobile */
+      .workout-timer-widget { right: .5rem; left: .5rem; min-width: unset; width: auto; }
+
+      /* Botões de ação em linha → empilhar */
+      .exec-ex-header { flex-wrap: wrap; gap: .5rem; }
+      .exec-complete-btn { width: 100%; justify-content: center; }
+
+      /* Comparison modal */
+      .comparison-modal-overlay { padding: .5rem; }
+    }
+
+    /* ---- BREAKPOINT 400px (375px devices) ---- */
+    @media (max-width: 400px) {
+      /* Auth card */
+      .auth-card { padding: 1.25rem .875rem; }
+
+      /* Stat values menores */
+      .stat-value { font-size: 1.5rem; }
+
+      /* Stats: empilha em coluna única */
+      .stats-grid { grid-template-columns: 1fr; }
+
+      /* th: deixa quebrar em 1 linha */
+      th { white-space: normal; font-size: .65rem; }
+
+      /* Cabeçalho da execução */
+      .execution-header { gap: .5rem; }
+      .exec-timer-display { font-size: 1.75rem; }
+
+      /* Cards com menos padding */
+      .card { padding: .875rem; }
+
+      /* Content header mais compacto */
+      .content-header { padding: .625rem .875rem; }
+      .content-header h1 { font-size: .82rem; }
+
+      /* Toast */
+      .toast-wrap { left: .5rem; right: .5rem; }
+
+      /* student sheet panel */
+      .student-sheet-panel { padding: 1rem .75rem; }
     }
   </style>
 </head>
