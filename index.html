@@ -2156,6 +2156,13 @@ async function openStudentSheet(studentId, studentName) {
     ])
 
     const executions = execRes.data || []
+    console.log('[openStudentSheet] execRes:', {
+      studentId,
+      count:  execRes.data?.length ?? 0,
+      error:  execRes.error?.message ?? null,
+      sample: execRes.data?.[0] ?? null
+    })
+    if (execRes.error) console.error('[openStudentSheet] erro na query de execuções:', execRes.error)
 
     if (!workouts.length && !executions.length) {
       body.innerHTML = header + `<div class="empty-state"><div class="empty-icon">🏋️</div>
@@ -3135,9 +3142,11 @@ async function saveWorkoutExecutions(workoutId) {
         reps_executed:   exec.reps_executed
       }
     })
-  if (!records.length) return
-  const { error } = await sb.from('workout_executions').insert(records)
-  if (error) console.error('Erro ao salvar execuções no banco:', error)
+  console.log('[saveWorkoutExecutions] records a inserir:', JSON.stringify(records))
+  if (!records.length) { console.log('[saveWorkoutExecutions] nenhum exercício concluído, nada a salvar'); return }
+  const { data, error } = await sb.from('workout_executions').insert(records).select()
+  console.log('[saveWorkoutExecutions] resultado:', { inseridos: data?.length ?? 0, erro: error?.message ?? null })
+  if (error) console.error('[saveWorkoutExecutions] erro no banco:', error)
 }
 </script>
 </body>
