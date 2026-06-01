@@ -1179,6 +1179,10 @@
       margin-top: .75rem;
       padding-top: .75rem;
       border-top: 1px solid rgba(144,158,186,0.08);
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      flex-wrap: wrap;
     }
 
     .btn-rest-timer {
@@ -3491,6 +3495,12 @@ function renderExecutionScreen(workout) {
               ex.cadencia          ? `Cadência: ${ex.cadencia}`         : null,
               ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null
             ].filter(Boolean).join(' &nbsp;·&nbsp; ')
+        const restBtn = !isAero && ex.tempo_descanso > 0
+          ? `<div class="rest-timer-wrap" id="rest-timer-${ex.id}">
+               <span style="font-size:.72rem;color:var(--text-muted);font-weight:500">Ao terminar uma série, inicie o descanso</span>
+               <button class="btn-rest-timer" id="rest-btn-${ex.id}" onclick="toggleRestTimer('${ex.id}',${ex.tempo_descanso})">⏱ Descanso (${ex.tempo_descanso}s)</button>
+             </div>`
+          : ''
         return `
         <div class="exec-exercise-card" id="exec-ex-${ex.id}">
           <div class="exec-ex-header">
@@ -3500,6 +3510,7 @@ function renderExecutionScreen(workout) {
           </div>
           <div class="exec-ex-planned">${planned || '—'}</div>
           <div class="exec-ex-result" id="exec-ex-result-${ex.id}" style="display:none"></div>
+          ${restBtn}
         </div>`
       }).join('')
     : '<div class="empty-state" style="padding:2rem"><div class="empty-icon">🏋️</div><p>Nenhum exercício neste treino.</p></div>'
@@ -3574,14 +3585,6 @@ function confirmExerciseCompletion() {
     if (btn) { btn.innerHTML = '✅ Concluído'; btn.disabled = true }
     const resultEl = document.getElementById(`exec-ex-result-${exerciseId}`)
     if (resultEl) { resultEl.style.display = 'block'; resultEl.textContent = `Executado: ${resultText}` }
-    const tempoDescanso = ex?.tempo_descanso
-    if (tempoDescanso > 0 && !document.getElementById(`rest-timer-${exerciseId}`)) {
-      const restWrap = document.createElement('div')
-      restWrap.className = 'rest-timer-wrap'
-      restWrap.id = `rest-timer-${exerciseId}`
-      restWrap.innerHTML = `<button class="btn-rest-timer" id="rest-btn-${exerciseId}" onclick="toggleRestTimer('${exerciseId}',${tempoDescanso})">⏱ Descanso (${tempoDescanso}s)</button>`
-      card.appendChild(restWrap)
-    }
   }
   closeExerciseCompletionModal()
 }
