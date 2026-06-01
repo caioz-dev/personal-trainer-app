@@ -1331,16 +1331,34 @@
 <!-- EXERCISE COMPLETION MODAL -->
 <div id="exec-complete-modal" class="exec-complete-modal-overlay" style="display:none">
   <div class="timer-modal-card" style="max-width:400px;width:calc(100% - 2rem);text-align:left">
-    <div style="font-size:2rem;text-align:center;margin-bottom:.75rem">💪</div>
+    <div style="font-size:2rem;text-align:center;margin-bottom:.75rem" id="exec-modal-icon">💪</div>
     <div class="timer-modal-title" id="exec-modal-ex-name" style="text-align:center">Exercício</div>
     <div class="timer-modal-sub" style="text-align:center">Informe os valores que você executou</div>
-    <div class="form-group" style="margin-top:1.25rem">
-      <label>Carga que você usou (kg)</label>
-      <input id="exec-modal-weight" type="number" class="form-control" placeholder="80" step="0.5" min="0">
+    <!-- Musculação -->
+    <div id="exec-modal-musculacao" style="margin-top:1.25rem">
+      <div class="form-group">
+        <label>Carga que você usou (kg)</label>
+        <input id="exec-modal-weight" type="number" class="form-control" placeholder="80" step="0.5" min="0">
+      </div>
+      <div class="form-group">
+        <label>Repetições que conseguiu</label>
+        <input id="exec-modal-reps" type="number" class="form-control" placeholder="12" min="1">
+      </div>
     </div>
-    <div class="form-group">
-      <label>Repetições que conseguiu</label>
-      <input id="exec-modal-reps" type="number" class="form-control" placeholder="12" min="1">
+    <!-- Aeróbico -->
+    <div id="exec-modal-aerobico" style="display:none;margin-top:1.25rem">
+      <div class="form-group">
+        <label>Tempo realizado (minutos)</label>
+        <input id="exec-modal-duration" type="number" class="form-control" placeholder="30" step="0.5" min="0">
+      </div>
+      <div class="form-group">
+        <label>Distância realizada (km)</label>
+        <input id="exec-modal-distance" type="number" class="form-control" placeholder="5.0" step="0.01" min="0">
+      </div>
+      <div class="form-group">
+        <label>Velocidade média (km/h)</label>
+        <input id="exec-modal-speed" type="number" class="form-control" placeholder="10.0" step="0.1" min="0">
+      </div>
     </div>
     <div style="display:flex;gap:.75rem;margin-top:1.25rem">
       <button class="btn btn-outline" style="flex:1" onclick="closeExerciseCompletionModal()">Cancelar</button>
@@ -1923,15 +1941,33 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
       : (w.notes || '<span style="color:var(--text-muted)">—</span>')
 
     const exDetailRows = exCount > 0
-      ? exes.map(ex => `
-          <tr>
+      ? exes.map(ex => {
+          if (ex.exercise_type === 'aerobico') {
+            const parts = [
+              ex.duration_min ? `${ex.duration_min} min` : null,
+              ex.distance_km  ? `${ex.distance_km} km`  : null
+            ].filter(Boolean).join(' / ')
+            return `<tr>
+              <td style="padding-left:2rem;font-weight:500;color:var(--text-secondary)">
+                ${ex.exercise_name}
+                <span style="font-size:.63rem;background:rgba(245,158,11,0.1);color:var(--warning);border:1px solid rgba(245,158,11,0.2);border-radius:999px;padding:.1rem .45rem;margin-left:.3rem;vertical-align:middle">🏃 Aeróbico</span>
+              </td>
+              <td>—</td>
+              <td style="color:var(--text-secondary)">${parts || '—'}</td>
+              <td>${ex.speed_kmh ? ex.speed_kmh + ' km/h' : '—'}</td>
+              <td>${ex.pace ? ex.pace + ' /km' : '—'}</td>
+              <td style="color:var(--text-muted)">—</td>
+            </tr>`
+          }
+          return `<tr>
             <td style="padding-left:2rem;font-weight:500;color:var(--text-secondary)">${ex.exercise_name}</td>
             <td>${ex.sets} série${ex.sets > 1 ? 's' : ''}</td>
             <td>${ex.weight_kg} kg × ${ex.reps} reps</td>
             <td>${ex.cadencia || '—'}</td>
             <td>${ex.tempo_descanso != null ? ex.tempo_descanso + 's' : '—'}</td>
             <td class="vol-cell">${parseFloat(ex.volume).toLocaleString('pt-BR')} kg</td>
-          </tr>`).join('')
+          </tr>`
+        }).join('')
       : `<tr><td colspan="6" style="padding:.75rem 1rem 1rem;font-style:italic;color:var(--text-muted)">
             Treino no formato legado — sem detalhes por exercício
          </td></tr>`
@@ -2111,14 +2147,32 @@ async function editWorkout(workoutId) {
   } else {
     exes.forEach(ex => {
       addExercise()
-      const row = document.getElementById(`ex-${exerciseCounter}`)
-      row.querySelector('.ex-name').value     = ex.exercise_name
-      row.querySelector('.ex-sets').value     = ex.sets
-      row.querySelector('.ex-weight').value   = ex.weight_kg
-      row.querySelector('.ex-reps').value     = ex.reps
-      row.querySelector('.ex-cadencia').value = ex.cadencia || ''
-      row.querySelector('.ex-descanso').value = ex.tempo_descanso != null ? ex.tempo_descanso : ''
-      refreshExerciseVolume(exerciseCounter)
+      const row    = document.getElementById(`ex-${exerciseCounter}`)
+      const exType = ex.exercise_type || 'musculacao'
+      row.querySelector('.ex-name').value = ex.exercise_name
+      row.querySelector('.ex-type').value = exType
+      toggleExerciseType(exerciseCounter)
+      if (exType === 'aerobico') {
+        if (ex.duration_min != null)          row.querySelector('.ex-duration')?.setAttribute('value', ex.duration_min)
+        if (ex.distance_km  != null)          row.querySelector('.ex-distance')?.setAttribute('value', ex.distance_km)
+        if (ex.speed_kmh    != null)          row.querySelector('.ex-speed')?.setAttribute('value', ex.speed_kmh)
+        if (ex.recovery_interval_min != null) row.querySelector('.ex-recovery-interval')?.setAttribute('value', ex.recovery_interval_min)
+        if (ex.recovery_speed_kmh != null)    row.querySelector('.ex-recovery-speed')?.setAttribute('value', ex.recovery_speed_kmh)
+        // Restore values via .value to trigger live binding
+        if (ex.duration_min != null)          row.querySelector('.ex-duration').value          = ex.duration_min
+        if (ex.distance_km  != null)          row.querySelector('.ex-distance').value          = ex.distance_km
+        if (ex.speed_kmh    != null)          row.querySelector('.ex-speed').value             = ex.speed_kmh
+        if (ex.recovery_interval_min != null) row.querySelector('.ex-recovery-interval').value = ex.recovery_interval_min
+        if (ex.recovery_speed_kmh != null)    row.querySelector('.ex-recovery-speed').value    = ex.recovery_speed_kmh
+        refreshPace(exerciseCounter)
+      } else {
+        row.querySelector('.ex-sets').value     = ex.sets
+        row.querySelector('.ex-weight').value   = ex.weight_kg
+        row.querySelector('.ex-reps').value     = ex.reps
+        row.querySelector('.ex-cadencia').value = ex.cadencia || ''
+        row.querySelector('.ex-descanso').value = ex.tempo_descanso != null ? ex.tempo_descanso : ''
+        refreshExerciseVolume(exerciseCounter)
+      }
     })
   }
   refreshTotalVolume()
@@ -2621,6 +2675,15 @@ function addExercise() {
         <input type="text" class="form-control ex-name" placeholder="Ex: Supino Reto" required>
       </div>
       <div class="form-group">
+        <label>Tipo de exercício</label>
+        <select class="form-control ex-type" onchange="toggleExerciseType(${id})">
+          <option value="musculacao">🏋️ Musculação</option>
+          <option value="aerobico">🏃 Aeróbico (esteira/corrida)</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-grid" id="ex-musc-${id}">
+      <div class="form-group">
         <label>Séries</label>
         <input type="number" class="form-control ex-sets" placeholder="4" min="1" max="99" required
                oninput="refreshExerciseVolume(${id})">
@@ -2646,6 +2709,36 @@ function addExercise() {
       <div class="form-group">
         <label>Volume</label>
         <div class="exercise-vol-display" id="ex-vol-${id}">—</div>
+      </div>
+    </div>
+    <div class="form-grid" id="ex-aero-${id}" style="display:none">
+      <div class="form-group">
+        <label>Tempo (min)</label>
+        <input type="number" class="form-control ex-duration" placeholder="30" step="0.5" min="0"
+               oninput="refreshExerciseVolume(${id})">
+      </div>
+      <div class="form-group">
+        <label>Distância (km)</label>
+        <input type="number" class="form-control ex-distance" placeholder="5.0" step="0.01" min="0"
+               oninput="refreshExerciseVolume(${id})">
+      </div>
+      <div class="form-group">
+        <label>Velocidade média (km/h)</label>
+        <input type="number" class="form-control ex-speed" placeholder="10.0" step="0.1" min="0"
+               oninput="refreshPace(${id});refreshExerciseVolume(${id})">
+      </div>
+      <div class="form-group">
+        <label>Ritmo (min/km)</label>
+        <div class="exercise-vol-display" id="ex-pace-${id}" style="font-size:.8rem">—</div>
+        <input type="hidden" class="ex-pace" value="">
+      </div>
+      <div class="form-group">
+        <label>Interv. recuperação (min)</label>
+        <input type="number" class="form-control ex-recovery-interval" placeholder="5" step="0.5" min="0">
+      </div>
+      <div class="form-group">
+        <label>Vel. recuperação (km/h)</label>
+        <input type="number" class="form-control ex-recovery-speed" placeholder="6.0" step="0.1" min="0">
       </div>
     </div>`
 
@@ -2677,25 +2770,64 @@ function updateRemoveButtons() {
   })
 }
 
+function toggleExerciseType(id) {
+  const row  = document.getElementById(`ex-${id}`)
+  if (!row) return
+  const type = row.querySelector('.ex-type').value
+  const musc = document.getElementById(`ex-musc-${id}`)
+  const aero = document.getElementById(`ex-aero-${id}`)
+  const isAero = type === 'aerobico'
+  if (musc) musc.style.display = isAero ? 'none' : ''
+  if (aero) aero.style.display = isAero ? '' : 'none'
+  row.querySelectorAll('.ex-sets, .ex-weight, .ex-reps').forEach(el => { el.required = !isAero })
+  refreshExerciseVolume(id)
+}
+
+function refreshPace(id) {
+  const row   = document.getElementById(`ex-${id}`)
+  if (!row) return
+  const speed = parseFloat(row.querySelector('.ex-speed')?.value) || 0
+  const paceEl    = document.getElementById(`ex-pace-${id}`)
+  const paceInput = row.querySelector('.ex-pace')
+  if (speed > 0) {
+    const paceMin = 60 / speed
+    const mins    = Math.floor(paceMin)
+    const secs    = Math.round((paceMin - mins) * 60)
+    const paceStr = `${mins}:${String(secs).padStart(2, '0')}`
+    if (paceEl)    paceEl.textContent = paceStr + ' /km'
+    if (paceInput) paceInput.value    = paceStr
+  } else {
+    if (paceEl)    paceEl.textContent = '—'
+    if (paceInput) paceInput.value    = ''
+  }
+}
+
 function refreshExerciseVolume(id) {
   const row = document.getElementById(`ex-${id}`)
   if (!row) return
-  const sets   = parseInt(row.querySelector('.ex-sets').value)   || 0
-  const weight = parseFloat(row.querySelector('.ex-weight').value) || 0
-  const reps   = parseInt(row.querySelector('.ex-reps').value)   || 0
-  const vol    = sets * weight * reps
-  const el     = document.getElementById(`ex-vol-${id}`)
-  if (el) el.textContent = (sets > 0 && weight > 0 && reps > 0)
-    ? vol.toLocaleString('pt-BR') + ' kg' : '—'
+  const type = row.querySelector('.ex-type')?.value || 'musculacao'
+  const el   = document.getElementById(`ex-vol-${id}`)
+  if (type === 'aerobico') {
+    // vol display is in the hidden musculacao section — no update needed
+  } else {
+    const sets   = parseInt(row.querySelector('.ex-sets')?.value)    || 0
+    const weight = parseFloat(row.querySelector('.ex-weight')?.value) || 0
+    const reps   = parseInt(row.querySelector('.ex-reps')?.value)    || 0
+    const vol    = sets * weight * reps
+    if (el) el.textContent = (sets > 0 && weight > 0 && reps > 0)
+      ? vol.toLocaleString('pt-BR') + ' kg' : '—'
+  }
   refreshTotalVolume()
 }
 
 function refreshTotalVolume() {
   let total = 0
   document.querySelectorAll('#exercise-list .exercise-row').forEach(row => {
-    const sets   = parseInt(row.querySelector('.ex-sets')?.value)   || 0
+    const type = row.querySelector('.ex-type')?.value || 'musculacao'
+    if (type === 'aerobico') return
+    const sets   = parseInt(row.querySelector('.ex-sets')?.value)    || 0
     const weight = parseFloat(row.querySelector('.ex-weight')?.value) || 0
-    const reps   = parseInt(row.querySelector('.ex-reps')?.value)   || 0
+    const reps   = parseInt(row.querySelector('.ex-reps')?.value)    || 0
     total += sets * weight * reps
   })
   const el = document.getElementById('total-vol-preview')
@@ -2729,18 +2861,41 @@ async function saveWorkout(e) {
 
   rows.forEach(row => {
     const exName = row.querySelector('.ex-name').value.trim()
-    const sets   = parseInt(row.querySelector('.ex-sets').value)
-    const weight = parseFloat(row.querySelector('.ex-weight').value)
-    const reps   = parseInt(row.querySelector('.ex-reps').value)
-    if (!exName || !sets || !weight || !reps || sets < 1 || reps < 1 || weight <= 0) {
-      allValid = false; return
+    const exType = row.querySelector('.ex-type')?.value || 'musculacao'
+
+    if (exType === 'aerobico') {
+      const duration = parseFloat(row.querySelector('.ex-duration')?.value)
+      if (!exName || !duration || duration <= 0) { allValid = false; return }
+      exercises.push({
+        exercise_name: exName, exercise_type: 'aerobico',
+        sets: null, weight_kg: null, reps: null, volume: 0,
+        cadencia: null, tempo_descanso: null,
+        duration_min:          duration,
+        distance_km:           parseFloat(row.querySelector('.ex-distance')?.value)          || null,
+        speed_kmh:             parseFloat(row.querySelector('.ex-speed')?.value)             || null,
+        pace:                  row.querySelector('.ex-pace')?.value                          || null,
+        recovery_interval_min: parseFloat(row.querySelector('.ex-recovery-interval')?.value) || null,
+        recovery_speed_kmh:    parseFloat(row.querySelector('.ex-recovery-speed')?.value)    || null
+      })
+    } else {
+      const sets   = parseInt(row.querySelector('.ex-sets').value)
+      const weight = parseFloat(row.querySelector('.ex-weight').value)
+      const reps   = parseInt(row.querySelector('.ex-reps').value)
+      if (!exName || !sets || !weight || !reps || sets < 1 || reps < 1 || weight <= 0) {
+        allValid = false; return
+      }
+      const volume   = parseFloat((sets * weight * reps).toFixed(2))
+      const cadencia = row.querySelector('.ex-cadencia').value.trim() || null
+      const descanso = row.querySelector('.ex-descanso').value
+      totalVolume += volume
+      exercises.push({
+        exercise_name: exName, exercise_type: 'musculacao',
+        sets, weight_kg: weight, reps, volume,
+        cadencia: cadencia || null, tempo_descanso: descanso ? parseInt(descanso) : null,
+        duration_min: null, distance_km: null, speed_kmh: null, pace: null,
+        recovery_interval_min: null, recovery_speed_kmh: null
+      })
     }
-    const volume   = parseFloat((sets * weight * reps).toFixed(2))
-    const cadencia = row.querySelector('.ex-cadencia').value.trim() || null
-    const descanso = row.querySelector('.ex-descanso').value
-    totalVolume += volume
-    exercises.push({ exercise_name: exName, sets, weight_kg: weight, reps, volume,
-      cadencia: cadencia || null, tempo_descanso: descanso ? parseInt(descanso) : null })
   })
 
   if (!allValid || exercises.length === 0) {
@@ -3002,20 +3157,32 @@ function renderExecutionScreen(workout) {
   document.getElementById('exec-workout-name').textContent = workout.name || fmtDate(workout.date)
   const exes = workout.workout_exercises || []
   document.getElementById('exec-exercise-list').innerHTML = exes.length
-    ? exes.map(ex => `
+    ? exes.map(ex => {
+        const isAero = ex.exercise_type === 'aerobico'
+        const planned = isAero
+          ? [
+              ex.duration_min ? `${ex.duration_min} min`     : null,
+              ex.distance_km  ? `${ex.distance_km} km`       : null,
+              ex.speed_kmh    ? `${ex.speed_kmh} km/h`       : null,
+              ex.pace         ? `Ritmo: ${ex.pace} /km`      : null,
+              ex.recovery_interval_min ? `Rec: ${ex.recovery_interval_min} min` : null
+            ].filter(Boolean).join(' &nbsp;·&nbsp; ')
+          : [
+              `${ex.sets} série${ex.sets > 1 ? 's' : ''} × ${ex.reps} reps × ${ex.weight_kg} kg`,
+              ex.cadencia          ? `Cadência: ${ex.cadencia}`         : null,
+              ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null
+            ].filter(Boolean).join(' &nbsp;·&nbsp; ')
+        return `
         <div class="exec-exercise-card" id="exec-ex-${ex.id}">
           <div class="exec-ex-header">
-            <div class="exec-ex-name">${ex.exercise_name}</div>
+            <div class="exec-ex-name">${isAero ? '🏃 ' : ''}${ex.exercise_name}</div>
             <button class="btn btn-outline btn-sm exec-complete-btn"
-                    onclick="openExerciseCompletionModal('${ex.id}')">✓ Concluir exercício</button>
+                    onclick="openExerciseCompletionModal('${ex.id}')">✓ Concluir</button>
           </div>
-          <div class="exec-ex-planned">
-            ${ex.sets} série${ex.sets > 1 ? 's' : ''} × ${ex.reps} reps × ${ex.weight_kg} kg
-            ${ex.cadencia ? ` &nbsp;·&nbsp; Cadência: ${ex.cadencia}` : ''}
-            ${ex.tempo_descanso != null ? ` &nbsp;·&nbsp; Descanso: ${ex.tempo_descanso}s` : ''}
-          </div>
+          <div class="exec-ex-planned">${planned || '—'}</div>
           <div class="exec-ex-result" id="exec-ex-result-${ex.id}" style="display:none"></div>
-        </div>`).join('')
+        </div>`
+      }).join('')
     : '<div class="empty-state" style="padding:2rem"><div class="empty-icon">🏋️</div><p>Nenhum exercício neste treino.</p></div>'
 }
 
@@ -3024,11 +3191,28 @@ function openExerciseCompletionModal(exerciseId) {
   const ex = exes.find(e => e.id === exerciseId)
   if (!ex) return
   _completingExerciseId = exerciseId
-  document.getElementById('exec-modal-ex-name').textContent  = ex.exercise_name
-  document.getElementById('exec-modal-weight').value         = ex.weight_kg || ''
-  document.getElementById('exec-modal-reps').value           = ex.reps || ''
+  const isAero = ex.exercise_type === 'aerobico'
+
+  document.getElementById('exec-modal-icon').textContent   = isAero ? '🏃' : '💪'
+  document.getElementById('exec-modal-ex-name').textContent = ex.exercise_name
+  document.getElementById('exec-modal-musculacao').style.display = isAero ? 'none' : 'block'
+  document.getElementById('exec-modal-aerobico').style.display   = isAero ? 'block' : 'none'
+
+  if (isAero) {
+    document.getElementById('exec-modal-duration').value = ex.duration_min || ''
+    document.getElementById('exec-modal-distance').value = ex.distance_km  || ''
+    document.getElementById('exec-modal-speed').value    = ex.speed_kmh    || ''
+  } else {
+    document.getElementById('exec-modal-weight').value = ex.weight_kg || ''
+    document.getElementById('exec-modal-reps').value   = ex.reps      || ''
+  }
   document.getElementById('exec-complete-modal').style.display = 'flex'
-  setTimeout(() => document.getElementById('exec-modal-weight').select(), 50)
+  setTimeout(() => {
+    const first = isAero
+      ? document.getElementById('exec-modal-duration')
+      : document.getElementById('exec-modal-weight')
+    first?.select()
+  }, 50)
 }
 
 function closeExerciseCompletionModal() {
@@ -3037,22 +3221,40 @@ function closeExerciseCompletionModal() {
 }
 
 function confirmExerciseCompletion() {
-  const weight = parseFloat(document.getElementById('exec-modal-weight').value)
-  const reps   = parseInt(document.getElementById('exec-modal-reps').value)
-  if (!weight || weight <= 0) { toast('Informe a carga utilizada.', 'error'); return }
-  if (!reps   || reps < 1)   { toast('Informe as repetições realizadas.', 'error'); return }
+  const exes   = currentWorkoutData?.workout_exercises || []
+  const ex     = exes.find(e => e.id === _completingExerciseId)
+  const isAero = ex?.exercise_type === 'aerobico'
+
+  let execData, resultText
+  if (isAero) {
+    const duration = parseFloat(document.getElementById('exec-modal-duration').value)
+    if (!duration || duration <= 0) { toast('Informe o tempo realizado.', 'error'); return }
+    const distance = parseFloat(document.getElementById('exec-modal-distance').value) || null
+    const speed    = parseFloat(document.getElementById('exec-modal-speed').value)    || null
+    execData   = { duration_executed_min: duration, distance_executed_km: distance, speed_executed_kmh: speed, weight_executed: null, reps_executed: null }
+    resultText = [
+      `${duration} min`,
+      distance ? `${distance} km` : null,
+      speed    ? `${speed} km/h`  : null
+    ].filter(Boolean).join(' / ')
+  } else {
+    const weight = parseFloat(document.getElementById('exec-modal-weight').value)
+    const reps   = parseInt(document.getElementById('exec-modal-reps').value)
+    if (!weight || weight <= 0) { toast('Informe a carga utilizada.', 'error'); return }
+    if (!reps   || reps < 1)   { toast('Informe as repetições realizadas.', 'error'); return }
+    execData   = { weight_executed: weight, reps_executed: reps, duration_executed_min: null, distance_executed_km: null, speed_executed_kmh: null }
+    resultText = `${weight.toLocaleString('pt-BR')} kg × ${reps} rep${reps > 1 ? 's' : ''}`
+  }
+
   const exerciseId = _completingExerciseId
-  exerciseExecutions[exerciseId] = { weight_executed: weight, reps_executed: reps }
+  exerciseExecutions[exerciseId] = execData
   const card = document.getElementById(`exec-ex-${exerciseId}`)
   if (card) {
     card.classList.add('done')
     const btn = card.querySelector('.exec-complete-btn')
     if (btn) { btn.innerHTML = '✅ Concluído'; btn.disabled = true }
     const resultEl = document.getElementById(`exec-ex-result-${exerciseId}`)
-    if (resultEl) {
-      resultEl.style.display = 'block'
-      resultEl.textContent = `Executado: ${weight.toLocaleString('pt-BR')} kg × ${reps} rep${reps > 1 ? 's' : ''}`
-    }
+    if (resultEl) { resultEl.style.display = 'block'; resultEl.textContent = `Executado: ${resultText}` }
   }
   closeExerciseCompletionModal()
 }
@@ -3135,11 +3337,14 @@ async function saveWorkoutExecutions(workoutId) {
     .map(ex => {
       const exec = exerciseExecutions[ex.id]
       return {
-        workout_id:      workoutId,
-        exercise_id:     ex.id,
-        student_id:      profile.id,
-        weight_executed: exec.weight_executed,
-        reps_executed:   exec.reps_executed
+        workout_id:            workoutId,
+        exercise_id:           ex.id,
+        student_id:            profile.id,
+        weight_executed:       exec.weight_executed        ?? null,
+        reps_executed:         exec.reps_executed          ?? null,
+        duration_executed_min: exec.duration_executed_min  ?? null,
+        distance_executed_km:  exec.distance_executed_km   ?? null,
+        speed_executed_kmh:    exec.speed_executed_kmh     ?? null
       }
     })
   console.log('[saveWorkoutExecutions] records a inserir:', JSON.stringify(records))
