@@ -1524,6 +1524,47 @@ let currentWorkoutData    = null
 let exerciseExecutions    = {}
 let _completingExerciseId = null
 
+// Limpa TODO o estado da sessão anterior — chamado no logout e antes de boot de novo usuário
+function resetAppState() {
+  // Timer: cancela interval ativo e fecha overlays relacionados
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null }
+  timerSeconds = 0
+  const timerWidget = document.getElementById('workout-timer-widget')
+  const execOverlay = document.getElementById('execution-overlay')
+  const compModal   = document.getElementById('comparison-modal')
+  const timerModal  = document.getElementById('timer-modal-overlay')
+  const sheet       = document.getElementById('student-sheet')
+  if (timerWidget) timerWidget.style.display = 'none'
+  if (execOverlay) execOverlay.style.display = 'none'
+  if (compModal)   compModal.style.display   = 'none'
+  if (timerModal)  timerModal.style.display  = 'none'
+  if (sheet)       sheet.style.display       = 'none'
+  document.body.style.overflow = ''
+
+  // Estado de execução de treino
+  currentWorkoutData    = null
+  exerciseExecutions    = {}
+  _completingExerciseId = null
+  editingWorkoutId      = null
+
+  // Navegação
+  historyCtx      = null
+  currentView     = null
+  currentViewOpts = {}
+  navGen          = 0
+
+  // Dados
+  students        = []
+  exerciseCounter = 0
+  window._workoutsCache    = {}
+  window._progressWorkouts = []
+
+  // Charts: destroir instâncias para liberar memória e evitar erros em novo login
+  if (chart)         { try { chart.destroy() }         catch {} ; chart         = null }
+  if (progressChart) { try { progressChart.destroy() } catch {} ; progressChart = null }
+  if (sheetChart)    { try { sheetChart.destroy() }    catch {} ; sheetChart    = null }
+}
+
 // ─────────────────────────────────────────────
 // BOOT
 // ─────────────────────────────────────────────
@@ -1552,7 +1593,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   sb.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN'  && session) { me = session.user; await boot() }
-    if (event === 'SIGNED_OUT')            { booted = false; me = null; profile = null; students = []; showAuthSection() }
+    if (event === 'SIGNED_OUT')            { booted = false; me = null; profile = null; resetAppState(); showAuthSection() }
   })
 
 })
@@ -1560,6 +1601,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 async function boot() {
   if (booted) return
   booted = true
+  resetAppState()   // garante estado limpo independente de quem fez login antes
   const { data: { session } } = await sb.auth.getSession()
   if (!session) { booted = false; showAuthSection(); return }
   me = session.user
@@ -2325,13 +2367,7 @@ async function openStudentSheet(studentId, studentName) {
     ])
 
     const executions = execRes.data || []
-    console.log('[openStudentSheet] execRes:', {
-      studentId,
-      count:  execRes.data?.length ?? 0,
-      error:  execRes.error?.message ?? null,
-      sample: execRes.data?.[0] ?? null
-    })
-    if (execRes.error) console.error('[openStudentSheet] erro na query de execuções:', execRes.error)
+    if (execRes.error) console.error('[openStudentSheet] erro na query de execuções:', execRes.error?.code, execRes.error?.message)
 
     if (!workouts.length && !executions.length) {
       body.innerHTML = header + `<div class="empty-state"><div class="empty-icon">🏋️</div>
@@ -2340,8 +2376,6 @@ async function openStudentSheet(studentId, studentName) {
     }
 
     const total = workouts.reduce((s, w) => s + getWorkoutVolume(w), 0)
-
-    console.log('[openStudentSheet] profile.role:', profile.role)
 
     const rows = workouts.map(w => {
       const exes = w.workout_exercises || []
@@ -3578,32 +3612,14 @@ function dismissComparison() {
 }
 
 async function saveWorkoutExecutions(workoutId) {
-  // ── Diagnóstico 1: contexto ao entrar na função ──
-  console.group('[saveWorkoutExecutions] iniciando')
-  console.log('workoutId:',          workoutId                              ?? 'NULL ⚠️')
-  console.log('currentWorkoutData:', currentWorkoutData?.id                  ?? 'NULL ⚠️')
-  console.log('profile.id:',         profile?.id                            ?? 'NULL ⚠️')
-  console.log('profile.role:',        profile?.role                          ?? 'NULL ⚠️')
-  console.log('exerciseExecutions:', JSON.stringify(exerciseExecutions))
-  console.groupEnd()
-
   const exes = currentWorkoutData?.workout_exercises || []
-  console.log('[saveWorkoutExecutions] exercícios em currentWorkoutData:', exes.map(e => ({ id: e.id, name: e.exercise_name })))
-
-  if (!exes.length) {
-    console.warn('[saveWorkoutExecutions] currentWorkoutData não tem workout_exercises — treino pode ter sido resetado antes do save')
-    return
-  }
+  if (!exes.length) return
 
   const records = exes
-    .filter(ex => {
-      const hasExec = !!exerciseExecutions[ex.id]
-      if (!hasExec) console.log(`[saveWorkoutExecutions] exercício "${ex.exercise_name}" (${ex.id}) sem execução registrada — pulando`)
-      return hasExec
-    })
+    .filter(ex => !!exerciseExecutions[ex.id])
     .map(ex => {
       const exec = exerciseExecutions[ex.id]
-      const rec = {
+      return {
         workout_id:            workoutId,
         exercise_id:           ex.id,
         student_id:            profile.id,
@@ -3613,29 +3629,12 @@ async function saveWorkoutExecutions(workoutId) {
         distance_executed_km:  exec.distance_executed_km   ?? null,
         speed_executed_kmh:    exec.speed_executed_kmh     ?? null
       }
-      console.log('[saveWorkoutExecutions] record montado:', JSON.stringify(rec))
-      return rec
     })
 
-  if (!records.length) {
-    console.warn('[saveWorkoutExecutions] nenhum exercício foi concluído pelo aluno — nada a inserir')
-    return
-  }
+  if (!records.length) return
 
-  console.log(`[saveWorkoutExecutions] enviando ${records.length} record(s) para o banco…`)
-  const { data, error } = await sb.from('workout_executions').insert(records).select()
-
-  if (error) {
-    console.error('[saveWorkoutExecutions] ❌ ERRO no INSERT:', {
-      message: error.message,
-      code:    error.code,
-      details: error.details,
-      hint:    error.hint
-    })
-  } else {
-    console.log(`[saveWorkoutExecutions] ✅ ${data?.length ?? 0} registro(s) inserido(s) com sucesso`)
-    console.log('[saveWorkoutExecutions] dados retornados:', JSON.stringify(data))
-  }
+  const { error } = await sb.from('workout_executions').insert(records)
+  if (error) console.error('[saveWorkoutExecutions] erro:', error.code, error.message)
 }
 </script>
 </body>
