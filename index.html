@@ -2034,18 +2034,36 @@ function toggleWorkoutDetail(uid) {
   if (icon) icon.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)'
 }
 
+async function _cascadeDeleteWorkout(workoutId) {
+  // Busca IDs dos exercícios antes de qualquer deleção
+  const { data: exData } = await sb.from('workout_exercises').select('id').eq('workout_id', workoutId)
+  const exerciseIds = (exData || []).map(e => e.id)
+
+  // 1a. Deleta execuções pelo workout_id
+  const { error: e1a } = await sb.from('workout_executions').delete().eq('workout_id', workoutId)
+  if (e1a) return 'Erro ao excluir execuções: ' + e1a.message
+
+  // 1b. Deleta execuções pelos exercise_ids (cobre registros com workout_id nulo ou bloqueados por RLS parcial)
+  if (exerciseIds.length) {
+    const { error: e1b } = await sb.from('workout_executions').delete().in('exercise_id', exerciseIds)
+    if (e1b) return 'Erro ao excluir execuções: ' + e1b.message
+  }
+
+  // 2. Deleta exercícios
+  const { error: e2 } = await sb.from('workout_exercises').delete().eq('workout_id', workoutId)
+  if (e2) return 'Erro ao excluir exercícios: ' + e2.message
+
+  // 3. Deleta o treino
+  const { error: e3 } = await sb.from('workouts').delete().eq('id', workoutId)
+  if (e3) return 'Erro ao excluir treino: ' + e3.message
+
+  return null // sem erro
+}
+
 async function deleteWorkout(workoutId) {
   if (!confirm('Tem certeza que deseja excluir este treino? Esta ação não pode ser desfeita.')) return
-
-  const { error: e1 } = await sb.from('workout_executions').delete().eq('workout_id', workoutId)
-  if (e1) { toast('Erro ao excluir execuções: ' + e1.message, 'error'); return }
-
-  const { error: e2 } = await sb.from('workout_exercises').delete().eq('workout_id', workoutId)
-  if (e2) { toast('Erro ao excluir exercícios: ' + e2.message, 'error'); return }
-
-  const { error: e3 } = await sb.from('workouts').delete().eq('id', workoutId)
-  if (e3) { toast('Erro ao excluir treino: ' + e3.message, 'error'); return }
-
+  const err = await _cascadeDeleteWorkout(workoutId)
+  if (err) { toast(err, 'error'); return }
   toast('Treino excluído com sucesso!', 'success')
   navGen++
   if (historyCtx?.isDetail) await renderDetail(historyCtx.studentId, historyCtx.name)
@@ -2054,16 +2072,8 @@ async function deleteWorkout(workoutId) {
 
 async function deleteWorkoutFromSheet(workoutId, studentId, studentName) {
   if (!confirm('Tem certeza que deseja excluir este treino? Esta ação não pode ser desfeita.')) return
-
-  const { error: e1 } = await sb.from('workout_executions').delete().eq('workout_id', workoutId)
-  if (e1) { toast('Erro ao excluir execuções: ' + e1.message, 'error'); return }
-
-  const { error: e2 } = await sb.from('workout_exercises').delete().eq('workout_id', workoutId)
-  if (e2) { toast('Erro ao excluir exercícios: ' + e2.message, 'error'); return }
-
-  const { error: e3 } = await sb.from('workouts').delete().eq('id', workoutId)
-  if (e3) { toast('Erro ao excluir treino: ' + e3.message, 'error'); return }
-
+  const err = await _cascadeDeleteWorkout(workoutId)
+  if (err) { toast(err, 'error'); return }
   toast('Treino excluído com sucesso!', 'success')
   openStudentSheet(studentId, studentName)
 }
