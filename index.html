@@ -2868,7 +2868,7 @@ async function saveWorkout(e) {
       if (!exName || !duration || duration <= 0) { allValid = false; return }
       exercises.push({
         exercise_name: exName, exercise_type: 'aerobico',
-        sets: null, weight_kg: null, reps: null, volume: 0,
+        sets: 1, weight_kg: 0, reps: 0, volume: 0,
         cadencia: null, tempo_descanso: null,
         duration_min:          duration,
         distance_km:           parseFloat(row.querySelector('.ex-distance')?.value)          || null,
