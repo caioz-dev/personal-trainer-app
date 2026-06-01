@@ -1965,6 +1965,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
               <tbody>${exDetailRows}</tbody>
             </table>
             ${profile.role === 'student' ? `<div style="padding:.75rem 1rem .875rem;border-top:1px solid rgba(144,158,186,0.06)"><button class="btn-start-workout workout-timer-btn" style="font-size:.8rem;padding:.5rem 1.25rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar Treino'}</button></div>` : ''}
+            ${profile.role === 'personal' ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid rgba(144,158,186,0.06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkout('${w.id}')">🗑️ Excluir Treino</button></div>` : ''}
           </div>
         </td>
       </tr>`
@@ -2034,11 +2035,19 @@ function toggleWorkoutDetail(uid) {
 }
 
 async function deleteWorkout(workoutId) {
-  if (!confirm('Tem certeza que deseja excluir este treino?')) return
-  const { error } = await sb.from('workouts').delete().eq('id', workoutId)
-  if (error) { toast('Erro ao excluir: ' + error.message, 'error'); return }
+  if (!confirm('Tem certeza que deseja excluir este treino? Esta ação não pode ser desfeita.')) return
+
+  const { error: e1 } = await sb.from('workout_executions').delete().eq('workout_id', workoutId)
+  if (e1) { toast('Erro ao excluir execuções: ' + e1.message, 'error'); return }
+
+  const { error: e2 } = await sb.from('workout_exercises').delete().eq('workout_id', workoutId)
+  if (e2) { toast('Erro ao excluir exercícios: ' + e2.message, 'error'); return }
+
+  const { error: e3 } = await sb.from('workouts').delete().eq('id', workoutId)
+  if (e3) { toast('Erro ao excluir treino: ' + e3.message, 'error'); return }
+
   toast('Treino excluído com sucesso!', 'success')
-  navGen++  // cancel any in-flight navigation
+  navGen++
   if (historyCtx?.isDetail) await renderDetail(historyCtx.studentId, historyCtx.name)
   else await renderHistory(historyCtx?.studentId ?? profile.id)
 }
@@ -2109,12 +2118,20 @@ async function openStudentSheet(studentId, studentName) {
       <button class="btn btn-outline btn-sm" onclick="closeStudentSheet()">✕ Fechar</button>
     </div>`
 
-  body.innerHTML = header + '<div class="loading"><div class="spinner"></div>Carregando histórico…</div>'
+  body.innerHTML = header + '<div class="loading"><div class="spinner"></div>Carregando…</div>'
 
   try {
-    const workouts = await fetchWorkouts(studentId)
+    const [workouts, execRes] = await Promise.all([
+      fetchWorkouts(studentId),
+      sb.from('workout_executions')
+        .select('id, workout_id, exercise_id, weight_executed, reps_executed, executed_at, workout_exercises(exercise_name, sets, reps, weight_kg), workouts(name, date)')
+        .eq('student_id', studentId)
+        .order('executed_at', { ascending: false })
+    ])
 
-    if (!workouts.length) {
+    const executions = execRes.data || []
+
+    if (!workouts.length && !executions.length) {
       body.innerHTML = header + `<div class="empty-state"><div class="empty-icon">🏋️</div>
         <p>Nenhum treino registrado para ${studentName}.</p></div>`
       return
@@ -2164,6 +2181,82 @@ async function openStudentSheet(studentId, studentName) {
         </tr>`
     }).join('')
 
+    // Group executions by workout_id
+    const execByWorkout = {}
+    for (const ex of executions) {
+      if (!execByWorkout[ex.workout_id]) {
+        execByWorkout[ex.workout_id] = {
+          workoutName: ex.workouts?.name || (ex.workouts?.date ? fmtDate(ex.workouts.date) : '—'),
+          executedAt:  ex.executed_at,
+          items:       []
+        }
+      }
+      execByWorkout[ex.workout_id].items.push(ex)
+    }
+    const execGroups = Object.values(execByWorkout)
+
+    const execSectionHTML = execGroups.length
+      ? execGroups.map(group => {
+          let totalPlanned = 0, totalExecuted = 0
+          const exRows = group.items.map(ex => {
+            const we       = ex.workout_exercises
+            const planned  = we ? we.sets * we.reps * parseFloat(we.weight_kg) : 0
+            const executed = we
+              ? we.sets * ex.reps_executed * parseFloat(ex.weight_executed)
+              : ex.reps_executed * parseFloat(ex.weight_executed)
+            totalPlanned  += planned
+            totalExecuted += executed
+            const diff     = executed - planned
+            const diffCell = diff > 0
+              ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>`
+              : diff < 0
+                ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>`
+                : `<span style="color:var(--text-muted)">= 0 kg</span>`
+            return `<tr>
+              <td style="font-weight:500;color:var(--text-secondary)">${we?.exercise_name || '—'}</td>
+              <td>${we?.weight_kg ?? '—'} kg</td>
+              <td style="color:var(--success);font-weight:600">${parseFloat(ex.weight_executed).toLocaleString('pt-BR')} kg</td>
+              <td>${we?.reps ?? '—'}</td>
+              <td style="color:var(--success);font-weight:600">${ex.reps_executed}</td>
+              <td style="color:var(--text-muted)">${planned > 0 ? planned.toLocaleString('pt-BR') + ' kg' : '—'}</td>
+              <td class="vol-cell">${executed.toLocaleString('pt-BR')} kg</td>
+              <td>${diffCell}</td>
+            </tr>`
+          }).join('')
+          const totalDiff = totalExecuted - totalPlanned
+          const totalDiffCell = totalDiff > 0
+            ? `<span style="color:var(--success)">+${totalDiff.toLocaleString('pt-BR')} kg</span>`
+            : totalDiff < 0
+              ? `<span style="color:var(--danger)">${totalDiff.toLocaleString('pt-BR')} kg</span>`
+              : `<span style="color:var(--text-muted)">= 0 kg</span>`
+          return `
+          <div style="background:rgba(10,16,33,0.5);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:1rem 1.1rem;margin-bottom:.875rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
+              <div style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${group.workoutName}</div>
+              <div style="font-size:.75rem;color:var(--text-muted)">${fmtDateTime(group.executedAt)}</div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr>
+                  <th>Exercício</th><th>Carga prev.</th><th>Carga exec.</th>
+                  <th>Reps prev.</th><th>Reps exec.</th>
+                  <th>Vol. previsto</th><th>Vol. executado</th><th>Diferença</th>
+                </tr></thead>
+                <tbody>${exRows}</tbody>
+                <tfoot>
+                  <tr style="border-top:1px solid rgba(144,158,186,0.15)">
+                    <td colspan="5" style="font-weight:700;color:var(--text-primary);font-size:.82rem">Total</td>
+                    <td style="color:var(--text-muted);font-size:.82rem">${totalPlanned > 0 ? totalPlanned.toLocaleString('pt-BR') + ' kg' : '—'}</td>
+                    <td class="vol-cell" style="font-size:.82rem">${totalExecuted.toLocaleString('pt-BR')} kg</td>
+                    <td style="font-size:.82rem">${totalDiffCell}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>`
+        }).join('')
+      : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">📊</div><p>Nenhuma execução registrada ainda.</p></div>`
+
     body.innerHTML = `${header}
       <div class="stats-grid" style="margin-bottom:1.25rem">
         <div class="stat-card" style="padding:1rem 1.25rem">
@@ -2173,6 +2266,10 @@ async function openStudentSheet(studentId, studentName) {
         <div class="stat-card" style="padding:1rem 1.25rem;border-left-color:var(--success)">
           <div class="stat-value" style="font-size:1.3rem">${total.toLocaleString('pt-BR')} kg</div>
           <div class="stat-label">Volume acumulado</div>
+        </div>
+        <div class="stat-card" style="padding:1rem 1.25rem;border-left-color:var(--warning)">
+          <div class="stat-value" style="font-size:1.6rem">${execGroups.length}</div>
+          <div class="stat-label">Execuções</div>
         </div>
       </div>
       <div class="section-label" style="margin-bottom:.75rem">Histórico de Treinos</div>
@@ -2184,6 +2281,10 @@ async function openStudentSheet(studentId, studentName) {
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
+      </div>
+      <div style="margin-top:1.75rem;padding-top:1.5rem;border-top:1px solid var(--border-subtle)">
+        <div class="section-label" style="margin-bottom:.875rem">Execuções Realizadas</div>
+        ${execSectionHTML}
       </div>`
     bindWorkoutRowClicks(body)
   } catch (err) {
@@ -2758,6 +2859,13 @@ function fmtDate(s) {
   if (!s) return '—'
   const [y, m, d] = s.split('-')
   return `${d}/${m}/${y}`
+}
+
+function fmtDateTime(s) {
+  if (!s) return '—'
+  const d = new Date(s)
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
+    ' às ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
 function today() {
