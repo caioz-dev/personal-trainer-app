@@ -3347,12 +3347,32 @@ function dismissComparison() {
 }
 
 async function saveWorkoutExecutions(workoutId) {
+  // ── Diagnóstico 1: contexto ao entrar na função ──
+  console.group('[saveWorkoutExecutions] iniciando')
+  console.log('workoutId:',          workoutId                              ?? 'NULL ⚠️')
+  console.log('currentWorkoutData:', currentWorkoutData?.id                  ?? 'NULL ⚠️')
+  console.log('profile.id:',         profile?.id                            ?? 'NULL ⚠️')
+  console.log('profile.role:',        profile?.role                          ?? 'NULL ⚠️')
+  console.log('exerciseExecutions:', JSON.stringify(exerciseExecutions))
+  console.groupEnd()
+
   const exes = currentWorkoutData?.workout_exercises || []
+  console.log('[saveWorkoutExecutions] exercícios em currentWorkoutData:', exes.map(e => ({ id: e.id, name: e.exercise_name })))
+
+  if (!exes.length) {
+    console.warn('[saveWorkoutExecutions] currentWorkoutData não tem workout_exercises — treino pode ter sido resetado antes do save')
+    return
+  }
+
   const records = exes
-    .filter(ex => exerciseExecutions[ex.id])
+    .filter(ex => {
+      const hasExec = !!exerciseExecutions[ex.id]
+      if (!hasExec) console.log(`[saveWorkoutExecutions] exercício "${ex.exercise_name}" (${ex.id}) sem execução registrada — pulando`)
+      return hasExec
+    })
     .map(ex => {
       const exec = exerciseExecutions[ex.id]
-      return {
+      const rec = {
         workout_id:            workoutId,
         exercise_id:           ex.id,
         student_id:            profile.id,
@@ -3362,12 +3382,29 @@ async function saveWorkoutExecutions(workoutId) {
         distance_executed_km:  exec.distance_executed_km   ?? null,
         speed_executed_kmh:    exec.speed_executed_kmh     ?? null
       }
+      console.log('[saveWorkoutExecutions] record montado:', JSON.stringify(rec))
+      return rec
     })
-  console.log('[saveWorkoutExecutions] records a inserir:', JSON.stringify(records))
-  if (!records.length) { console.log('[saveWorkoutExecutions] nenhum exercício concluído, nada a salvar'); return }
+
+  if (!records.length) {
+    console.warn('[saveWorkoutExecutions] nenhum exercício foi concluído pelo aluno — nada a inserir')
+    return
+  }
+
+  console.log(`[saveWorkoutExecutions] enviando ${records.length} record(s) para o banco…`)
   const { data, error } = await sb.from('workout_executions').insert(records).select()
-  console.log('[saveWorkoutExecutions] resultado:', { inseridos: data?.length ?? 0, erro: error?.message ?? null })
-  if (error) console.error('[saveWorkoutExecutions] erro no banco:', error)
+
+  if (error) {
+    console.error('[saveWorkoutExecutions] ❌ ERRO no INSERT:', {
+      message: error.message,
+      code:    error.code,
+      details: error.details,
+      hint:    error.hint
+    })
+  } else {
+    console.log(`[saveWorkoutExecutions] ✅ ${data?.length ?? 0} registro(s) inserido(s) com sucesso`)
+    console.log('[saveWorkoutExecutions] dados retornados:', JSON.stringify(data))
+  }
 }
 </script>
 </body>
