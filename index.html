@@ -3175,7 +3175,7 @@ async function renderProgress(studentIdOverride) {
         </div>
         <div class="form-group" style="margin:.75rem 0 1.25rem;max-width:400px">
           <label>Exercício</label>
-          <select class="form-control" id="prog-exercise" onchange="updateProgressChart()">
+          <select class="form-control" id="prog-exercise" onchange="updateProgressMetrics()">
             ${exerciseNames.map(n => `<option value="${n}">${n}</option>`).join('')}
           </select>
         </div>
@@ -3187,7 +3187,7 @@ async function renderProgress(studentIdOverride) {
       </div>`
 
     observeRevealElements()
-    updateProgressChart()
+    updateProgressMetrics()
   } catch (err) {
     console.error('[renderProgress]', err)
     document.getElementById('progress-body').innerHTML =
@@ -3196,6 +3196,39 @@ async function renderProgress(studentIdOverride) {
         <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
                 onclick="renderProgress()">Tentar novamente</button></div>`
   }
+}
+
+function getSelectedExerciseType() {
+  const exerciseName = document.getElementById('prog-exercise')?.value
+  const workouts     = window._progressWorkouts || []
+  for (const w of workouts) {
+    const ex = (w.workout_exercises || []).find(e => e.exercise_name === exerciseName)
+    if (ex) return ex.exercise_type || 'musculacao'
+  }
+  return 'musculacao'
+}
+
+function updateProgressMetrics() {
+  const metricSel = document.getElementById('prog-metric')
+  if (!metricSel) return
+  const type       = getSelectedExerciseType()
+  const currentVal = metricSel.value
+
+  if (type === 'aerobico') {
+    metricSel.innerHTML = [
+      {value: 'distance', label: 'Distância (km)'},
+      {value: 'speed',    label: 'Velocidade média (km/h)'},
+      {value: 'duration', label: 'Tempo (min)'}
+    ].map(o => `<option value="${o.value}"${o.value === currentVal ? ' selected' : ''}>${o.label}</option>`).join('')
+    if (!['distance','speed','duration'].includes(currentVal)) metricSel.value = 'distance'
+  } else {
+    metricSel.innerHTML = [
+      {value: 'weight', label: 'Carga máx (kg)'},
+      {value: 'volume', label: 'Volume total (kg)'}
+    ].map(o => `<option value="${o.value}"${o.value === currentVal ? ' selected' : ''}>${o.label}</option>`).join('')
+    if (!['weight','volume'].includes(currentVal)) metricSel.value = 'weight'
+  }
+  updateProgressChart()
 }
 
 function updateProgressChart() {
@@ -3209,10 +3242,15 @@ function updateProgressChart() {
   for (const w of sorted) {
     const exes = (w.workout_exercises || []).filter(ex => ex.exercise_name === exerciseName)
     if (!exes.length) continue
-    const value = metric === 'weight'
-      ? Math.max(...exes.map(ex => parseFloat(ex.weight_kg) || 0))
-      : exes.reduce((s, ex) => s + (parseFloat(ex.volume) || 0), 0)
-    points.push({ date: w.date, value })
+
+    let value
+    if      (metric === 'weight')   value = Math.max(...exes.map(ex => parseFloat(ex.weight_kg)    || 0))
+    else if (metric === 'volume')   value = exes.reduce((s, ex) => s + (parseFloat(ex.volume)      || 0), 0)
+    else if (metric === 'distance') value = Math.max(...exes.map(ex => parseFloat(ex.distance_km)  || 0))
+    else if (metric === 'speed')    value = Math.max(...exes.map(ex => parseFloat(ex.speed_kmh)    || 0))
+    else if (metric === 'duration') value = Math.max(...exes.map(ex => parseFloat(ex.duration_min) || 0))
+
+    if (value > 0) points.push({ date: w.date, value })
   }
 
   const noData = document.getElementById('prog-no-data')
@@ -3227,7 +3265,11 @@ function updateProgressChart() {
   }
   if (noData) noData.style.display = 'none'
 
-  const label = metric === 'weight' ? 'Carga máx (kg)' : 'Volume (kg)'
+  const unitMap  = { weight: 'kg', volume: 'kg', distance: 'km', speed: 'km/h', duration: 'min' }
+  const labelMap = { weight: 'Carga máx (kg)', volume: 'Volume (kg)',
+                     distance: 'Distância (km)', speed: 'Velocidade (km/h)', duration: 'Tempo (min)' }
+  const unit  = unitMap[metric]  || 'kg'
+  const label = labelMap[metric] || metric
 
   progressChart = new Chart(ctx, {
     type: 'line',
@@ -3251,13 +3293,13 @@ function updateProgressChart() {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: c => ` ${c.parsed.y.toLocaleString('pt-BR')} kg` } }
+        tooltip: { callbacks: { label: c => ` ${c.parsed.y.toLocaleString('pt-BR')} ${unit}` } }
       },
       scales: {
         x: { grid: { color: 'rgba(144,158,186,0.06)' }, ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)', maxRotation: 45 } },
         y: { grid: { color: 'rgba(144,158,186,0.06)' }, beginAtZero: false,
              ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)',
-                      callback: v => v.toLocaleString('pt-BR') + ' kg' } }
+                      callback: v => v.toLocaleString('pt-BR') + ' ' + unit } }
       }
     }
   })
