@@ -1201,6 +1201,35 @@
     .btn-rest-timer:hover:not(:disabled) { background: rgba(245,158,11,0.18); border-color: rgba(245,158,11,0.4); }
     .btn-rest-timer.running { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.4); }
     .btn-rest-timer:disabled { opacity: .7; cursor: not-allowed; }
+
+    /* ---- AUTH LINK & PASSWORD RESET ---- */
+    .auth-link {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: .82rem;
+      font-family: 'Montserrat', system-ui, sans-serif;
+      font-weight: 500;
+      cursor: pointer;
+      transition: color var(--transition);
+      padding: 0;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+    .auth-link:hover { color: var(--accent-soft); }
+
+    .password-reset-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9900;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
   </style>
 </head>
 <body>
@@ -1233,7 +1262,24 @@
           <input id="l-pass" type="password" class="form-control" placeholder="••••••••" required>
         </div>
         <button id="login-btn" type="submit" class="btn btn-primary btn-block">Entrar</button>
+        <div style="text-align:center;margin-top:.875rem">
+          <button class="auth-link" onclick="showForgotPassword()">Esqueceu sua senha?</button>
+        </div>
       </form>
+
+      <!-- FORGOT PASSWORD -->
+      <div id="forgot-form" style="display:none">
+        <form onsubmit="doForgotPassword(event)">
+          <div class="form-group">
+            <label>Email</label>
+            <input id="fp-email" type="email" class="form-control" placeholder="seu@email.com" required>
+          </div>
+          <button id="fp-btn" type="submit" class="btn btn-primary btn-block">Enviar link de recuperação</button>
+        </form>
+        <div style="text-align:center;margin-top:.875rem">
+          <button class="auth-link" onclick="hideForgotPassword()">← Voltar ao login</button>
+        </div>
+      </div>
 
       <!-- SIGNUP -->
       <form id="signup-form" style="display:none" onsubmit="doSignup(event)">
@@ -1334,8 +1380,12 @@
                   <input id="wf-name" type="text" class="form-control" placeholder="Ex: Treino A — Peito e Tríceps" required>
                 </div>
                 <div class="form-group">
-                  <label>Data</label>
+                  <label>Data de início</label>
                   <input id="wf-date" type="date" class="form-control" required>
+                </div>
+                <div class="form-group">
+                  <label>Data final (opcional)</label>
+                  <input id="wf-end-date" type="date" class="form-control">
                 </div>
                 <div class="form-group form-full">
                   <label>Observações gerais (opcional)</label>
@@ -1430,6 +1480,28 @@
     <div class="timer-modal-time" id="timer-modal-time">00:00:00</div>
     <button class="btn btn-success btn-block" style="margin-top:0"
             onclick="dismissTimerModal()">Fechar</button>
+  </div>
+</div>
+
+<!-- PASSWORD RESET OVERLAY -->
+<div id="password-reset-overlay" class="password-reset-overlay" style="display:none">
+  <div class="auth-card" style="animation: scaleIn .3s cubic-bezier(0.22,1,0.36,1)">
+    <div class="auth-logo">
+      🔐 Nova Senha
+      <small>PersonalPro</small>
+    </div>
+    <form onsubmit="doResetPassword(event)">
+      <div class="form-group">
+        <label>Nova senha</label>
+        <input id="rp-pass" type="password" class="form-control" placeholder="Mínimo 6 caracteres" minlength="6" required>
+      </div>
+      <div class="form-group">
+        <label>Confirmar nova senha</label>
+        <input id="rp-confirm" type="password" class="form-control" placeholder="Repita a nova senha" minlength="6" required>
+      </div>
+      <button id="rp-btn" type="submit" class="btn btn-primary btn-block">Salvar nova senha</button>
+    </form>
+    <div id="rp-msg" class="msg"></div>
   </div>
 </div>
 
@@ -1625,6 +1697,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   sb.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN'  && session) { me = session.user; await boot() }
     if (event === 'SIGNED_OUT')            { booted = false; me = null; profile = null; resetAppState(); showAuthSection() }
+    if (event === 'PASSWORD_RECOVERY')     { showResetPasswordForm() }
   })
 
 })
@@ -1658,9 +1731,83 @@ function showAuthSection() {
 function switchTab(t) {
   document.getElementById('login-form').style.display  = t === 'login'  ? 'block' : 'none'
   document.getElementById('signup-form').style.display = t === 'signup' ? 'block' : 'none'
+  document.getElementById('forgot-form').style.display = 'none'
+  document.getElementById('auth-tabs').style.display   = ''
   document.getElementById('tab-login').classList.toggle('active',  t === 'login')
   document.getElementById('tab-signup').classList.toggle('active', t === 'signup')
   setMsg('')
+}
+
+function showForgotPassword() {
+  document.getElementById('login-form').style.display  = 'none'
+  document.getElementById('signup-form').style.display = 'none'
+  document.getElementById('forgot-form').style.display = 'block'
+  document.getElementById('auth-tabs').style.display   = 'none'
+  setMsg('')
+}
+
+function hideForgotPassword() {
+  document.getElementById('forgot-form').style.display = 'none'
+  document.getElementById('login-form').style.display  = 'block'
+  document.getElementById('auth-tabs').style.display   = ''
+  document.getElementById('tab-login').classList.add('active')
+  document.getElementById('tab-signup').classList.remove('active')
+  setMsg('')
+}
+
+async function doForgotPassword(e) {
+  e.preventDefault()
+  const btn   = document.getElementById('fp-btn')
+  const email = document.getElementById('fp-email').value.trim()
+  btn.textContent = 'Enviando…'; btn.disabled = true
+
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: 'https://personal-trainer-app-ten.vercel.app/'
+  })
+
+  if (error) {
+    setMsg('Erro ao enviar: ' + error.message)
+  } else {
+    setMsg('Email enviado! Verifique sua caixa de entrada.', 'success')
+    document.getElementById('forgot-form').querySelector('form').reset()
+  }
+  btn.textContent = 'Enviar link de recuperação'; btn.disabled = false
+}
+
+function showResetPasswordForm() {
+  const overlay = document.getElementById('password-reset-overlay')
+  if (!overlay) return
+  overlay.style.display = 'flex'
+  document.getElementById('rp-msg').className   = 'msg'
+  document.getElementById('rp-msg').textContent = ''
+  document.getElementById('rp-pass').value    = ''
+  document.getElementById('rp-confirm').value = ''
+}
+
+async function doResetPassword(e) {
+  e.preventDefault()
+  const btn     = document.getElementById('rp-btn')
+  const pass    = document.getElementById('rp-pass').value
+  const confirm = document.getElementById('rp-confirm').value
+  const msgEl   = document.getElementById('rp-msg')
+
+  if (pass !== confirm) {
+    msgEl.textContent = 'As senhas não coincidem.'; msgEl.className = 'msg error'
+    return
+  }
+
+  btn.textContent = 'Salvando…'; btn.disabled = true
+
+  const { error } = await sb.auth.updateUser({ password: pass })
+
+  if (error) {
+    msgEl.textContent = 'Erro ao salvar: ' + error.message; msgEl.className = 'msg error'
+  } else {
+    document.getElementById('password-reset-overlay').style.display = 'none'
+    toast('Senha redefinida com sucesso! Faça login com a nova senha.', 'success')
+    await sb.auth.signOut()
+  }
+  btn.textContent = 'Salvar nova senha'; btn.disabled = false
 }
 
 function withSlowFeedback(promise) {
@@ -2144,13 +2291,17 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
             Treino no formato legado — sem detalhes por exercício
          </td></tr>`
 
-    const uid = w.id.replace(/-/g, '')
+    const uid       = w.id.replace(/-/g, '')
+    const dateRange = w.end_date ? `${fmtDate(w.date)} até ${fmtDate(w.end_date)}` : fmtDate(w.date)
+    const dateSub   = w.name
+      ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">${dateRange}</div>`
+      : w.end_date ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">até ${fmtDate(w.end_date)}</div>` : ''
 
     return `
       <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
         <td>
           <strong>${w.name || fmtDate(w.date)}</strong>
-          ${w.name ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">${fmtDate(w.date)}</div>` : ''}
+          ${dateSub}
         </td>
         <td style="color:var(--text-muted);font-size:.83rem">${exLabel}</td>
         <td class="vol-cell">${vol.toLocaleString('pt-BR')} kg</td>
@@ -2321,9 +2472,10 @@ async function editWorkout(workoutId) {
   if (profile.role === 'personal') {
     document.getElementById('wf-student').value = workout.student_id
   }
-  document.getElementById('wf-name').value  = workout.name || ''
-  document.getElementById('wf-date').value  = workout.date
-  document.getElementById('wf-notes').value = workout.notes || ''
+  document.getElementById('wf-name').value     = workout.name || ''
+  document.getElementById('wf-date').value     = workout.date
+  document.getElementById('wf-end-date').value = workout.end_date || ''
+  document.getElementById('wf-notes').value    = workout.notes || ''
 
   const list = document.getElementById('exercise-list')
   list.innerHTML = ''
@@ -2411,7 +2563,11 @@ async function openStudentSheet(studentId, studentName) {
     const rows = workouts.map(w => {
       const exes = w.workout_exercises || []
       const vol  = getWorkoutVolume(w)
-      const uid  = 'sh' + w.id.replace(/-/g, '')
+      const uid       = 'sh' + w.id.replace(/-/g, '')
+      const dateRange = w.end_date ? `${fmtDate(w.date)} até ${fmtDate(w.end_date)}` : fmtDate(w.date)
+      const dateSub   = w.name
+        ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">${dateRange}</div>`
+        : w.end_date ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">até ${fmtDate(w.end_date)}</div>` : ''
       const exRows = exes.length
         ? exes.map(ex => `
             <tr>
@@ -2431,7 +2587,7 @@ async function openStudentSheet(studentId, studentName) {
         <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
           <td>
             <strong>${w.name || fmtDate(w.date)}</strong>
-            ${w.name ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">${fmtDate(w.date)}</div>` : ''}
+            ${dateSub}
           </td>
           <td style="color:var(--text-muted);font-size:.83rem">${exes.length} exercício${exes.length !== 1 ? 's' : ''}</td>
           <td class="vol-cell">${vol.toLocaleString('pt-BR')} kg</td>
@@ -2877,9 +3033,10 @@ async function setupWorkoutForm() {
     sel.required = false
   }
 
-  document.getElementById('wf-name').value  = ''
-  document.getElementById('wf-date').value  = today()
-  document.getElementById('wf-notes').value = ''
+  document.getElementById('wf-name').value     = ''
+  document.getElementById('wf-date').value     = today()
+  document.getElementById('wf-end-date').value = ''
+  document.getElementById('wf-notes').value    = ''
 
   // Reset exercise list
   const list = document.getElementById('exercise-list')
@@ -3086,6 +3243,7 @@ async function saveWorkout(e) {
 
   const workoutName = document.getElementById('wf-name').value.trim()
   const date        = document.getElementById('wf-date').value
+  const endDate     = document.getElementById('wf-end-date').value || null
   const notes       = document.getElementById('wf-notes').value.trim()
 
   // Collect and validate exercises
@@ -3145,6 +3303,7 @@ async function saveWorkout(e) {
         student_id:   studentId,
         name:         workoutName || null,
         date,
+        end_date:     endDate,
         total_volume: parseFloat(totalVolume.toFixed(2)),
         notes:        notes || null
       }).eq('id', editingWorkoutId)
@@ -3168,6 +3327,7 @@ async function saveWorkout(e) {
         student_id:   studentId,
         name:         workoutName || null,
         date,
+        end_date:     endDate,
         total_volume: parseFloat(totalVolume.toFixed(2)),
         notes:        notes || null,
         created_by:   me.id
