@@ -1074,6 +1074,67 @@
       .exec-timer-display { font-size: 2rem; text-align: left; }
       .exec-ex-header { flex-wrap: wrap; }
       .comparison-modal-card { padding: 1.25rem 1rem; }
+
+      /* Comparison table → stacked cards */
+      .comparison-modal-card table { border-collapse: separate; border-spacing: 0; }
+      .comparison-modal-card thead { display: none; }
+      .comparison-modal-card tbody tr {
+        display: block;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(144,158,186,0.12);
+        border-radius: 8px;
+        padding: .625rem .75rem;
+        margin-bottom: .5rem;
+      }
+      .comparison-modal-card tbody td {
+        display: flex;
+        align-items: baseline;
+        gap: .375rem;
+        padding: .2rem 0;
+        border: none;
+        font-size: .82rem;
+        line-height: 1.4;
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+      /* Exercise name: full-width header inside the card */
+      .comparison-modal-card tbody td:nth-child(1) {
+        display: block;
+        font-size: .9rem;
+        padding-bottom: .4rem;
+        margin-bottom: .3rem;
+        border-bottom: 1px solid rgba(144,158,186,0.1);
+      }
+      /* Label prefix for Previsto / Executado / Diferença */
+      .comparison-modal-card tbody td:nth-child(2)::before,
+      .comparison-modal-card tbody td:nth-child(3)::before,
+      .comparison-modal-card tbody td:nth-child(4)::before {
+        flex: 0 0 5.5rem;
+        font-size: .68rem;
+        font-weight: 600;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        line-height: 1.4;
+      }
+      .comparison-modal-card tbody td:nth-child(2)::before { content: "Previsto"; }
+      .comparison-modal-card tbody td:nth-child(3)::before { content: "Executado"; }
+      .comparison-modal-card tbody td:nth-child(4)::before { content: "Diferença"; }
+      /* Footer total row: inline flex */
+      .comparison-modal-card tfoot tr {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: .25rem .75rem;
+        padding: .5rem 0 .25rem;
+        border-top: 1px solid rgba(144,158,186,0.15);
+      }
+      .comparison-modal-card tfoot td {
+        display: block;
+        font-size: .78rem;
+        border: none;
+        padding: 0;
+      }
     }
 
     /* ════════════════════════════════════════════
