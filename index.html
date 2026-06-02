@@ -1381,11 +1381,11 @@
                 </div>
                 <div class="form-group">
                   <label>Data de início</label>
-                  <input id="wf-date" type="date" class="form-control" required>
+                  <input id="wf-date" type="text" class="form-control" placeholder="DD/MM/AAAA" maxlength="10" oninput="maskDate(this)" required>
                 </div>
                 <div class="form-group">
                   <label>Data final (opcional)</label>
-                  <input id="wf-end-date" type="date" class="form-control">
+                  <input id="wf-end-date" type="text" class="form-control" placeholder="DD/MM/AAAA" maxlength="10" oninput="maskDate(this)">
                 </div>
                 <div class="form-group form-full">
                   <label>Observações gerais (opcional)</label>
@@ -2473,8 +2473,8 @@ async function editWorkout(workoutId) {
     document.getElementById('wf-student').value = workout.student_id
   }
   document.getElementById('wf-name').value     = workout.name || ''
-  document.getElementById('wf-date').value     = workout.date
-  document.getElementById('wf-end-date').value = workout.end_date || ''
+  document.getElementById('wf-date').value     = isoToBR(workout.date)
+  document.getElementById('wf-end-date').value = workout.end_date ? isoToBR(workout.end_date) : ''
   document.getElementById('wf-notes').value    = workout.notes || ''
 
   const list = document.getElementById('exercise-list')
@@ -3034,7 +3034,7 @@ async function setupWorkoutForm() {
   }
 
   document.getElementById('wf-name').value     = ''
-  document.getElementById('wf-date').value     = today()
+  document.getElementById('wf-date').value     = isoToBR(today())
   document.getElementById('wf-end-date').value = ''
   document.getElementById('wf-notes').value    = ''
 
@@ -3242,9 +3242,23 @@ async function saveWorkout(e) {
   }
 
   const workoutName = document.getElementById('wf-name').value.trim()
-  const date        = document.getElementById('wf-date').value
-  const endDate     = document.getElementById('wf-end-date').value || null
+  const dateRaw     = document.getElementById('wf-date').value.trim()
+  const endDateRaw  = document.getElementById('wf-end-date').value.trim()
   const notes       = document.getElementById('wf-notes').value.trim()
+
+  const date    = parseDateBR(dateRaw)
+  const endDate = endDateRaw ? parseDateBR(endDateRaw) : null
+
+  if (!date) {
+    toast('Data de início inválida. Use o formato DD/MM/AAAA.', 'error')
+    btn.textContent = 'Salvar Treino'; btn.disabled = false
+    return
+  }
+  if (endDateRaw && !endDate) {
+    toast('Data final inválida. Use o formato DD/MM/AAAA.', 'error')
+    btn.textContent = 'Salvar Treino'; btn.disabled = false
+    return
+  }
 
   // Collect and validate exercises
   const rows      = document.querySelectorAll('#exercise-list .exercise-row')
@@ -3465,6 +3479,29 @@ function fmtDate(s) {
   if (!s) return '—'
   const [y, m, d] = s.split('-')
   return `${d}/${m}/${y}`
+}
+
+function isoToBR(s) {
+  if (!s) return ''
+  const [y, m, d] = s.split('-')
+  return `${d}/${m}/${y}`
+}
+
+function parseDateBR(str) {
+  if (!str) return null
+  const match = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (!match) return null
+  const [, d, mo, y] = match
+  const dt = new Date(`${y}-${mo}-${d}`)
+  if (isNaN(dt.getTime()) || dt.getUTCDate() !== +d || dt.getUTCMonth() + 1 !== +mo || dt.getUTCFullYear() !== +y) return null
+  return `${y}-${mo}-${d}`
+}
+
+function maskDate(el) {
+  let v = el.value.replace(/\D/g, '').slice(0, 8)
+  if (v.length >= 5) v = v.slice(0, 2) + '/' + v.slice(2, 4) + '/' + v.slice(4)
+  else if (v.length >= 3) v = v.slice(0, 2) + '/' + v.slice(2)
+  el.value = v
 }
 
 function fmtDateTime(s) {
