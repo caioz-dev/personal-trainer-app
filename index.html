@@ -2403,6 +2403,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
             <td style="padding-left:2rem;font-weight:500;color:var(--text-secondary)">
               ${ex.exercise_name}
               ${ex.training_method ? `<div style="font-size:.7rem;color:var(--accent-soft);margin-top:.15rem">⚡ ${ex.training_method}</div>` : ''}
+              ${ex.method_description ? `<div style="font-size:.68rem;color:var(--text-muted);margin-top:.1rem;font-style:italic">${ex.method_description}</div>` : ''}
             </td>
             <td>${ex.sets} série${ex.sets > 1 ? 's' : ''}</td>
             <td>${ex.weight_kg} kg × ${ex.reps} reps</td>
@@ -2677,7 +2678,7 @@ async function openStudentSheet(studentId, studentName) {
     const [workouts, execRes, spRes, reviewsRes] = await Promise.all([
       fetchWorkouts(studentId),
       sb.from('workout_executions')
-        .select('*, workout_exercises(exercise_name, exercise_type, sets, reps, weight_kg, duration_min, distance_km, speed_kmh), workouts(name, date)')
+        .select('*, workout_exercises(exercise_name, exercise_type, sets, reps, weight_kg, duration_min, distance_km, speed_kmh, hr_min, hr_max, training_method, method_description), workouts(name, date)')
         .eq('student_id', studentId)
         .order('executed_at', { ascending: false }),
       sb.from('student_profiles').select('*').eq('student_id', studentId).maybeSingle(),
@@ -2709,12 +2710,24 @@ async function openStudentSheet(studentId, studentName) {
         ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">${dateRange}</div>`
         : w.end_date ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">até ${fmtDate(w.end_date)}</div>` : ''
       const exRows = exes.length
-        ? exes.map(ex => `
-            <tr>
-              <td style="padding-left:1.5rem;font-weight:500;color:var(--text-secondary)">${ex.exercise_name}</td>
-              <td>${ex.sets}×${ex.reps} @ ${ex.weight_kg} kg</td>
-              <td class="vol-cell">${parseFloat(ex.volume).toLocaleString('pt-BR')} kg</td>
-            </tr>`).join('')
+        ? exes.map(ex => {
+            const isAero  = ex.exercise_type === 'aerobico'
+            const nameSub = !isAero && ex.training_method
+              ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">⚡ ${ex.training_method}</div>`
+              : ''
+            const detail  = isAero
+              ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—'
+              : `${ex.sets}×${ex.reps} @ ${ex.weight_kg} kg`
+            const volCell = isAero ? '—' : `${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
+            return `
+              <tr>
+                <td style="padding-left:1.5rem;font-weight:500;color:var(--text-secondary)">
+                  ${ex.exercise_name}${nameSub}
+                </td>
+                <td>${detail}</td>
+                <td class="vol-cell">${volCell}</td>
+              </tr>`
+          }).join('')
         : `<tr><td colspan="3" style="padding:.75rem 1rem;font-style:italic;color:var(--text-muted)">Sem detalhes disponíveis</td></tr>`
       const editBtn = profile.role === 'personal'
         ? `<button class="edit-btn" style="opacity:1" onclick="event.stopPropagation();closeStudentSheet();editWorkout('${w.id}')" title="Editar">✏️</button>`
@@ -2815,7 +2828,7 @@ async function openStudentSheet(studentId, studentName) {
               totalPlannedAero  += planned
               totalExecutedAero += executed
 
-              const plannedTxt  = [planDur > 0 ? planDur + ' min' : null, planDist > 0 ? planDist + ' km' : null, planSpd > 0 ? planSpd + ' km/h' : null].filter(Boolean).join(' · ') || '—'
+              const plannedTxt  = [planDur > 0 ? planDur + ' min' : null, planDist > 0 ? planDist + ' km' : null, planSpd > 0 ? planSpd + ' km/h' : null, (we?.hr_min || we?.hr_max) ? `❤️ FC: ${we.hr_min || '?'}–${we.hr_max || '?'} bpm` : null].filter(Boolean).join(' · ') || '—'
               const executedTxt = [execDur > 0 ? execDur.toLocaleString('pt-BR') + ' min' : null, execDist > 0 ? execDist.toLocaleString('pt-BR') + ' km' : null, execSpd > 0 ? execSpd.toLocaleString('pt-BR') + ' km/h' : null].filter(Boolean).join(' · ') || '—'
               const diffCell    = diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>`
                 : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} ${unit}</span>`
@@ -2849,7 +2862,10 @@ async function openStudentSheet(studentId, studentName) {
                 :             `<span style="color:var(--text-muted)">= 0 kg</span>`
 
               return `<tr>
-                <td style="font-weight:500;color:var(--text-secondary)">${we?.exercise_name || '—'}</td>
+                <td style="font-weight:500;color:var(--text-secondary)">
+                  ${we?.exercise_name || '—'}
+                  ${we?.training_method ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">⚡ ${we.training_method}</div>` : ''}
+                </td>
                 <td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td>
                 <td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td>
                 <td style="font-size:.82rem">${diffCell}</td>
@@ -3244,11 +3260,11 @@ function updateProgressChart() {
     if (!exes.length) continue
 
     let value
-    if      (metric === 'weight')   value = Math.max(...exes.map(ex => parseFloat(ex.weight_kg)    || 0))
+    if      (metric === 'weight')   value = Math.max(0, ...exes.map(ex => parseFloat(ex.weight_kg)    || 0))
     else if (metric === 'volume')   value = exes.reduce((s, ex) => s + (parseFloat(ex.volume)      || 0), 0)
-    else if (metric === 'distance') value = Math.max(...exes.map(ex => parseFloat(ex.distance_km)  || 0))
-    else if (metric === 'speed')    value = Math.max(...exes.map(ex => parseFloat(ex.speed_kmh)    || 0))
-    else if (metric === 'duration') value = Math.max(...exes.map(ex => parseFloat(ex.duration_min) || 0))
+    else if (metric === 'distance') value = Math.max(0, ...exes.map(ex => parseFloat(ex.distance_km)  || 0))
+    else if (metric === 'speed')    value = Math.max(0, ...exes.map(ex => parseFloat(ex.speed_kmh)    || 0))
+    else if (metric === 'duration') value = Math.max(0, ...exes.map(ex => parseFloat(ex.duration_min) || 0))
 
     if (value > 0) points.push({ date: w.date, value })
   }
@@ -3322,7 +3338,7 @@ async function setupWorkoutForm(opts = {}) {
       try { await fetchStudents() }
       catch (err) { toast('Erro ao carregar lista de alunos: ' + err.message, 'error') }
     }
-    if (opts.prefilledStudentId) {
+    if (opts.prefilledStudentId && students.find(s => s.id === opts.prefilledStudentId)) {
       grp.style.display = 'none'
       sel.innerHTML = `<option value="${opts.prefilledStudentId}" selected>${opts.prefilledStudentName || ''}</option>`
       sel.required = true
@@ -3700,7 +3716,13 @@ async function saveWorkout(e) {
         })
       }).catch(err => console.warn('[notify-new-workout] falhou silenciosamente:', err))
 
-      await setupWorkoutForm()
+      const prefId   = currentViewOpts.prefilledStudentId
+      const prefName = currentViewOpts.prefilledStudentName
+      if (prefId) {
+        openStudentSheet(prefId, prefName || '')
+      } else {
+        await setupWorkoutForm()
+      }
     }
   } catch (err) {
     toast('Erro ao salvar: ' + err.message, 'error')
