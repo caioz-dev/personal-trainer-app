@@ -1538,17 +1538,8 @@
     <div style="font-size:2rem;text-align:center;margin-bottom:.75rem" id="exec-modal-icon">💪</div>
     <div class="timer-modal-title" id="exec-modal-ex-name" style="text-align:center">Exercício</div>
     <div class="timer-modal-sub" style="text-align:center">Informe os valores que você executou</div>
-    <!-- Musculação -->
-    <div id="exec-modal-musculacao" style="margin-top:1.25rem">
-      <div class="form-group">
-        <label>Carga que você usou (kg)</label>
-        <input id="exec-modal-weight" type="number" class="form-control" placeholder="80" step="0.5" min="0">
-      </div>
-      <div class="form-group">
-        <label>Repetições que conseguiu</label>
-        <input id="exec-modal-reps" type="number" class="form-control" placeholder="12" min="1">
-      </div>
-    </div>
+    <!-- Musculação: preenchido dinamicamente por openExerciseCompletionModal -->
+    <div id="exec-modal-musculacao" style="margin-top:1.25rem"></div>
     <!-- Aeróbico -->
     <div id="exec-modal-aerobico" style="display:none;margin-top:1.25rem">
       <div class="form-group">
@@ -1700,6 +1691,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (methodColCheck) console.warn('⚠️ Execute no Supabase SQL Editor:\nALTER TABLE workout_exercises ADD COLUMN IF NOT EXISTS training_method text, ADD COLUMN IF NOT EXISTS method_description text;')
   const { error: spColCheck } = await sb.from('student_profiles').select('id').limit(0)
   if (spColCheck) console.warn('⚠️ AÇÃO NECESSÁRIA: Tabela student_profiles ausente. Execute o SQL de criação no Supabase.')
+  const { error: setNumCheck } = await sb.from('workout_executions').select('set_number').limit(0)
+  if (setNumCheck) console.warn('⚠️ Execute no Supabase SQL Editor:\nALTER TABLE workout_executions ADD COLUMN IF NOT EXISTS set_number integer DEFAULT 1;')
 
   const { data: { session } } = await sb.auth.getSession()
   if (session) { me = session.user; await boot() }
@@ -1918,7 +1911,7 @@ function buildSidebar() {
   badge.className   = `role-badge ${isP ? 'role-personal' : 'role-student'}`
 
   const items = isP
-    ? [['students','👥','Alunos'],['workout','➕','Novo Treino'],['calculator','🧮','Calculadora'],['progress','📈','Progresso']]
+    ? [['students','👥','Alunos'],['calculator','🧮','Calculadora'],['progress','📈','Progresso']]
     : [['history','📊','Meu Histórico'],['profile','👤','Meu Perfil'],['calculator','🧮','Calculadora'],['progress','📈','Progresso']]
 
   document.getElementById('nav-list').innerHTML = items.map(([id, icon, label]) => `
@@ -1966,7 +1959,7 @@ async function navigateTo(view, opts = {}) {
   try {
     if      (view === 'students')       await renderStudents()
     else if (view === 'student-detail') await renderDetail(opts.id, opts.name, gen)
-    else if (view === 'workout')        await setupWorkoutForm()
+    else if (view === 'workout')        await setupWorkoutForm(opts)
     else if (view === 'calculator')     await setupCalc()
     else if (view === 'history')        await renderHistory(profile.id, gen)
     else if (view === 'progress')       await renderProgress()
@@ -2545,8 +2538,10 @@ async function openStudentSheet(studentId, studentName) {
   document.body.style.overflow = 'hidden'
 
   const ini = studentName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+  const safeIdH   = studentId
+  const safeNameH = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
   const header = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.75rem">
       <div style="display:flex;align-items:center;gap:.875rem">
         <div class="student-avatar" style="margin-bottom:0">${ini}</div>
         <div>
@@ -2554,7 +2549,10 @@ async function openStudentSheet(studentId, studentName) {
           <div style="font-size:1.05rem;font-weight:800;letter-spacing:-0.02em">${studentName}</div>
         </div>
       </div>
-      <button class="btn btn-outline btn-sm" onclick="closeStudentSheet()">✕ Fechar</button>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="openNewWorkoutForStudent('${safeIdH}','${safeNameH}')">➕ Novo Treino</button>
+        <button class="btn btn-outline btn-sm" onclick="closeStudentSheet()">✕ Fechar</button>
+      </div>
     </div>`
 
   body.innerHTML = header + '<div class="loading"><div class="spinner"></div>Carregando…</div>'
@@ -2632,7 +2630,7 @@ async function openStudentSheet(studentId, studentName) {
         </tr>`
     }).join('')
 
-    // Agrupa por workout_id usando Set para deduplicar exercise_id
+    // Agrupa por workout_id; dentro de cada workout, agrega séries por exercise_id
     const execByWorkout = {}
     for (const ex of executions) {
       const key = ex.workout_id
@@ -2641,16 +2639,34 @@ async function openStudentSheet(studentId, studentName) {
           workoutId:   ex.workout_id,
           workoutName: ex.workouts?.name || (ex.workouts?.date ? fmtDate(ex.workouts.date) : '—'),
           executedAt:  ex.executed_at,
-          seenIds:     new Set(),
-          items:       []
+          exerciseMap: {}
         }
       }
-      if (!execByWorkout[key].seenIds.has(ex.exercise_id)) {
-        execByWorkout[key].seenIds.add(ex.exercise_id)
-        execByWorkout[key].items.push(ex)
+      const exId = ex.exercise_id
+      if (!execByWorkout[key].exerciseMap[exId]) {
+        execByWorkout[key].exerciseMap[exId] = {
+          exercise_id:           exId,
+          workout_exercises:     ex.workout_exercises,
+          duration_executed_min: null,
+          distance_executed_km:  null,
+          speed_executed_kmh:    null,
+          sets:                  []
+        }
+      }
+      const entry = execByWorkout[key].exerciseMap[exId]
+      if (ex.duration_executed_min != null) entry.duration_executed_min = ex.duration_executed_min
+      if (ex.distance_executed_km  != null) entry.distance_executed_km  = ex.distance_executed_km
+      if (ex.speed_executed_kmh    != null) entry.speed_executed_kmh    = ex.speed_executed_kmh
+      if (ex.weight_executed != null || ex.reps_executed != null) {
+        entry.sets.push({ set_number: ex.set_number || 1, weight_executed: ex.weight_executed, reps_executed: ex.reps_executed })
       }
     }
-    const execGroups = Object.values(execByWorkout)
+    const execGroups = Object.values(execByWorkout).map(g => ({
+      workoutId:   g.workoutId,
+      workoutName: g.workoutName,
+      executedAt:  g.executedAt,
+      items:       Object.values(g.exerciseMap).sort((a, b) => (a.exercise_id > b.exercise_id ? 1 : -1))
+    }))
     const safeStudentNameExec = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
 
     const execSectionHTML = execGroups.length
@@ -2694,16 +2710,19 @@ async function openStudentSheet(studentId, studentName) {
               const planSets   = we?.sets || 0
               const planWeight = parseFloat(we?.weight_kg) || 0
               const planReps   = we?.reps || 0
-              const execWeight = parseFloat(ex.weight_executed) || 0
-              const execReps   = ex.reps_executed || 0
               const planned    = planSets * planReps * planWeight
-              const executed   = planSets * execReps * execWeight
-              const diff       = executed - planned
-              totalPlannedMusc  += planned
+              totalPlannedMusc += planned
+
+              const sortedSets = (ex.sets || []).sort((a, b) => a.set_number - b.set_number)
+              let executed = 0
+              sortedSets.forEach(s => { executed += (parseFloat(s.weight_executed) || 0) * (s.reps_executed || 0) })
               totalExecutedMusc += executed
 
-              const plannedTxt  = planned > 0 ? `${planWeight} kg × ${planReps} reps = ${planned.toLocaleString('pt-BR')} kg` : '—'
-              const executedTxt = `${execWeight.toLocaleString('pt-BR')} kg × ${execReps} reps = ${executed.toLocaleString('pt-BR')} kg`
+              const diff        = executed - planned
+              const plannedTxt  = planned > 0 ? `${planWeight} kg × ${planReps} reps × ${planSets} séries = ${planned.toLocaleString('pt-BR')} kg` : '—'
+              const executedTxt = sortedSets.length > 0
+                ? sortedSets.map(s => `S${s.set_number}: ${s.weight_executed}×${s.reps_executed}`).join(' · ') + ` = ${executed.toLocaleString('pt-BR')} kg`
+                : '—'
               const diffCell    = diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>`
                 : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>`
                 :             `<span style="color:var(--text-muted)">= 0 kg</span>`
@@ -2813,6 +2832,11 @@ function closeStudentSheet() {
   document.getElementById('student-sheet').style.display = 'none'
   document.body.style.overflow = ''
   if (sheetChart) { sheetChart.destroy(); sheetChart = null }
+}
+
+async function openNewWorkoutForStudent(studentId, studentName) {
+  closeStudentSheet()
+  await navigateTo('workout', { prefilledStudentId: studentId, prefilledStudentName: studentName })
 }
 
 async function checkNewWorkout() {
@@ -3108,7 +3132,7 @@ function updateProgressChart() {
 // ─────────────────────────────────────────────
 // VIEW: NOVO TREINO — formulário dinâmico
 // ─────────────────────────────────────────────
-async function setupWorkoutForm() {
+async function setupWorkoutForm(opts = {}) {
   editingWorkoutId = null
   document.querySelector('#view-workout .card-title').textContent    = 'Novo Treino'
   document.querySelector('#view-workout .section-label').textContent = 'Registrar Atividade'
@@ -3122,10 +3146,17 @@ async function setupWorkoutForm() {
       try { await fetchStudents() }
       catch (err) { toast('Erro ao carregar lista de alunos: ' + err.message, 'error') }
     }
-    grp.style.display = 'block'
-    sel.innerHTML = '<option value="">Selecione o aluno…</option>' +
-      students.map(s => `<option value="${s.id}">${s.name}</option>`).join('')
-    sel.required = true
+    if (opts.prefilledStudentId) {
+      grp.style.display = 'none'
+      sel.innerHTML = `<option value="${opts.prefilledStudentId}" selected>${opts.prefilledStudentName || ''}</option>`
+      sel.required = true
+      document.querySelector('#view-workout .section-label').textContent = `Para: ${opts.prefilledStudentName || ''}`
+    } else {
+      grp.style.display = 'block'
+      sel.innerHTML = '<option value="">Selecione o aluno…</option>' +
+        students.map(s => `<option value="${s.id}">${s.name}</option>`).join('')
+      sel.required = true
+    }
   } else {
     grp.style.display = 'none'
     sel.innerHTML = `<option value="${profile.id}" selected>${profile.name}</option>`
@@ -3855,14 +3886,25 @@ function openExerciseCompletionModal(exerciseId) {
     document.getElementById('exec-modal-distance').value = ex.distance_km  || ''
     document.getElementById('exec-modal-speed').value    = ex.speed_kmh    || ''
   } else {
-    document.getElementById('exec-modal-weight').value = ex.weight_kg || ''
-    document.getElementById('exec-modal-reps').value   = ex.reps      || ''
+    const sets          = Math.max(1, parseInt(ex.sets) || 1)
+    const defaultWeight = ex.weight_kg || ''
+    const defaultReps   = ex.reps      || ''
+    document.getElementById('exec-modal-musculacao').innerHTML =
+      `<div style="font-size:.7rem;color:var(--text-muted);font-weight:600;margin-bottom:.625rem;text-transform:uppercase;letter-spacing:.06em">Carga (kg) &nbsp;×&nbsp; Reps por série</div>` +
+      Array.from({length: sets}, (_, i) => `
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem">
+          <span style="font-size:.72rem;font-weight:700;color:var(--accent-soft);min-width:3.5rem;flex-shrink:0">Série ${i + 1}</span>
+          <input type="number" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${defaultWeight}" style="flex:1;min-width:0;padding:.5rem .75rem">
+          <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
+          <input type="number" class="form-control exec-set-reps" placeholder="reps" min="1" value="${defaultReps}" style="flex:1;min-width:0;padding:.5rem .75rem">
+        </div>`
+      ).join('')
   }
   document.getElementById('exec-complete-modal').style.display = 'flex'
   setTimeout(() => {
     const first = isAero
       ? document.getElementById('exec-modal-duration')
-      : document.getElementById('exec-modal-weight')
+      : document.querySelector('#exec-modal-musculacao .exec-set-weight')
     first?.select()
   }, 50)
 }
@@ -3890,12 +3932,19 @@ function confirmExerciseCompletion() {
       speed    ? `${speed} km/h`  : null
     ].filter(Boolean).join(' / ')
   } else {
-    const weight = parseFloat(document.getElementById('exec-modal-weight').value)
-    const reps   = parseInt(document.getElementById('exec-modal-reps').value)
-    if (!weight || weight <= 0) { toast('Informe a carga utilizada.', 'error'); return }
-    if (!reps   || reps < 1)   { toast('Informe as repetições realizadas.', 'error'); return }
-    execData   = { weight_executed: weight, reps_executed: reps, duration_executed_min: null, distance_executed_km: null, speed_executed_kmh: null }
-    resultText = `${weight.toLocaleString('pt-BR')} kg × ${reps} rep${reps > 1 ? 's' : ''}`
+    const weightInputs = document.querySelectorAll('#exec-modal-musculacao .exec-set-weight')
+    const repsInputs   = document.querySelectorAll('#exec-modal-musculacao .exec-set-reps')
+    const setsData = []
+    for (let i = 0; i < weightInputs.length; i++) {
+      const weight = parseFloat(weightInputs[i].value)
+      const reps   = parseInt(repsInputs[i].value)
+      if (!weight || weight <= 0) { toast(`Informe a carga da série ${i + 1}.`, 'error'); return }
+      if (!reps   || reps   < 1) { toast(`Informe as reps da série ${i + 1}.`, 'error'); return }
+      setsData.push({ set_number: i + 1, weight_executed: weight, reps_executed: reps })
+    }
+    if (!setsData.length) { toast('Nenhuma série encontrada.', 'error'); return }
+    execData   = { sets: setsData, duration_executed_min: null, distance_executed_km: null, speed_executed_kmh: null }
+    resultText = setsData.map((s, i) => `S${i + 1}: ${s.weight_executed.toLocaleString('pt-BR')} kg×${s.reps_executed}`).join(' · ')
   }
 
   const exerciseId = _completingExerciseId
@@ -3989,19 +4038,25 @@ function showComparisonModal(finalTime) {
         const weight = parseFloat(ex.weight_kg) || 0
         planned  = sets * reps * weight
 
-        const execWeight = exec != null ? (parseFloat(exec.weight_executed) || 0) : null
-        const execReps   = exec != null ? (exec.reps_executed || 0)               : null
-        executed = exec != null ? sets * execReps * execWeight : null
+        if (exec != null && exec.sets && exec.sets.length > 0) {
+          executed = exec.sets.reduce((sum, s) => sum + (parseFloat(s.weight_executed) || 0) * (s.reps_executed || 0), 0)
+          const setsText = exec.sets.map((s, i) => `S${i + 1}: ${s.weight_executed}×${s.reps_executed}`).join(' · ')
+          execCell = `<span style="font-size:.78rem">${setsText}</span> = <strong>${executed.toLocaleString('pt-BR')} kg</strong>`
+        } else if (exec != null) {
+          const execWeight = parseFloat(exec.weight_executed) || 0
+          const execReps   = exec.reps_executed || 0
+          executed = sets * execReps * execWeight
+          execCell = `${execWeight.toLocaleString('pt-BR')} kg × ${execReps} reps = <strong>${executed.toLocaleString('pt-BR')} kg</strong>`
+        } else {
+          executed = null
+          execCell = '<span style="color:var(--text-muted)">Não executado</span>'
+        }
 
         totalPlanned  += planned
         if (executed !== null) totalExecuted += executed
         const diff = executed !== null ? executed - planned : null
 
         plannedCell = `${sets}×${reps}×${weight} kg = ${planned.toLocaleString('pt-BR')} kg`
-
-        execCell = exec != null
-          ? `${(execWeight ?? 0).toLocaleString('pt-BR')} kg × ${execReps ?? 0} reps = <strong>${(executed ?? 0).toLocaleString('pt-BR')} kg</strong>`
-          : '<span style="color:var(--text-muted)">Não executado</span>'
 
         diffCell = diff === null ? '—'
           : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>`
@@ -4049,24 +4104,41 @@ async function saveWorkoutExecutions(workoutId) {
   const exes = currentWorkoutData?.workout_exercises || []
   if (!exes.length) return
 
-  const records = exes
-    .filter(ex => !!exerciseExecutions[ex.id])
-    .map(ex => {
-      const exec = exerciseExecutions[ex.id]
-      return {
+  const records = []
+  for (const ex of exes) {
+    const exec   = exerciseExecutions[ex.id]
+    if (!exec) continue
+    const isAero = ex.exercise_type === 'aerobico'
+    if (isAero) {
+      records.push({
         workout_id:            workoutId,
         exercise_id:           ex.id,
         student_id:            profile.id,
-        weight_executed:       exec.weight_executed        ?? null,
-        reps_executed:         exec.reps_executed          ?? null,
-        duration_executed_min: exec.duration_executed_min  ?? null,
-        distance_executed_km:  exec.distance_executed_km   ?? null,
-        speed_executed_kmh:    exec.speed_executed_kmh     ?? null
+        set_number:            1,
+        weight_executed:       null,
+        reps_executed:         null,
+        duration_executed_min: exec.duration_executed_min ?? null,
+        distance_executed_km:  exec.distance_executed_km  ?? null,
+        speed_executed_kmh:    exec.speed_executed_kmh    ?? null
+      })
+    } else {
+      for (const s of (exec.sets || [])) {
+        records.push({
+          workout_id:            workoutId,
+          exercise_id:           ex.id,
+          student_id:            profile.id,
+          set_number:            s.set_number,
+          weight_executed:       s.weight_executed,
+          reps_executed:         s.reps_executed,
+          duration_executed_min: null,
+          distance_executed_km:  null,
+          speed_executed_kmh:    null
+        })
       }
-    })
+    }
+  }
 
   if (!records.length) return
-
   const { error } = await sb.from('workout_executions').insert(records)
   if (error) console.error('[saveWorkoutExecutions] erro:', error.code, error.message)
 }
