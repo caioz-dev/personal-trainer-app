@@ -1140,6 +1140,27 @@
 
       /* Comparison modal */
       .comparison-modal-overlay { padding: .5rem; }
+
+      /* Table headers: allow wrap instead of causing horizontal scroll */
+      th { white-space: normal; }
+
+      /* Exercise name inside flex: never overflow past the action button */
+      .exec-ex-name { min-width: 0; overflow-wrap: break-word; }
+
+      /* Planned / executed text can contain long &nbsp; sequences — force breaks */
+      .exec-ex-planned,
+      .exec-ex-result { overflow-wrap: anywhere; word-break: break-word; }
+
+      /* Modal overlays: tighter padding on narrow screens so cards don't clip */
+      .exec-complete-modal-overlay,
+      .review-modal-overlay { padding: .5rem; }
+
+      /* Rest-timer button: never wider than its container */
+      .btn-rest-timer { max-width: 100%; box-sizing: border-box; }
+
+      /* Progress card header: metric select drops below title */
+      #view-progress .card > .card-header { flex-direction: column; align-items: flex-start; gap: .5rem; }
+      #view-progress #prog-metric { width: 100%; max-width: 260px; }
     }
 
     /* ---- BREAKPOINT 400px (375px devices) ---- */
@@ -1172,6 +1193,32 @@
 
       /* student sheet panel */
       .student-sheet-panel { padding: 1rem .75rem; }
+
+      /* Timer modal time: prevent overflow on 375px */
+      .timer-modal-time { font-size: 2.6rem; }
+
+      /* Comparison modal: tighter padding at 375px */
+      .comparison-modal-card { padding: .875rem .625rem; }
+
+      /* Review effort buttons: smaller to fit 10 in less horizontal space */
+      .review-effort-btn { width: 30px; height: 30px; font-size: .72rem; }
+
+      /* Review feeling buttons: smaller emoji buttons */
+      .review-feeling-btn { padding: .35rem .5rem; font-size: 1.3rem; }
+
+      /* Planned text in execution screen: smaller at 375px */
+      .exec-ex-planned { font-size: .72rem; }
+
+      /* Execution panel: tighter padding */
+      .execution-panel { padding: .875rem .75rem 2rem; }
+
+      /* Per-set rows in exercise completion modal: compact */
+      .exec-set-weight,
+      .exec-set-reps { padding: .4rem .5rem !important; font-size: .82rem; }
+
+      /* Progress dropdowns: full width */
+      #prog-exercise,
+      #prog-metric { width: 100% !important; max-width: none; }
     }
 
     /* ---- REST TIMER (descanso por exercício) ---- */
