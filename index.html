@@ -1449,6 +1449,11 @@
           <div id="progress-body"></div>
         </div>
 
+        <!-- VIEW: Meu Perfil (aluno) -->
+        <div id="view-profile" class="view" style="display:none">
+          <div id="profile-body"></div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -1689,6 +1694,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (execCheck) {
     console.warn('⚠️ AÇÃO NECESSÁRIA: Tabela workout_executions ausente. Execute o SQL de criação no Supabase.')
   }
+  const { error: hrColCheck } = await sb.from('workout_exercises').select('hr_min, hr_max').limit(0)
+  if (hrColCheck) console.warn('⚠️ Execute no Supabase SQL Editor:\nALTER TABLE workout_exercises ADD COLUMN IF NOT EXISTS hr_min integer, ADD COLUMN IF NOT EXISTS hr_max integer;')
+  const { error: methodColCheck } = await sb.from('workout_exercises').select('training_method, method_description').limit(0)
+  if (methodColCheck) console.warn('⚠️ Execute no Supabase SQL Editor:\nALTER TABLE workout_exercises ADD COLUMN IF NOT EXISTS training_method text, ADD COLUMN IF NOT EXISTS method_description text;')
+  const { error: spColCheck } = await sb.from('student_profiles').select('id').limit(0)
+  if (spColCheck) console.warn('⚠️ AÇÃO NECESSÁRIA: Tabela student_profiles ausente. Execute o SQL de criação no Supabase.')
 
   const { data: { session } } = await sb.auth.getSession()
   if (session) { me = session.user; await boot() }
@@ -1908,7 +1919,7 @@ function buildSidebar() {
 
   const items = isP
     ? [['students','👥','Alunos'],['workout','➕','Novo Treino'],['calculator','🧮','Calculadora'],['progress','📈','Progresso']]
-    : [['history','📊','Meu Histórico'],['calculator','🧮','Calculadora'],['progress','📈','Progresso']]
+    : [['history','📊','Meu Histórico'],['profile','👤','Meu Perfil'],['calculator','🧮','Calculadora'],['progress','📈','Progresso']]
 
   document.getElementById('nav-list').innerHTML = items.map(([id, icon, label]) => `
     <li class="nav-item">
@@ -1933,7 +1944,7 @@ function closeSidebar() {
 const VIEW_TITLES = {
   students: 'Alunos', workout: 'Novo Treino',
   calculator: 'Calculadora', history: 'Meu Histórico',
-  progress: 'Dashboard de Progresso'
+  progress: 'Dashboard de Progresso', profile: 'Meu Perfil'
 }
 
 async function navigateTo(view, opts = {}) {
@@ -1959,6 +1970,7 @@ async function navigateTo(view, opts = {}) {
     else if (view === 'calculator')     await setupCalc()
     else if (view === 'history')        await renderHistory(profile.id, gen)
     else if (view === 'progress')       await renderProgress()
+    else if (view === 'profile')        await renderProfile()
   } catch { /* each render fn already handles its own errors */ }
 
   // Activate reveal animations on newly rendered content
@@ -2275,11 +2287,14 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
               <td style="color:var(--text-secondary)">${parts || '—'}</td>
               <td>${ex.speed_kmh ? ex.speed_kmh + ' km/h' : '—'}</td>
               <td>${ex.pace ? ex.pace + ' /km' : '—'}</td>
-              <td style="color:var(--text-muted)">—</td>
+              <td style="color:var(--text-muted)">${(ex.hr_min || ex.hr_max) ? `❤️ ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : '—'}</td>
             </tr>`
           }
           return `<tr>
-            <td style="padding-left:2rem;font-weight:500;color:var(--text-secondary)">${ex.exercise_name}</td>
+            <td style="padding-left:2rem;font-weight:500;color:var(--text-secondary)">
+              ${ex.exercise_name}
+              ${ex.training_method ? `<div style="font-size:.7rem;color:var(--accent-soft);margin-top:.15rem">⚡ ${ex.training_method}</div>` : ''}
+            </td>
             <td>${ex.sets} série${ex.sets > 1 ? 's' : ''}</td>
             <td>${ex.weight_kg} kg × ${ex.reps} reps</td>
             <td>${ex.cadencia || '—'}</td>
@@ -2504,13 +2519,17 @@ async function editWorkout(workoutId) {
         if (ex.speed_kmh    != null)          row.querySelector('.ex-speed').value             = ex.speed_kmh
         if (ex.recovery_interval_min != null) row.querySelector('.ex-recovery-interval').value = ex.recovery_interval_min
         if (ex.recovery_speed_kmh != null)    row.querySelector('.ex-recovery-speed').value    = ex.recovery_speed_kmh
+        if (ex.hr_min != null)                row.querySelector('.ex-hr-min').value             = ex.hr_min
+        if (ex.hr_max != null)                row.querySelector('.ex-hr-max').value             = ex.hr_max
         refreshPace(exerciseCounter)
       } else {
         row.querySelector('.ex-sets').value     = ex.sets
         row.querySelector('.ex-weight').value   = ex.weight_kg
         row.querySelector('.ex-reps').value     = ex.reps
-        row.querySelector('.ex-cadencia').value = ex.cadencia || ''
-        row.querySelector('.ex-descanso').value = ex.tempo_descanso != null ? ex.tempo_descanso : ''
+        row.querySelector('.ex-cadencia').value    = ex.cadencia || ''
+        row.querySelector('.ex-descanso').value    = ex.tempo_descanso != null ? ex.tempo_descanso : ''
+        row.querySelector('.ex-method').value      = ex.training_method || ''
+        row.querySelector('.ex-method-desc').value = ex.method_description || ''
         refreshExerciseVolume(exerciseCounter)
       }
     })
@@ -2541,16 +2560,18 @@ async function openStudentSheet(studentId, studentName) {
   body.innerHTML = header + '<div class="loading"><div class="spinner"></div>Carregando…</div>'
 
   try {
-    const [workouts, execRes] = await Promise.all([
+    const [workouts, execRes, spRes] = await Promise.all([
       fetchWorkouts(studentId),
       sb.from('workout_executions')
         .select('*, workout_exercises(exercise_name, exercise_type, sets, reps, weight_kg, duration_min, distance_km, speed_kmh), workouts(name, date)')
         .eq('student_id', studentId)
-        .order('executed_at', { ascending: false })
+        .order('executed_at', { ascending: false }),
+      sb.from('student_profiles').select('*').eq('student_id', studentId).maybeSingle()
     ])
 
     const executions = execRes.data || []
     if (execRes.error) console.error('[openStudentSheet] erro na query de execuções:', execRes.error?.code, execRes.error?.message)
+    const studentProfileData = spRes?.data || null
 
     if (!workouts.length && !executions.length) {
       body.innerHTML = header + `<div class="empty-state"><div class="empty-icon">🏋️</div>
@@ -2742,7 +2763,15 @@ async function openStudentSheet(studentId, studentName) {
         }).join('')
       : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">📊</div><p>Nenhuma execução registrada ainda.</p></div>`
 
+    const profileStatsHTML = studentProfileData && (studentProfileData.age || studentProfileData.height_cm || studentProfileData.weight_kg) ? `
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1.25rem">
+        ${studentProfileData.age       ? `<div style="background:rgba(86,115,255,0.08);border:1px solid rgba(86,115,255,0.18);border-radius:var(--radius-lg);padding:.5rem 1rem;text-align:center"><div style="font-size:1.1rem;font-weight:800;color:var(--text-primary)">${studentProfileData.age}</div><div style="font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted)">anos</div></div>` : ''}
+        ${studentProfileData.height_cm ? `<div style="background:rgba(86,115,255,0.08);border:1px solid rgba(86,115,255,0.18);border-radius:var(--radius-lg);padding:.5rem 1rem;text-align:center"><div style="font-size:1.1rem;font-weight:800;color:var(--text-primary)">${studentProfileData.height_cm}</div><div style="font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted)">cm</div></div>` : ''}
+        ${studentProfileData.weight_kg ? `<div style="background:rgba(86,115,255,0.08);border:1px solid rgba(86,115,255,0.18);border-radius:var(--radius-lg);padding:.5rem 1rem;text-align:center"><div style="font-size:1.1rem;font-weight:800;color:var(--text-primary)">${studentProfileData.weight_kg}</div><div style="font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted)">kg</div></div>` : ''}
+      </div>` : ''
+
     body.innerHTML = `${header}
+      ${profileStatsHTML}
       <div class="stats-grid" style="margin-bottom:1.25rem">
         <div class="stat-card" style="padding:1rem 1.25rem">
           <div class="stat-value" style="font-size:1.6rem">${workouts.length}</div>
@@ -2804,6 +2833,76 @@ async function checkNewWorkout() {
       }
     }
   } catch {}
+}
+
+// ─────────────────────────────────────────────
+// VIEW: MEU PERFIL (aluno)
+// ─────────────────────────────────────────────
+async function renderProfile() {
+  const body = document.getElementById('profile-body')
+  body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando perfil…</div>'
+  try {
+    const { data, error } = await sb
+      .from('student_profiles')
+      .select('*')
+      .eq('student_id', profile.id)
+      .maybeSingle()
+    if (error) throw error
+    body.innerHTML = `
+      <div class="card reveal" style="max-width:480px">
+        <div class="card-header">
+          <div>
+            <div class="section-label">Dados Pessoais</div>
+            <div class="card-title">👤 Meu Perfil</div>
+          </div>
+        </div>
+        <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1.25rem">
+          Suas informações ficam visíveis para o seu personal trainer na ficha do aluno.
+        </p>
+        <form onsubmit="saveProfile(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Idade (anos)</label>
+              <input id="prof-age" type="number" class="form-control" placeholder="Ex: 25" min="1" max="120" value="${data?.age ?? ''}">
+            </div>
+            <div class="form-group">
+              <label>Altura (cm)</label>
+              <input id="prof-height" type="number" class="form-control" placeholder="Ex: 175" step="0.1" min="50" max="250" value="${data?.height_cm ?? ''}">
+            </div>
+            <div class="form-group">
+              <label>Peso (kg)</label>
+              <input id="prof-weight" type="number" class="form-control" placeholder="Ex: 75.5" step="0.1" min="1" max="500" value="${data?.weight_kg ?? ''}">
+            </div>
+          </div>
+          <button type="submit" id="prof-btn" class="btn btn-primary" style="margin-top:.5rem">Salvar</button>
+        </form>
+      </div>`
+    observeRevealElements()
+  } catch (err) {
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <p>Erro ao carregar perfil.</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:.75rem" onclick="renderProfile()">Tentar novamente</button></div>`
+  }
+}
+
+async function saveProfile(e) {
+  e.preventDefault()
+  const btn = document.getElementById('prof-btn')
+  btn.textContent = 'Salvando…'; btn.disabled = true
+  const age    = parseInt(document.getElementById('prof-age').value)      || null
+  const height = parseFloat(document.getElementById('prof-height').value) || null
+  const weight = parseFloat(document.getElementById('prof-weight').value) || null
+  try {
+    const { error } = await sb.from('student_profiles').upsert(
+      { student_id: profile.id, age, height_cm: height, weight_kg: weight, updated_at: new Date().toISOString() },
+      { onConflict: 'student_id' }
+    )
+    if (error) throw error
+    toast('Perfil salvo com sucesso!', 'success')
+  } catch (err) {
+    toast('Erro ao salvar perfil: ' + err.message, 'error')
+  }
+  btn.textContent = 'Salvar'; btn.disabled = false
 }
 
 // ─────────────────────────────────────────────
@@ -3102,6 +3201,14 @@ function addExercise() {
         <label>Volume</label>
         <div class="exercise-vol-display" id="ex-vol-${id}">—</div>
       </div>
+      <div class="form-group form-full">
+        <label>Método de treino (opcional)</label>
+        <input type="text" class="form-control ex-method" placeholder="Ex: Pirâmide crescente, Drop set, Bi-set">
+      </div>
+      <div class="form-group form-full">
+        <label>Descrição / instrução (opcional)</label>
+        <textarea class="form-control ex-method-desc" rows="2" style="resize:vertical" placeholder="Ex: Execute 4 séries aumentando a carga a cada série"></textarea>
+      </div>
     </div>
     <div class="form-grid" id="ex-aero-${id}" style="display:none">
       <div class="form-group">
@@ -3131,6 +3238,14 @@ function addExercise() {
       <div class="form-group">
         <label>Vel. recuperação (km/h)</label>
         <input type="number" class="form-control ex-recovery-speed" placeholder="6.0" step="0.1" min="0">
+      </div>
+      <div class="form-group">
+        <label>FC Mínima (bpm, opcional)</label>
+        <input type="number" class="form-control ex-hr-min" placeholder="120" min="0" max="300">
+      </div>
+      <div class="form-group">
+        <label>FC Máxima (bpm, opcional)</label>
+        <input type="number" class="form-control ex-hr-max" placeholder="160" min="0" max="300">
       </div>
     </div>`
 
@@ -3282,7 +3397,10 @@ async function saveWorkout(e) {
         speed_kmh:             parseFloat(row.querySelector('.ex-speed')?.value)             || null,
         pace:                  row.querySelector('.ex-pace')?.value                          || null,
         recovery_interval_min: parseFloat(row.querySelector('.ex-recovery-interval')?.value) || null,
-        recovery_speed_kmh:    parseFloat(row.querySelector('.ex-recovery-speed')?.value)    || null
+        recovery_speed_kmh:    parseFloat(row.querySelector('.ex-recovery-speed')?.value)    || null,
+        hr_min:                parseInt(row.querySelector('.ex-hr-min')?.value)              || null,
+        hr_max:                parseInt(row.querySelector('.ex-hr-max')?.value)              || null,
+        training_method: null, method_description: null
       })
     } else {
       const sets   = parseInt(row.querySelector('.ex-sets').value)
@@ -3292,15 +3410,19 @@ async function saveWorkout(e) {
         allValid = false; return
       }
       const volume   = parseFloat((sets * weight * reps).toFixed(2))
-      const cadencia = row.querySelector('.ex-cadencia').value.trim() || null
-      const descanso = row.querySelector('.ex-descanso').value
+      const cadencia   = row.querySelector('.ex-cadencia').value.trim()      || null
+      const descanso   = row.querySelector('.ex-descanso').value
+      const method     = row.querySelector('.ex-method')?.value.trim()       || null
+      const methodDesc = row.querySelector('.ex-method-desc')?.value.trim()  || null
       totalVolume += volume
       exercises.push({
         exercise_name: exName, exercise_type: 'musculacao',
         sets, weight_kg: weight, reps, volume,
         cadencia: cadencia || null, tempo_descanso: descanso ? parseInt(descanso) : null,
         duration_min: null, distance_km: null, speed_kmh: null, pace: null,
-        recovery_interval_min: null, recovery_speed_kmh: null
+        recovery_interval_min: null, recovery_speed_kmh: null,
+        hr_min: null, hr_max: null,
+        training_method: method, method_description: methodDesc
       })
     }
   })
@@ -3685,12 +3807,14 @@ function renderExecutionScreen(workout) {
               ex.distance_km  ? `${ex.distance_km} km`       : null,
               ex.speed_kmh    ? `${ex.speed_kmh} km/h`       : null,
               ex.pace         ? `Ritmo: ${ex.pace} /km`      : null,
-              ex.recovery_interval_min ? `Rec: ${ex.recovery_interval_min} min` : null
+              ex.recovery_interval_min ? `Rec: ${ex.recovery_interval_min} min` : null,
+              (ex.hr_min || ex.hr_max) ? `❤️ FC: ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : null
             ].filter(Boolean).join(' &nbsp;·&nbsp; ')
           : [
               `${ex.sets} série${ex.sets > 1 ? 's' : ''} × ${ex.reps} reps × ${ex.weight_kg} kg`,
               ex.cadencia          ? `Cadência: ${ex.cadencia}`         : null,
-              ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null
+              ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null,
+              ex.training_method   ? `Método: ${ex.training_method}`    : null
             ].filter(Boolean).join(' &nbsp;·&nbsp; ')
         const restBtn = !isAero && ex.tempo_descanso > 0
           ? `<div class="rest-timer-wrap" id="rest-timer-${ex.id}">
@@ -3706,6 +3830,7 @@ function renderExecutionScreen(workout) {
                     onclick="openExerciseCompletionModal('${ex.id}')">✓ Concluir</button>
           </div>
           <div class="exec-ex-planned">${planned || '—'}</div>
+          ${!isAero && ex.method_description ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.4rem;padding:.4rem .75rem;background:rgba(86,115,255,0.05);border-radius:var(--radius-md);border-left:2px solid rgba(86,115,255,0.25)">${ex.method_description}</div>` : ''}
           <div class="exec-ex-result" id="exec-ex-result-${ex.id}" style="display:none"></div>
           ${restBtn}
         </div>`
