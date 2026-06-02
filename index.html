@@ -1230,6 +1230,56 @@
       justify-content: center;
       padding: 1rem;
     }
+
+    /* ---- REVIEW MODAL ---- */
+    .review-modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9250;
+      background: rgba(0,0,0,0.78);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    .review-feeling-btn {
+      background: rgba(144,158,186,0.06);
+      border: 2px solid transparent;
+      border-radius: var(--radius-lg);
+      padding: .45rem .6rem;
+      font-size: 1.5rem;
+      cursor: pointer;
+      transition: all var(--transition);
+      line-height: 1;
+      flex: 1;
+    }
+
+    .review-feeling-btn:hover { background: rgba(86,115,255,0.1); border-color: rgba(86,115,255,0.3); }
+    .review-feeling-btn.selected { background: rgba(86,115,255,0.18); border-color: var(--accent); transform: scale(1.12); }
+
+    .review-effort-btn {
+      width: 36px;
+      height: 36px;
+      flex-shrink: 0;
+      background: rgba(144,158,186,0.06);
+      border: 2px solid rgba(144,158,186,0.14);
+      border-radius: var(--radius-md);
+      color: var(--text-secondary);
+      font-size: .82rem;
+      font-weight: 700;
+      font-family: 'Montserrat', system-ui, sans-serif;
+      cursor: pointer;
+      transition: all var(--transition);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .review-effort-btn:hover { background: rgba(86,115,255,0.1); border-color: rgba(86,115,255,0.4); color: var(--accent-soft); }
+    .review-effort-btn.selected { background: rgba(86,115,255,0.2); border-color: var(--accent); color: var(--accent-soft); }
   </style>
 </head>
 <body>
@@ -1562,6 +1612,62 @@
   </div>
 </div>
 
+<!-- REVIEW MODAL -->
+<div id="review-modal" class="review-modal-overlay" style="display:none">
+  <div class="timer-modal-card" style="max-width:420px;width:calc(100% - 2rem);text-align:left;max-height:90vh;overflow-y:auto">
+    <div style="font-size:2rem;text-align:center;margin-bottom:.5rem">⭐</div>
+    <div class="timer-modal-title" style="text-align:center;margin-bottom:.2rem">Autoavaliação</div>
+    <div class="timer-modal-sub" style="text-align:center;margin-bottom:1.5rem">Como foi o seu treino hoje?</div>
+
+    <div class="form-group">
+      <label>Como você se sentiu?</label>
+      <div style="display:flex;gap:.4rem;margin-top:.5rem">
+        <button class="review-feeling-btn" data-val="1" onclick="selectFeeling(1)" title="Péssimo">😩</button>
+        <button class="review-feeling-btn" data-val="2" onclick="selectFeeling(2)" title="Ruim">😕</button>
+        <button class="review-feeling-btn" data-val="3" onclick="selectFeeling(3)" title="Regular">😐</button>
+        <button class="review-feeling-btn" data-val="4" onclick="selectFeeling(4)" title="Bem">🙂</button>
+        <button class="review-feeling-btn" data-val="5" onclick="selectFeeling(5)" title="Ótimo">😄</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:.3rem">
+        <span style="font-size:.62rem;color:var(--text-muted)">Péssimo</span>
+        <span style="font-size:.62rem;color:var(--text-muted)">Ótimo</span>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-top:1rem">
+      <label>Esforço percebido — PSE (1–10)</label>
+      <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.5rem">
+        <button class="review-effort-btn" data-val="1"  onclick="selectEffort(1)">1</button>
+        <button class="review-effort-btn" data-val="2"  onclick="selectEffort(2)">2</button>
+        <button class="review-effort-btn" data-val="3"  onclick="selectEffort(3)">3</button>
+        <button class="review-effort-btn" data-val="4"  onclick="selectEffort(4)">4</button>
+        <button class="review-effort-btn" data-val="5"  onclick="selectEffort(5)">5</button>
+        <button class="review-effort-btn" data-val="6"  onclick="selectEffort(6)">6</button>
+        <button class="review-effort-btn" data-val="7"  onclick="selectEffort(7)">7</button>
+        <button class="review-effort-btn" data-val="8"  onclick="selectEffort(8)">8</button>
+        <button class="review-effort-btn" data-val="9"  onclick="selectEffort(9)">9</button>
+        <button class="review-effort-btn" data-val="10" onclick="selectEffort(10)">10</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:.3rem">
+        <span style="font-size:.62rem;color:var(--text-muted)">Muito leve</span>
+        <span style="font-size:.62rem;color:var(--text-muted)">Máximo</span>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-top:1rem">
+      <label>Observações (opcional)</label>
+      <textarea id="review-modal-notes" class="form-control" rows="2"
+                style="resize:vertical;margin-top:.4rem"
+                placeholder="Ex: senti dor no ombro, precisei reduzir a carga…"></textarea>
+    </div>
+
+    <button class="btn btn-success btn-block" style="margin-top:1.25rem" onclick="submitReview()">Continuar →</button>
+    <div style="text-align:center;margin-top:.75rem">
+      <button class="auth-link" onclick="skipReview()">Pular avaliação</button>
+    </div>
+  </div>
+</div>
+
 <!-- COMPARISON MODAL -->
 <div id="comparison-modal" class="comparison-modal-overlay" style="display:none">
   <div class="comparison-modal-card">
@@ -1620,29 +1726,37 @@ let currentWorkoutData    = null
 let exerciseExecutions    = {}
 let _completingExerciseId = null
 let restTimers            = {}
+let _pendingReviewFinalTime = null
+let _selectedFeeling        = null
+let _selectedEffort         = null
 
 // Limpa TODO o estado da sessão anterior — chamado no logout e antes de boot de novo usuário
 function resetAppState() {
   // Timer: cancela interval ativo e fecha overlays relacionados
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null }
   timerSeconds = 0
-  const timerWidget = document.getElementById('workout-timer-widget')
-  const execOverlay = document.getElementById('execution-overlay')
-  const compModal   = document.getElementById('comparison-modal')
-  const timerModal  = document.getElementById('timer-modal-overlay')
-  const sheet       = document.getElementById('student-sheet')
-  if (timerWidget) timerWidget.style.display = 'none'
-  if (execOverlay) execOverlay.style.display = 'none'
-  if (compModal)   compModal.style.display   = 'none'
-  if (timerModal)  timerModal.style.display  = 'none'
-  if (sheet)       sheet.style.display       = 'none'
+  const timerWidget  = document.getElementById('workout-timer-widget')
+  const execOverlay  = document.getElementById('execution-overlay')
+  const compModal    = document.getElementById('comparison-modal')
+  const timerModal   = document.getElementById('timer-modal-overlay')
+  const sheet        = document.getElementById('student-sheet')
+  const reviewModal  = document.getElementById('review-modal')
+  if (timerWidget)  timerWidget.style.display  = 'none'
+  if (execOverlay)  execOverlay.style.display  = 'none'
+  if (compModal)    compModal.style.display    = 'none'
+  if (timerModal)   timerModal.style.display   = 'none'
+  if (sheet)        sheet.style.display        = 'none'
+  if (reviewModal)  reviewModal.style.display  = 'none'
   document.body.style.overflow = ''
 
   // Estado de execução de treino
-  currentWorkoutData    = null
-  exerciseExecutions    = {}
-  _completingExerciseId = null
-  editingWorkoutId      = null
+  currentWorkoutData      = null
+  exerciseExecutions      = {}
+  _completingExerciseId   = null
+  editingWorkoutId        = null
+  _pendingReviewFinalTime = null
+  _selectedFeeling        = null
+  _selectedEffort         = null
   for (const id in restTimers) { if (restTimers[id]?.intervalId) clearInterval(restTimers[id].intervalId) }
   restTimers = {}
 
@@ -1693,6 +1807,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (spColCheck) console.warn('⚠️ AÇÃO NECESSÁRIA: Tabela student_profiles ausente. Execute o SQL de criação no Supabase.')
   const { error: setNumCheck } = await sb.from('workout_executions').select('set_number').limit(0)
   if (setNumCheck) console.warn('⚠️ Execute no Supabase SQL Editor:\nALTER TABLE workout_executions ADD COLUMN IF NOT EXISTS set_number integer DEFAULT 1;')
+  const { error: reviewsCheck } = await sb.from('workout_reviews').select('id').limit(0)
+  if (reviewsCheck) console.warn('⚠️ AÇÃO NECESSÁRIA: Tabela workout_reviews ausente. Execute o SQL de criação no Supabase.')
 
   const { data: { session } } = await sb.auth.getSession()
   if (session) { me = session.user; await boot() }
@@ -2558,18 +2674,23 @@ async function openStudentSheet(studentId, studentName) {
   body.innerHTML = header + '<div class="loading"><div class="spinner"></div>Carregando…</div>'
 
   try {
-    const [workouts, execRes, spRes] = await Promise.all([
+    const [workouts, execRes, spRes, reviewsRes] = await Promise.all([
       fetchWorkouts(studentId),
       sb.from('workout_executions')
         .select('*, workout_exercises(exercise_name, exercise_type, sets, reps, weight_kg, duration_min, distance_km, speed_kmh), workouts(name, date)')
         .eq('student_id', studentId)
         .order('executed_at', { ascending: false }),
-      sb.from('student_profiles').select('*').eq('student_id', studentId).maybeSingle()
+      sb.from('student_profiles').select('*').eq('student_id', studentId).maybeSingle(),
+      sb.from('workout_reviews').select('*').eq('student_id', studentId).order('created_at', { ascending: false })
     ])
 
     const executions = execRes.data || []
     if (execRes.error) console.error('[openStudentSheet] erro na query de execuções:', execRes.error?.code, execRes.error?.message)
     const studentProfileData = spRes?.data || null
+    const reviewsByWorkout = {}
+    for (const r of (reviewsRes.data || [])) {
+      if (!reviewsByWorkout[r.workout_id]) reviewsByWorkout[r.workout_id] = r
+    }
 
     if (!workouts.length && !executions.length) {
       body.innerHTML = header + `<div class="empty-state"><div class="empty-icon">🏋️</div>
@@ -2760,6 +2881,18 @@ async function openStudentSheet(studentId, studentName) {
             ? `<button class="btn btn-sm btn-ghost-danger" onclick="deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}','${safeStudentNameExec}')">🗑️ Apagar execução</button>`
             : ''
 
+          const review = reviewsByWorkout[group.workoutId]
+          const feelingEmojis = ['😩','😕','😐','🙂','😄']
+          const reviewHTML = review ? `
+            <div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid rgba(144,158,186,0.08)">
+              <div style="font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted);margin-bottom:.5rem">Autoavaliação do aluno</div>
+              <div style="display:flex;gap:1.25rem;flex-wrap:wrap;align-items:flex-start">
+                ${review.feeling ? `<div style="text-align:center"><div style="font-size:1.6rem;line-height:1">${feelingEmojis[review.feeling - 1]}</div><div style="font-size:.62rem;color:var(--text-muted);margin-top:.2rem">Sensação</div></div>` : ''}
+                ${review.perceived_effort ? `<div style="text-align:center"><div style="font-size:1.15rem;font-weight:800;color:var(--accent-soft);line-height:1">${review.perceived_effort}<span style="font-size:.65rem;color:var(--text-muted)">/10</span></div><div style="font-size:.62rem;color:var(--text-muted);margin-top:.2rem">Esforço (PSE)</div></div>` : ''}
+                ${review.notes ? `<div style="flex:1;min-width:120px;font-size:.78rem;color:var(--text-muted);font-style:italic;padding-top:.1rem">"${review.notes}"</div>` : ''}
+              </div>
+            </div>` : ''
+
           return `
           <div style="background:rgba(10,16,33,0.5);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:1rem 1.1rem;margin-bottom:.875rem">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
@@ -2778,6 +2911,7 @@ async function openStudentSheet(studentId, studentName) {
                 <tfoot>${footerRows.join('')}</tfoot>
               </table>
             </div>
+            ${reviewHTML}
           </div>`
         }).join('')
       : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">📊</div><p>Nenhuma execução registrada ainda.</p></div>`
@@ -3970,7 +4104,56 @@ function finishWorkout() {
   document.getElementById('execution-overlay').style.display = 'none'
   document.body.style.overflow = ''
   syncTimerButtons()
-  showComparisonModal(finalTime)
+  showReviewModal(finalTime)
+}
+
+// ─────────────────────────────────────────────
+// WORKOUT REVIEW
+// ─────────────────────────────────────────────
+function showReviewModal(finalTime) {
+  _pendingReviewFinalTime = finalTime
+  _selectedFeeling        = null
+  _selectedEffort         = null
+  document.getElementById('review-modal-notes').value = ''
+  document.querySelectorAll('.review-feeling-btn').forEach(b => b.classList.remove('selected'))
+  document.querySelectorAll('.review-effort-btn').forEach(b => b.classList.remove('selected'))
+  document.getElementById('review-modal').style.display = 'flex'
+}
+
+function selectFeeling(val) {
+  _selectedFeeling = val
+  document.querySelectorAll('.review-feeling-btn').forEach(b =>
+    b.classList.toggle('selected', parseInt(b.dataset.val) === val)
+  )
+}
+
+function selectEffort(val) {
+  _selectedEffort = val
+  document.querySelectorAll('.review-effort-btn').forEach(b =>
+    b.classList.toggle('selected', parseInt(b.dataset.val) === val)
+  )
+}
+
+async function submitReview() {
+  const notes = document.getElementById('review-modal-notes').value.trim() || null
+  document.getElementById('review-modal').style.display = 'none'
+  if (currentWorkoutData && (_selectedFeeling || _selectedEffort || notes)) {
+    sb.from('workout_reviews').insert({
+      workout_id:       currentWorkoutData.id,
+      student_id:       profile.id,
+      feeling:          _selectedFeeling || null,
+      perceived_effort: _selectedEffort  || null,
+      notes
+    }).then(({ error }) => {
+      if (error) console.error('[submitReview]', error.message)
+    })
+  }
+  showComparisonModal(_pendingReviewFinalTime)
+}
+
+function skipReview() {
+  document.getElementById('review-modal').style.display = 'none'
+  showComparisonModal(_pendingReviewFinalTime)
 }
 
 function showComparisonModal(finalTime) {
