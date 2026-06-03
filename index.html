@@ -581,6 +581,47 @@
     .history-detail-inner tr:last-child td { border-bottom: none; }
     .history-detail-inner .vol-cell { color: var(--accent-soft); font-weight: 700; }
 
+    /* ---- EXERCISE DETAIL CARDS (mobile) ---- */
+    .ex-detail-cards { display: none; }
+    .ex-card {
+      padding: .5rem .875rem;
+      border-bottom: 1px solid rgba(144,158,186,0.07);
+      line-height: 1.45;
+    }
+    .ex-card:last-child { border-bottom: none; }
+    .ex-card-name {
+      font-weight: 500;
+      color: var(--text-secondary);
+      font-size: .88rem;
+      margin-bottom: .2rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .3rem;
+    }
+    .ex-card-detail { font-size: .8rem; color: var(--text-primary); margin-bottom: .1rem; }
+    .ex-card-sub    { font-size: .76rem; color: var(--text-muted); margin-bottom: .1rem; }
+    .ex-card-method { font-size: .72rem; color: var(--text-muted); font-style: italic; margin-top: .1rem; }
+    .ex-card-legacy { font-size: .8rem; color: var(--text-muted); font-style: italic; padding: .75rem .875rem; }
+    .ex-badge-aero {
+      font-size: .6rem;
+      background: rgba(245,158,11,0.1);
+      color: var(--warning);
+      border: 1px solid rgba(245,158,11,0.2);
+      border-radius: 999px;
+      padding: .1rem .4rem;
+      white-space: nowrap;
+    }
+    .ex-badge-method {
+      font-size: .6rem;
+      color: var(--accent-soft);
+      background: rgba(86,115,255,0.1);
+      border: 1px solid rgba(86,115,255,0.2);
+      border-radius: 999px;
+      padding: .1rem .4rem;
+      white-space: nowrap;
+    }
+
     /* ---- CALCULATOR ---- */
     .calc-wrap { max-width: 520px; }
 
@@ -1074,6 +1115,10 @@
       .exec-timer-display { font-size: 2rem; text-align: left; }
       .exec-ex-header { flex-wrap: wrap; }
       .comparison-modal-card { padding: 1.25rem 1rem; }
+
+      /* Exercise detail: hide table, show cards */
+      .ex-detail-table { display: none; }
+      .ex-detail-cards { display: block; }
 
       /* Comparison table → stacked cards */
       .comparison-modal-card table { border-collapse: separate; border-spacing: 0; }
@@ -2488,14 +2533,14 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
       ? `${exCount} ${exCount === 1 ? 'exercício' : 'exercícios'}`
       : (w.notes || '<span style="color:var(--text-muted)">—</span>')
 
-    const exDetailRows = exCount > 0
+    const exDetailPairs = exCount > 0
       ? exes.map(ex => {
           if (ex.exercise_type === 'aerobico') {
             const parts = [
               ex.duration_min ? `${ex.duration_min} min` : null,
               ex.distance_km  ? `${ex.distance_km} km`  : null
             ].filter(Boolean).join(' / ')
-            return `<tr>
+            const row = `<tr>
               <td style="padding-left:2rem;font-weight:500;color:var(--text-secondary)">
                 ${ex.exercise_name}
                 <span style="font-size:.63rem;background:rgba(245,158,11,0.1);color:var(--warning);border:1px solid rgba(245,158,11,0.2);border-radius:999px;padding:.1rem .45rem;margin-left:.3rem;vertical-align:middle">🏃 Aeróbico</span>
@@ -2506,8 +2551,20 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
               <td>${ex.pace ? ex.pace + ' /km' : '—'}</td>
               <td style="color:var(--text-muted)">${(ex.hr_min || ex.hr_max) ? `❤️ ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : '—'}</td>
             </tr>`
+            const aeroParts = [
+              ex.duration_min ? `${ex.duration_min} min` : null,
+              ex.distance_km  ? `${ex.distance_km} km`  : null,
+              ex.speed_kmh    ? `${ex.speed_kmh} km/h`  : null,
+              ex.pace         ? `Ritmo: ${ex.pace}/km`  : null
+            ].filter(Boolean).join(' · ')
+            const card = `<div class="ex-card">
+              <div class="ex-card-name">${ex.exercise_name}<span class="ex-badge-aero">🏃 Aeróbico</span></div>
+              ${aeroParts ? `<div class="ex-card-detail">${aeroParts}</div>` : ''}
+              ${(ex.hr_min || ex.hr_max) ? `<div class="ex-card-sub">❤️ FC: ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm</div>` : ''}
+            </div>`
+            return { row, card }
           }
-          return `<tr>
+          const row = `<tr>
             <td style="padding-left:2rem;font-weight:500;color:var(--text-secondary)">
               ${ex.exercise_name}
               ${ex.training_method ? `<div style="font-size:.7rem;color:var(--accent-soft);margin-top:.15rem">⚡ ${ex.training_method}</div>` : ''}
@@ -2519,10 +2576,23 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
             <td>${ex.tempo_descanso != null ? ex.tempo_descanso + 's' : '—'}</td>
             <td class="vol-cell">${parseFloat(ex.volume).toLocaleString('pt-BR')} kg</td>
           </tr>`
-        }).join('')
-      : `<tr><td colspan="6" style="padding:.75rem 1rem 1rem;font-style:italic;color:var(--text-muted)">
-            Treino no formato legado — sem detalhes por exercício
-         </td></tr>`
+          const detailLine = `${ex.sets} série${ex.sets > 1 ? 's' : ''} × ${ex.reps} reps @ ${ex.weight_kg} kg — Vol: ${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
+          const subParts = [
+            ex.cadencia ? `Cadência: ${ex.cadencia}` : null,
+            ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null
+          ].filter(Boolean).join(' · ')
+          const card = `<div class="ex-card">
+            <div class="ex-card-name">${ex.exercise_name}${ex.training_method ? `<span class="ex-badge-method">⚡ ${ex.training_method}</span>` : ''}</div>
+            <div class="ex-card-detail">${detailLine}</div>
+            ${subParts ? `<div class="ex-card-sub">${subParts}</div>` : ''}
+            ${ex.method_description ? `<div class="ex-card-method">${ex.method_description}</div>` : ''}
+          </div>`
+          return { row, card }
+        })
+      : [{ row: `<tr><td colspan="6" style="padding:.75rem 1rem 1rem;font-style:italic;color:var(--text-muted)">Treino no formato legado — sem detalhes por exercício</td></tr>`,
+           card: `<div class="ex-card ex-card-legacy">Treino no formato legado — sem detalhes por exercício</div>` }]
+    const exDetailRows  = exDetailPairs.map(p => p.row).join('')
+    const exDetailCards = exDetailPairs.map(p => p.card).join('')
 
     const uid       = w.id.replace(/-/g, '')
     const dateRange = w.end_date ? `${fmtDate(w.date)} até ${fmtDate(w.end_date)}` : fmtDate(w.date)
@@ -2545,7 +2615,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
       <tr id="wd-${uid}" style="display:none" class="history-detail-row">
         <td colspan="6">
           <div class="history-detail-inner">
-            <table>
+            <table class="ex-detail-table">
               <thead><tr>
                 <th style="padding-left:2rem">Exercício</th>
                 <th>Séries</th>
@@ -2556,6 +2626,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
               </tr></thead>
               <tbody>${exDetailRows}</tbody>
             </table>
+            <div class="ex-detail-cards">${exDetailCards}</div>
             ${profile.role === 'student' ? `<div style="padding:.75rem 1rem .875rem;border-top:1px solid rgba(144,158,186,0.06)"><button class="btn-start-workout workout-timer-btn" style="font-size:.8rem;padding:.5rem 1.25rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar Treino'}</button></div>` : ''}
             ${profile.role === 'personal' ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid rgba(144,158,186,0.06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkout('${w.id}')">🗑️ Excluir Treino</button></div>` : ''}
           </div>
@@ -2817,7 +2888,7 @@ async function openStudentSheet(studentId, studentName) {
       const dateSub   = w.name
         ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">${dateRange}</div>`
         : w.end_date ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">até ${fmtDate(w.end_date)}</div>` : ''
-      const exRows = exes.length
+      const exPairs = exes.length
         ? exes.map(ex => {
             const isAero  = ex.exercise_type === 'aerobico'
             const nameSub = !isAero && ex.training_method
@@ -2827,7 +2898,7 @@ async function openStudentSheet(studentId, studentName) {
               ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—'
               : `${ex.sets}×${ex.reps} @ ${ex.weight_kg} kg`
             const volCell = isAero ? '—' : `${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
-            return `
+            const row = `
               <tr>
                 <td style="padding-left:1.5rem;font-weight:500;color:var(--text-secondary)">
                   ${ex.exercise_name}${nameSub}
@@ -2835,8 +2906,21 @@ async function openStudentSheet(studentId, studentName) {
                 <td>${detail}</td>
                 <td class="vol-cell">${volCell}</td>
               </tr>`
-          }).join('')
-        : `<tr><td colspan="3" style="padding:.75rem 1rem;font-style:italic;color:var(--text-muted)">Sem detalhes disponíveis</td></tr>`
+            const card = isAero
+              ? `<div class="ex-card">
+                  <div class="ex-card-name">${ex.exercise_name}<span class="ex-badge-aero">🏃 Aeróbico</span></div>
+                  <div class="ex-card-detail">${detail}</div>
+                </div>`
+              : `<div class="ex-card">
+                  <div class="ex-card-name">${ex.exercise_name}${ex.training_method ? `<span class="ex-badge-method">⚡ ${ex.training_method}</span>` : ''}</div>
+                  <div class="ex-card-detail">${detail} — Vol: ${volCell}</div>
+                </div>`
+            return { row, card }
+          })
+        : [{ row: `<tr><td colspan="3" style="padding:.75rem 1rem;font-style:italic;color:var(--text-muted)">Sem detalhes disponíveis</td></tr>`,
+             card: `<div class="ex-card ex-card-legacy">Sem detalhes disponíveis</div>` }]
+      const exRows  = exPairs.map(p => p.row).join('')
+      const exCards = exPairs.map(p => p.card).join('')
       const editBtn = profile.role === 'personal'
         ? `<button class="edit-btn" style="opacity:1" onclick="event.stopPropagation();closeStudentSheet();editWorkout('${w.id}')" title="Editar">✏️</button>`
         : ''
@@ -2858,7 +2942,7 @@ async function openStudentSheet(studentId, studentName) {
         <tr id="wd-${uid}" style="display:none" class="history-detail-row">
           <td colspan="5">
             <div class="history-detail-inner">
-              <table>
+              <table class="ex-detail-table">
                 <thead><tr>
                   <th style="padding-left:1.5rem">Exercício</th>
                   <th>Série × Reps @ Carga</th>
@@ -2866,6 +2950,7 @@ async function openStudentSheet(studentId, studentName) {
                 </tr></thead>
                 <tbody>${exRows}</tbody>
               </table>
+              <div class="ex-detail-cards">${exCards}</div>
               ${deleteBtn}
             </div>
           </td>
