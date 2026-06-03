@@ -1120,6 +1120,19 @@
       .ex-detail-table { display: none; }
       .ex-detail-cards { display: block; }
 
+      /* History main table: hide header + extra columns */
+      .history-main-table thead { display: none; }
+      .history-main-table .history-main-row td:nth-child(2),
+      .history-main-table .history-main-row td:nth-child(4),
+      .history-main-table .history-main-row td:nth-child(6) { display: none; }
+      .history-main-table .history-main-row td:nth-child(3) { white-space: nowrap; padding-left: .25rem; }
+
+      /* Sheet workout table (openStudentSheet, 5 cols): hide Exercícios + edit col */
+      .sheet-workout-table thead { display: none; }
+      .sheet-workout-table .history-main-row td:nth-child(2),
+      .sheet-workout-table .history-main-row td:nth-child(5) { display: none; }
+      .sheet-workout-table .history-main-row td:nth-child(3) { white-space: nowrap; padding-left: .25rem; }
+
       /* Comparison table → stacked cards */
       .comparison-modal-card table { border-collapse: separate; border-spacing: 0; }
       .comparison-modal-card thead { display: none; }
@@ -2666,7 +2679,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
           Clique em um treino para ver os exercícios.
         </p>
         <div class="table-wrap">
-          <table>
+          <table class="history-main-table">
             <thead><tr>
               <th>Treino</th><th>Exercícios</th><th>Volume</th><th>Progressão</th><th></th><th></th>
             </tr></thead>
@@ -3151,7 +3164,7 @@ async function openStudentSheet(studentId, studentName) {
       <div class="section-label" style="margin-bottom:.75rem">Histórico de Treinos</div>
       <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:.875rem">Clique em um treino para ver os exercícios.</p>
       <div class="table-wrap">
-        <table>
+        <table class="sheet-workout-table">
           <thead><tr>
             <th>Treino</th><th>Exercícios</th><th>Volume Total</th><th></th><th></th>
           </tr></thead>
