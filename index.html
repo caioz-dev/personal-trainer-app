@@ -766,25 +766,6 @@
     }
 
     /* ---- STUDENT SHEET ---- */
-    .student-sheet-overlay {
-      position: fixed; inset: 0; z-index: 200;
-      background: rgba(0,0,0,0.65);
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-      display: flex; justify-content: flex-end;
-    }
-
-    .student-sheet-panel {
-      width: min(640px, 100%);
-      height: 100vh;
-      background: #050810;
-      border-left: 1px solid var(--border-subtle);
-      overflow-y: auto;
-      padding: 1.75rem 1.5rem;
-      animation: sheetSlideIn .32s cubic-bezier(0.22, 1, 0.36, 1);
-    }
-
-    @keyframes sheetSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
 
     /* ---- REVEAL ANIMATIONS ---- */
     .reveal {
@@ -828,7 +809,6 @@
       .form-grid { grid-template-columns: 1fr; }
       .hamburger { display: flex; }
       .del-btn, .edit-btn { opacity: 1; }
-      .student-sheet-panel { width: 100%; border-left: none; }
     }
 
     /* ---- WORKOUT TIMER ---- */
@@ -980,7 +960,6 @@
       .link-form-row .btn { width: 100%; justify-content: center; }
       .total-vol-bar { flex-direction: column; gap: .5rem; text-align: center; align-items: center; }
       .add-ex-bar { flex-wrap: wrap; gap: .5rem; }
-      .student-sheet-panel { padding: 1.25rem 1rem; }
       .section-grid { gap: 1rem; }
       .prog-controls { flex-direction: column; align-items: stretch; }
       .prog-controls select { width: 100%; }
@@ -1221,7 +1200,6 @@
 
     /* 5. Modais com tabelas: contém o overflow lateral */
     .comparison-modal-card { overflow-x: hidden; }
-    .student-sheet-panel   { overflow-x: hidden; max-width: 100vw; }
     .history-detail-inner  { overflow-x: auto; }
 
     /* 6. Sidebar: nunca mais larga que a tela */
@@ -1309,9 +1287,6 @@
 
       /* Toast */
       .toast-wrap { left: .5rem; right: .5rem; }
-
-      /* student sheet panel */
-      .student-sheet-panel { padding: 1rem .75rem; }
 
       /* Timer modal time: prevent overflow on 375px */
       .timer-modal-time { font-size: 2.6rem; }
@@ -1670,16 +1645,13 @@
           <div id="profile-body"></div>
         </div>
 
+        <!-- VIEW: Ficha do Aluno (personal) -->
+        <div id="view-student-sheet" class="view" style="display:none">
+          <div id="student-sheet-body"></div>
+        </div>
+
       </div>
     </div>
-  </div>
-</div>
-
-<!-- STUDENT SHEET MODAL -->
-<div id="student-sheet" class="student-sheet-overlay" style="display:none"
-     onclick="if(event.target===this)closeStudentSheet()">
-  <div class="student-sheet-panel">
-    <div id="student-sheet-body"></div>
   </div>
 </div>
 
@@ -1905,13 +1877,11 @@ function resetAppState() {
   const execOverlay  = document.getElementById('execution-overlay')
   const compModal    = document.getElementById('comparison-modal')
   const timerModal   = document.getElementById('timer-modal-overlay')
-  const sheet        = document.getElementById('student-sheet')
   const reviewModal  = document.getElementById('review-modal')
   if (timerWidget)  timerWidget.style.display  = 'none'
   if (execOverlay)  execOverlay.style.display  = 'none'
   if (compModal)    compModal.style.display    = 'none'
   if (timerModal)   timerModal.style.display   = 'none'
-  if (sheet)        sheet.style.display        = 'none'
   if (reviewModal)  reviewModal.style.display  = 'none'
   document.body.style.overflow = ''
 
@@ -2219,7 +2189,8 @@ function closeSidebar() {
 const VIEW_TITLES = {
   students: 'Alunos', workout: 'Novo Treino',
   calculator: 'Calculadora', history: 'Meu Histórico',
-  progress: 'Dashboard de Progresso', profile: 'Meu Perfil'
+  progress: 'Dashboard de Progresso', profile: 'Meu Perfil',
+  'student-sheet': 'Ficha do Aluno'
 }
 
 async function navigateTo(view, opts = {}) {
@@ -2233,7 +2204,9 @@ async function navigateTo(view, opts = {}) {
   const navEl = document.getElementById('nav-' + view)
   if (navEl) navEl.classList.add('active')
   document.getElementById('page-title').textContent =
-    view === 'student-detail' ? (opts.name || 'Aluno') : (VIEW_TITLES[view] || view)
+    view === 'student-detail' ? (opts.name || 'Aluno') :
+    view === 'student-sheet'  ? (opts.studentName || 'Aluno') :
+    (VIEW_TITLES[view] || view)
 
   const el = document.getElementById('view-' + view)
   if (el) el.style.display = 'block'
@@ -2241,6 +2214,7 @@ async function navigateTo(view, opts = {}) {
   try {
     if      (view === 'students')       await renderStudents()
     else if (view === 'student-detail') await renderDetail(opts.id, opts.name, gen)
+    else if (view === 'student-sheet')  await renderStudentSheet(opts.studentId, opts.studentName, gen)
     else if (view === 'workout')        await setupWorkoutForm(opts)
     else if (view === 'calculator')     await setupCalc()
     else if (view === 'history')        await renderHistory(profile.id, gen)
@@ -2839,12 +2813,14 @@ async function editWorkout(workoutId) {
   refreshTotalVolume()
 }
 
-async function openStudentSheet(studentId, studentName) {
+function openStudentSheet(studentId, studentName) {
+  navigateTo('student-sheet', { studentId, studentName })
+}
+
+async function renderStudentSheet(studentId, studentName, gen) {
   historyCtx = { studentId, name: studentName, isDetail: true }
-  const overlay = document.getElementById('student-sheet')
-  const body    = document.getElementById('student-sheet-body')
-  overlay.style.display = 'flex'
-  document.body.style.overflow = 'hidden'
+  if (sheetChart) { sheetChart.destroy(); sheetChart = null }
+  const body = document.getElementById('student-sheet-body')
 
   const ini = studentName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
   const safeIdH   = studentId
@@ -2935,7 +2911,7 @@ async function openStudentSheet(studentId, studentName) {
       const exRows  = exPairs.map(p => p.row).join('')
       const exCards = exPairs.map(p => p.card).join('')
       const editBtn = profile.role === 'personal'
-        ? `<button class="edit-btn" style="opacity:1" onclick="event.stopPropagation();closeStudentSheet();editWorkout('${w.id}')" title="Editar">✏️</button>`
+        ? `<button class="edit-btn" style="opacity:1" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar">✏️</button>`
         : ''
       const safeStudentName = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
       const deleteBtn = profile.role === 'personal'
@@ -3185,13 +3161,11 @@ async function openStudentSheet(studentId, studentName) {
 }
 
 function closeStudentSheet() {
-  document.getElementById('student-sheet').style.display = 'none'
-  document.body.style.overflow = ''
   if (sheetChart) { sheetChart.destroy(); sheetChart = null }
+  navigateTo('students')
 }
 
 async function openNewWorkoutForStudent(studentId, studentName) {
-  closeStudentSheet()
   await navigateTo('workout', { prefilledStudentId: studentId, prefilledStudentName: studentName })
 }
 
