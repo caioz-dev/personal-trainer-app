@@ -1090,6 +1090,79 @@
       animation: scaleIn .3s cubic-bezier(0.22, 1, 0.36, 1);
     }
 
+    /* ---- BULK SELECT BAR ---- */
+    .bulk-select-bar {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      flex-wrap: wrap;
+      padding: .625rem .875rem;
+      margin-bottom: .875rem;
+      background: rgba(86,115,255,0.08);
+      border: 1px solid rgba(86,115,255,0.2);
+      border-radius: var(--radius-md);
+    }
+    .bulk-select-count {
+      flex: 1;
+      min-width: 0;
+      font-size: .82rem;
+      font-weight: 600;
+      color: var(--accent-soft);
+    }
+    .bulk-select-all-label {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      font-size: .82rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .bulk-select-actions {
+      display: flex;
+      gap: .5rem;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .workout-checkbox {
+      width: 1rem;
+      height: 1rem;
+      cursor: pointer;
+      accent-color: var(--accent);
+      flex-shrink: 0;
+    }
+    .workout-row-name-wrap {
+      display: flex;
+      align-items: flex-start;
+      gap: .45rem;
+    }
+    .workout-row-name-wrap > div { min-width: 0; }
+
+    /* ---- BULK DELETE MODAL ---- */
+    .bulk-delete-modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9100;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .bulk-delete-modal-card {
+      background: rgba(8,12,26,0.99);
+      border: 1px solid rgba(239,68,68,0.22);
+      border-radius: var(--radius-xl);
+      padding: 2rem 1.75rem;
+      max-width: 440px;
+      width: 100%;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.5);
+      animation: scaleIn .3s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
     @media (max-width: 480px) {
       .execution-header { flex-direction: column; align-items: flex-start; }
       .exec-timer-display { font-size: 2rem; text-align: left; }
@@ -1259,6 +1332,10 @@
       /* Progress card header: metric select drops below title */
       #view-progress .card > .card-header { flex-direction: column; align-items: flex-start; gap: .5rem; }
       #view-progress #prog-metric { width: 100%; max-width: 260px; }
+
+      /* Bulk select bar: compact on mobile */
+      .bulk-select-bar { gap: .5rem; padding: .5rem .75rem; }
+      .bulk-select-actions { width: 100%; justify-content: flex-end; }
     }
 
     /* ---- BREAKPOINT 400px (375px devices) ---- */
@@ -1846,6 +1923,19 @@
   </div>
 </div>
 
+<!-- BULK DELETE MODAL -->
+<div id="bulk-delete-modal" class="bulk-delete-modal-overlay" style="display:none" onclick="if(event.target===this)hideBulkDeleteConfirm()">
+  <div class="bulk-delete-modal-card">
+    <div style="font-size:2.5rem;text-align:center;margin-bottom:.75rem">🗑️</div>
+    <div style="font-size:1.1rem;font-weight:800;color:var(--text-primary);margin-bottom:.875rem;letter-spacing:-0.02em;text-align:center">Confirmar exclusão</div>
+    <div id="bulk-delete-modal-body" style="font-size:.84rem;color:var(--text-secondary);margin-bottom:1.5rem;line-height:1.6;text-align:center"></div>
+    <div style="display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" onclick="hideBulkDeleteConfirm()">Cancelar</button>
+      <button id="bulk-delete-confirm-btn" class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff;min-width:11rem" onclick="confirmBulkDelete()">Confirmar exclusão</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ─────────────────────────────────────────────
 // CONFIG
@@ -1869,6 +1959,7 @@ let restTimers            = {}
 let _pendingReviewFinalTime = null
 let _selectedFeeling        = null
 let _selectedEffort         = null
+let _selectedWorkoutIds     = new Set()
 
 // Limpa TODO o estado da sessão anterior — chamado no logout e antes de boot de novo usuário
 function resetAppState() {
@@ -1895,6 +1986,7 @@ function resetAppState() {
   _pendingReviewFinalTime = null
   _selectedFeeling        = null
   _selectedEffort         = null
+  _selectedWorkoutIds.clear()
   for (const id in restTimers) { if (restTimers[id]?.intervalId) clearInterval(restTimers[id].intervalId) }
   restTimers = {}
 
@@ -2436,6 +2528,7 @@ function filterStudents(q) {
 // ─────────────────────────────────────────────
 async function renderDetail(studentId, studentName, gen = 0) {
   historyCtx = { studentId, name: studentName, isDetail: true }
+  _selectedWorkoutIds.clear()
   const body = document.getElementById('detail-body')
   body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando…</div>'
 
@@ -2592,8 +2685,10 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
     return `
       <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
         <td>
+          ${profile.role === 'personal' ? `<div class="workout-row-name-wrap"><input type="checkbox" class="workout-checkbox" data-workout-id="${w.id}" onclick="event.stopPropagation();toggleWorkoutCheckbox('${w.id}',this)" style="margin-top:.2rem"><div>` : ''}
           <strong>${w.name || fmtDate(w.date)}</strong>
           ${dateSub}
+          ${profile.role === 'personal' ? '</div></div>' : ''}
         </td>
         <td style="color:var(--text-muted);font-size:.83rem">${exLabel}</td>
         <td class="vol-cell">${vol.toLocaleString('pt-BR')} kg</td>
@@ -2654,6 +2749,17 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
         <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:1rem">
           Clique em um treino para ver os exercícios.
         </p>
+        ${profile.role === 'personal' ? `<div id="bulk-select-bar" class="bulk-select-bar" style="display:none">
+          <label class="bulk-select-all-label">
+            <input type="checkbox" id="bulk-select-all-cb" onchange="toggleBulkSelectAll(this.checked)">
+            <span>Selecionar todos</span>
+          </label>
+          <span id="bulk-select-count" class="bulk-select-count"></span>
+          <div class="bulk-select-actions">
+            <button class="btn btn-sm btn-outline" onclick="cancelBulkSelection()">Cancelar</button>
+            <button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="showBulkDeleteConfirm()">🗑️ Excluir selecionados</button>
+          </div>
+        </div>` : ''}
         <div class="table-wrap">
           <table class="history-main-table">
             <thead><tr>
@@ -2670,7 +2776,7 @@ function bindWorkoutRowClicks(container) {
   const tbody = container.querySelector('tbody')
   if (!tbody) return
   tbody.addEventListener('click', function(e) {
-    if (e.target.closest('.edit-btn, .del-btn, .btn-start-workout, .exec-complete-btn')) return
+    if (e.target.closest('.edit-btn, .del-btn, .btn-start-workout, .exec-complete-btn, .workout-checkbox')) return
     const row = e.target.closest('tr[data-uid]')
     if (!row) return
     toggleWorkoutDetail(row.dataset.uid)
@@ -2720,6 +2826,108 @@ async function deleteWorkout(workoutId) {
   navGen++
   if (historyCtx?.isDetail) await renderDetail(historyCtx.studentId, historyCtx.name)
   else await renderHistory(historyCtx?.studentId ?? profile.id)
+}
+
+// ─────────────────────────────────────────────
+// EXCLUSÃO EM MASSA DE TREINOS
+// ─────────────────────────────────────────────
+function toggleWorkoutCheckbox(workoutId, cb) {
+  if (cb.checked) _selectedWorkoutIds.add(workoutId)
+  else            _selectedWorkoutIds.delete(workoutId)
+  updateBulkBar()
+}
+
+function _bulkRoot() {
+  const viewId = currentView === 'student-sheet'  ? 'view-student-sheet'
+               : currentView === 'student-detail' ? 'view-student-detail'
+               : currentView === 'history'        ? 'view-history'
+               : null
+  return (viewId && document.getElementById(viewId)) || document.body
+}
+
+function toggleBulkSelectAll(checked) {
+  _bulkRoot().querySelectorAll('.workout-checkbox').forEach(cb => {
+    cb.checked = checked
+    if (checked) _selectedWorkoutIds.add(cb.dataset.workoutId)
+    else         _selectedWorkoutIds.delete(cb.dataset.workoutId)
+  })
+  updateBulkBar()
+}
+
+function updateBulkBar() {
+  const root  = _bulkRoot()
+  const bar   = root.querySelector('#bulk-select-bar')
+  if (!bar) return
+  const count = _selectedWorkoutIds.size
+  bar.style.display = count === 0 ? 'none' : 'flex'
+  if (count === 0) return
+  const countEl = root.querySelector('#bulk-select-count')
+  if (countEl) countEl.textContent = `${count} treino${count === 1 ? '' : 's'} selecionado${count === 1 ? '' : 's'}`
+  const allCb   = root.querySelector('#bulk-select-all-cb')
+  if (allCb) {
+    const total = root.querySelectorAll('.workout-checkbox').length
+    allCb.checked       = count === total
+    allCb.indeterminate = count > 0 && count < total
+  }
+}
+
+function cancelBulkSelection() {
+  _selectedWorkoutIds.clear()
+  _bulkRoot().querySelectorAll('.workout-checkbox').forEach(cb => cb.checked = false)
+  const root  = _bulkRoot()
+  const allCb = root.querySelector('#bulk-select-all-cb')
+  if (allCb) { allCb.checked = false; allCb.indeterminate = false }
+  updateBulkBar()
+}
+
+function showBulkDeleteConfirm() {
+  const count = _selectedWorkoutIds.size
+  if (!count) return
+  const modal  = document.getElementById('bulk-delete-modal')
+  const bodyEl = document.getElementById('bulk-delete-modal-body')
+  if (!modal || !bodyEl) return
+  const plural = count === 1
+  bodyEl.innerHTML = `Você está prestes a excluir <strong>${count} treino${plural ? '' : 's'}</strong>.<br><br>
+    <span style="color:var(--danger)">⚠️ Esta ação é irreversível.</span><br>
+    Todas as execuções e avaliações relacionadas ${plural ? 'a este treino' : 'a estes treinos'} também serão apagadas.`
+  modal.style.display = 'flex'
+  document.body.style.overflow = 'hidden'
+}
+
+function hideBulkDeleteConfirm() {
+  const modal = document.getElementById('bulk-delete-modal')
+  if (modal) modal.style.display = 'none'
+  document.body.style.overflow = ''
+}
+
+async function confirmBulkDelete() {
+  const ids = [..._selectedWorkoutIds]
+  if (!ids.length) return
+  const btn = document.getElementById('bulk-delete-confirm-btn')
+  if (btn) {
+    btn.disabled    = true
+    btn.innerHTML   = '<span class="spinner" style="display:inline-block;width:.85rem;height:.85rem;border-width:2px;vertical-align:middle;margin-right:.4rem"></span>Excluindo…'
+  }
+  const { error } = await sb.from('workouts').delete().in('id', ids)
+  if (btn) { btn.disabled = false; btn.textContent = 'Confirmar exclusão' }
+  if (error) {
+    toast('Erro ao excluir treinos: ' + error.message, 'error')
+    return
+  }
+  hideBulkDeleteConfirm()
+  const count = ids.length
+  toast(`${count} treino${count === 1 ? '' : 's'} excluído${count === 1 ? '' : 's'} com sucesso!`, 'success')
+  ids.forEach(wid => {
+    const uid = wid.replace(/-/g, '')
+    for (const prefix of ['', 'sh']) {
+      const mainRow   = document.querySelector(`tr.history-main-row[data-uid="${prefix}${uid}"]`)
+      const detailRow = document.getElementById(`wd-${prefix}${uid}`)
+      if (mainRow)   mainRow.remove()
+      if (detailRow) detailRow.remove()
+    }
+  })
+  _selectedWorkoutIds.clear()
+  updateBulkBar()
 }
 
 async function deleteExecutionGroup(workoutId, executedAt, studentId, studentName) {
@@ -2821,6 +3029,7 @@ function openStudentSheet(studentId, studentName) {
 
 async function renderStudentSheet(studentId, studentName, gen) {
   historyCtx = { studentId, name: studentName, isDetail: true }
+  _selectedWorkoutIds.clear()
   if (sheetChart) { sheetChart.destroy(); sheetChart = null }
   const body = document.getElementById('student-sheet-body')
 
@@ -2871,6 +3080,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
 
     const total = workouts.reduce((s, w) => s + getWorkoutVolume(w), 0)
 
+    console.log('[renderStudentSheet] workouts:', workouts.length, '| role:', profile?.role)
     const rows = workouts.map(w => {
       const exes = w.workout_exercises || []
       const vol  = getWorkoutVolume(w)
@@ -2919,11 +3129,14 @@ async function renderStudentSheet(studentId, studentName, gen) {
       const deleteBtn = profile.role === 'personal'
         ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid rgba(144,158,186,0.06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}','${safeStudentName}')">🗑️ Excluir Treino</button></div>`
         : ''
+      console.log('[renderStudentSheet] row:', w.id, w.name)
       return `
         <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
           <td>
+            <div class="workout-row-name-wrap"><input type="checkbox" class="workout-checkbox" data-workout-id="${w.id}" onclick="event.stopPropagation();toggleWorkoutCheckbox('${w.id}',this)" style="margin-top:.2rem;outline:3px solid red;width:18px;height:18px"><div>
             <strong>${w.name || fmtDate(w.date)}</strong>
             ${dateSub}
+            </div></div>
           </td>
           <td style="color:var(--text-muted);font-size:.83rem">${exes.length} exercício${exes.length !== 1 ? 's' : ''}</td>
           <td class="vol-cell">${vol.toLocaleString('pt-BR')} kg</td>
@@ -3141,6 +3354,17 @@ async function renderStudentSheet(studentId, studentName, gen) {
       </div>
       <div class="section-label" style="margin-bottom:.75rem">Histórico de Treinos</div>
       <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:.875rem">Clique em um treino para ver os exercícios.</p>
+      <div id="bulk-select-bar" class="bulk-select-bar" style="display:none">
+        <label class="bulk-select-all-label">
+          <input type="checkbox" id="bulk-select-all-cb" onchange="toggleBulkSelectAll(this.checked)">
+          <span>Selecionar todos</span>
+        </label>
+        <span id="bulk-select-count" class="bulk-select-count"></span>
+        <div class="bulk-select-actions">
+          <button class="btn btn-sm btn-outline" onclick="cancelBulkSelection()">Cancelar</button>
+          <button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="showBulkDeleteConfirm()">🗑️ Excluir selecionados</button>
+        </div>
+      </div>
       <div class="table-wrap">
         <table class="sheet-workout-table">
           <thead><tr>
@@ -3153,6 +3377,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
         <div class="section-label" style="margin-bottom:.875rem">Execuções Realizadas</div>
         ${execSectionHTML}
       </div>`
+    console.log('[renderStudentSheet] body.innerHTML set. checkboxes found:', body.querySelectorAll('.workout-checkbox').length)
     bindWorkoutRowClicks(body)
   } catch (err) {
     body.innerHTML = `${header}<div class="empty-state"><div class="empty-icon">⚠️</div>
