@@ -1422,6 +1422,72 @@
     .btn-rest-timer.running { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.4); }
     .btn-rest-timer:disabled { opacity: .7; cursor: not-allowed; }
 
+    /* ---- METRONOME ---- */
+    .metronome-wrap {
+      margin-top: .75rem;
+      padding-top: .75rem;
+      border-top: 1px solid rgba(144,158,186,0.08);
+    }
+    .btn-metronome {
+      background: rgba(86,115,255,0.08);
+      color: var(--accent-soft);
+      border: 1px solid rgba(86,115,255,0.22);
+      border-radius: var(--radius-pill);
+      padding: .4rem .875rem;
+      font-size: .82rem;
+      font-weight: 700;
+      font-family: 'Montserrat', system-ui, sans-serif;
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .btn-metronome:hover { background: rgba(86,115,255,0.16); border-color: rgba(86,115,255,0.4); }
+    .btn-metronome.running { background: rgba(86,115,255,0.15); border-color: rgba(86,115,255,0.4); color: var(--accent-soft); }
+    .metronome-indicator {
+      margin-top: .6rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .3rem;
+    }
+    .metronome-phase {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .12rem;
+      padding: .35rem .55rem;
+      border: 1px solid rgba(144,158,186,0.15);
+      border-radius: var(--radius-md);
+      background: rgba(10,16,33,0.4);
+      min-width: 3rem;
+      transition: background .12s ease, border-color .12s ease;
+    }
+    .metronome-phase-skip { opacity: .3; }
+    .mphase-label {
+      font-size: .58rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .mphase-dur {
+      font-size: .8rem;
+      font-weight: 800;
+      color: var(--text-secondary);
+    }
+    .metronome-phase.active {
+      background: rgba(86,115,255,0.18);
+      border-color: rgba(86,115,255,0.55);
+      animation: mphase-pulse .9s ease-in-out infinite;
+    }
+    .metronome-phase.active .mphase-label { color: var(--accent-soft); }
+    .metronome-phase.active .mphase-dur   { color: var(--accent-soft); }
+    .metronome-sep { color: var(--text-muted); font-size: .68rem; flex-shrink: 0; }
+    @keyframes mphase-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(86,115,255,0.45); }
+      55%       { box-shadow: 0 0 0 5px rgba(86,115,255,0); }
+    }
+
     /* ---- AUTH LINK & PASSWORD RESET ---- */
     .auth-link {
       background: none;
@@ -1961,6 +2027,8 @@ let _pendingReviewFinalTime = null
 let _selectedFeeling        = null
 let _selectedEffort         = null
 let _selectedWorkoutIds     = new Set()
+let _metronomeToken         = null   // { exId, cancelled }
+let _audioCtx               = null   // reused AudioContext for metronome
 
 // Limpa TODO o estado da sessão anterior — chamado no logout e antes de boot de novo usuário
 function resetAppState() {
@@ -1988,6 +2056,7 @@ function resetAppState() {
   _selectedFeeling        = null
   _selectedEffort         = null
   _selectedWorkoutIds.clear()
+  stopMetronome()
   for (const id in restTimers) { if (restTimers[id]?.intervalId) clearInterval(restTimers[id].intervalId) }
   restTimers = {}
 
@@ -4416,6 +4485,97 @@ function playBeep() {
 }
 
 // ─────────────────────────────────────────────
+// METRONOME
+// ─────────────────────────────────────────────
+function parseCadencia(str) {
+  if (!str || typeof str !== 'string') return null
+  const parts = str.trim().split('-').map(Number)
+  if (parts.length !== 2 || parts.some(isNaN) || parts.every(v => v === 0)) return null
+  return [
+    { nome: 'Concêntrica', duracao: parts[0], tipo: 'rep-start' },
+    { nome: 'Excêntrica',  duracao: parts[1], tipo: 'normal'    }
+  ]
+}
+
+function stopMetronome() {
+  if (!_metronomeToken) return
+  _metronomeToken.cancelled = true
+  _metronomeToken = null
+}
+
+function _metronomeClick(isRepStart) {
+  try {
+    if (!_audioCtx || _audioCtx.state === 'closed') {
+      _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    }
+    if (_audioCtx.state === 'suspended') _audioCtx.resume()
+    const osc  = _audioCtx.createOscillator()
+    const gain = _audioCtx.createGain()
+    osc.connect(gain); gain.connect(_audioCtx.destination)
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(isRepStart ? 880 : 330, _audioCtx.currentTime)
+    gain.gain.setValueAtTime(0.4, _audioCtx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + 0.07)
+    osc.start(_audioCtx.currentTime)
+    osc.stop(_audioCtx.currentTime + 0.07)
+  } catch {}
+}
+
+function _resetMetronomeUI(exId) {
+  const ind = document.getElementById(`metronome-ind-${exId}`)
+  if (ind) {
+    ind.querySelectorAll('.metronome-phase').forEach(el => el.classList.remove('active'))
+    ind.style.display = 'none'
+  }
+  const btn = document.getElementById(`metronome-btn-${exId}`)
+  if (btn) { btn.innerHTML = '▶ Metrônomo'; btn.classList.remove('running') }
+}
+
+function toggleMetronome(exId, cadStr) {
+  if (_metronomeToken && _metronomeToken.exId === exId) {
+    stopMetronome()
+    _resetMetronomeUI(exId)
+    return
+  }
+  if (_metronomeToken) {
+    const prev = _metronomeToken.exId
+    stopMetronome()
+    _resetMetronomeUI(prev)
+  }
+  const phases = parseCadencia(cadStr)
+  if (!phases) return
+  const btn = document.getElementById(`metronome-btn-${exId}`)
+  const ind = document.getElementById(`metronome-ind-${exId}`)
+  if (btn) { btn.innerHTML = '■ Parar'; btn.classList.add('running') }
+  if (ind) ind.style.display = 'flex'
+  const token = { exId, cancelled: false }
+  _metronomeToken = token
+  _runMetronome(exId, phases, token)
+}
+
+async function _runMetronome(exId, phases, token) {
+  let phaseIdx = 0
+  while (!token.cancelled) {
+    const phase = phases[phaseIdx]
+    if (phase.duracao > 0) {
+      _metronomeClick(phase.tipo === 'rep-start')
+      const ind = document.getElementById(`metronome-ind-${exId}`)
+      if (ind) {
+        ind.querySelectorAll('.metronome-phase').forEach((el, i) => {
+          el.classList.toggle('active', i === phaseIdx)
+        })
+      }
+      const end = Date.now() + phase.duracao * 1000
+      while (!token.cancelled && Date.now() < end) {
+        await new Promise(r => setTimeout(r, 50))
+      }
+    }
+    if (!token.cancelled) phaseIdx = (phaseIdx + 1) % phases.length
+  }
+  _resetMetronomeUI(exId)
+}
+
+// ─────────────────────────────────────────────
 // WORKOUT EXECUTION FLOW
 // ─────────────────────────────────────────────
 async function startWorkoutExecution(workoutId) {
@@ -4460,6 +4620,15 @@ function renderExecutionScreen(workout) {
                <button class="btn-rest-timer" id="rest-btn-${ex.id}" onclick="toggleRestTimer('${ex.id}',${ex.tempo_descanso})">⏱ Descanso (${ex.tempo_descanso}s)</button>
              </div>`
           : ''
+        console.log('[metrônomo debug] ex:', JSON.stringify(ex), '| isAero:', isAero, '| parseCadencia:', parseCadencia(ex.cadencia))
+        const _cadPhases = !isAero ? parseCadencia(ex.cadencia) : null
+        const _ML = ['Subida', 'Descida']
+        const metronomBtn = _cadPhases
+          ? `<div class="metronome-wrap">
+               <button class="btn-metronome" id="metronome-btn-${ex.id}" onclick="toggleMetronome('${ex.id}','${ex.cadencia}')">▶ Metrônomo</button>
+               <div class="metronome-indicator" id="metronome-ind-${ex.id}" style="display:none">${_cadPhases.map((phase, i) => `<div class="metronome-phase${phase.duracao === 0 ? ' metronome-phase-skip' : ''}" id="mphase-${ex.id}-${i}"><span class="mphase-label">${_ML[i]}</span><span class="mphase-dur">${phase.duracao > 0 ? phase.duracao + 's' : '—'}</span></div>${i < _cadPhases.length - 1 ? '<span class="metronome-sep">›</span>' : ''}`).join('')}</div>
+             </div>`
+          : ''
         return `
         <div class="exec-exercise-card" id="exec-ex-${ex.id}">
           <div class="exec-ex-header">
@@ -4470,6 +4639,7 @@ function renderExecutionScreen(workout) {
           <div class="exec-ex-planned">${planned || '—'}</div>
           ${!isAero && ex.method_description ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.4rem;padding:.4rem .75rem;background:rgba(86,115,255,0.05);border-radius:var(--radius-md);border-left:2px solid rgba(86,115,255,0.25)">${ex.method_description}</div>` : ''}
           <div class="exec-ex-result" id="exec-ex-result-${ex.id}" style="display:none"></div>
+          ${metronomBtn}
           ${restBtn}
         </div>`
       }).join('')
@@ -4569,6 +4739,7 @@ function confirmExerciseCompletion() {
 
 function finishWorkout() {
   if (!timerInterval) return
+  stopMetronome()
   for (const id in restTimers) { if (restTimers[id]?.intervalId) clearInterval(restTimers[id].intervalId) }
   restTimers = {}
   clearInterval(timerInterval)
