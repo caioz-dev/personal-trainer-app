@@ -1126,10 +1126,11 @@
       flex-shrink: 0;
     }
     .workout-checkbox {
-      width: 1rem;
-      height: 1rem;
+      width: 1.05rem;
+      height: 1.05rem;
       cursor: pointer;
       accent-color: var(--accent);
+      color-scheme: dark;
       flex-shrink: 0;
     }
     .workout-row-name-wrap {
@@ -3080,7 +3081,6 @@ async function renderStudentSheet(studentId, studentName, gen) {
 
     const total = workouts.reduce((s, w) => s + getWorkoutVolume(w), 0)
 
-    console.log('[renderStudentSheet] workouts:', workouts.length, '| role:', profile?.role)
     const rows = workouts.map(w => {
       const exes = w.workout_exercises || []
       const vol  = getWorkoutVolume(w)
@@ -3129,14 +3129,17 @@ async function renderStudentSheet(studentId, studentName, gen) {
       const deleteBtn = profile.role === 'personal'
         ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid rgba(144,158,186,0.06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}','${safeStudentName}')">🗑️ Excluir Treino</button></div>`
         : ''
-      console.log('[renderStudentSheet] row:', w.id, w.name)
+      const checkboxOpen  = profile.role === 'personal'
+        ? `<div class="workout-row-name-wrap"><input type="checkbox" class="workout-checkbox" data-workout-id="${w.id}" onclick="event.stopPropagation();toggleWorkoutCheckbox('${w.id}',this)"><div>`
+        : ''
+      const checkboxClose = profile.role === 'personal' ? '</div></div>' : ''
       return `
         <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
           <td>
-            <div class="workout-row-name-wrap"><input type="checkbox" class="workout-checkbox" data-workout-id="${w.id}" onclick="event.stopPropagation();toggleWorkoutCheckbox('${w.id}',this)" style="margin-top:.2rem;outline:3px solid red;width:18px;height:18px"><div>
+            ${checkboxOpen}
             <strong>${w.name || fmtDate(w.date)}</strong>
             ${dateSub}
-            </div></div>
+            ${checkboxClose}
           </td>
           <td style="color:var(--text-muted);font-size:.83rem">${exes.length} exercício${exes.length !== 1 ? 's' : ''}</td>
           <td class="vol-cell">${vol.toLocaleString('pt-BR')} kg</td>
@@ -3354,7 +3357,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
       </div>
       <div class="section-label" style="margin-bottom:.75rem">Histórico de Treinos</div>
       <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:.875rem">Clique em um treino para ver os exercícios.</p>
-      <div id="bulk-select-bar" class="bulk-select-bar" style="display:none">
+      ${profile.role === 'personal' ? `<div id="bulk-select-bar" class="bulk-select-bar" style="display:none">
         <label class="bulk-select-all-label">
           <input type="checkbox" id="bulk-select-all-cb" onchange="toggleBulkSelectAll(this.checked)">
           <span>Selecionar todos</span>
@@ -3364,7 +3367,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
           <button class="btn btn-sm btn-outline" onclick="cancelBulkSelection()">Cancelar</button>
           <button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="showBulkDeleteConfirm()">🗑️ Excluir selecionados</button>
         </div>
-      </div>
+      </div>` : ''}
       <div class="table-wrap">
         <table class="sheet-workout-table">
           <thead><tr>
@@ -3377,7 +3380,6 @@ async function renderStudentSheet(studentId, studentName, gen) {
         <div class="section-label" style="margin-bottom:.875rem">Execuções Realizadas</div>
         ${execSectionHTML}
       </div>`
-    console.log('[renderStudentSheet] body.innerHTML set. checkboxes found:', body.querySelectorAll('.workout-checkbox').length)
     bindWorkoutRowClicks(body)
   } catch (err) {
     body.innerHTML = `${header}<div class="empty-state"><div class="empty-icon">⚠️</div>
