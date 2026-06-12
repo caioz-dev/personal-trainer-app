@@ -3630,7 +3630,7 @@ function initChart(canvasId, ws) {
         label: 'Volume (kg)',
         data:  ws.map(w => getWorkoutVolume(w)),
         borderColor: '#567FFF',
-        backgroundColor: 'var(--accent-a07)',
+        backgroundColor: 'rgba(86,115,255,0.07)',
         borderWidth: 2,
         pointBackgroundColor: '#567FFF',
         pointRadius: 4,
@@ -3647,8 +3647,8 @@ function initChart(canvasId, ws) {
         tooltip: { callbacks: { label: c => ` ${c.parsed.y.toLocaleString('pt-BR')} kg` } }
       },
       scales: {
-        x: { grid: { color: 'var(--neutral-a06)' }, ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)', maxRotation: 45 } },
-        y: { grid: { color: 'var(--neutral-a06)' }, ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)',
+        x: { grid: { color: 'rgba(144,158,186,0.06)' }, ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)', maxRotation: 45 } },
+        y: { grid: { color: 'rgba(144,158,186,0.06)' }, ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)',
                callback: v => v.toLocaleString('pt-BR') + ' kg' } }
       }
     }
@@ -3848,8 +3848,8 @@ function updateProgressChart() {
         tooltip: { callbacks: { label: c => ` ${c.parsed.y.toLocaleString('pt-BR')} ${unit}` } }
       },
       scales: {
-        x: { grid: { color: 'var(--neutral-a06)' }, ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)', maxRotation: 45 } },
-        y: { grid: { color: 'var(--neutral-a06)' }, beginAtZero: false,
+        x: { grid: { color: 'rgba(144,158,186,0.06)' }, ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)', maxRotation: 45 } },
+        y: { grid: { color: 'rgba(144,158,186,0.06)' }, beginAtZero: false,
              ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)',
                       callback: v => v.toLocaleString('pt-BR') + ' ' + unit } }
       }
