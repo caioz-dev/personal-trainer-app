@@ -4620,7 +4620,6 @@ function renderExecutionScreen(workout) {
                <button class="btn-rest-timer" id="rest-btn-${ex.id}" onclick="toggleRestTimer('${ex.id}',${ex.tempo_descanso})">⏱ Descanso (${ex.tempo_descanso}s)</button>
              </div>`
           : ''
-        console.log('[metrônomo debug] ex:', JSON.stringify(ex), '| isAero:', isAero, '| parseCadencia:', parseCadencia(ex.cadencia))
         const _cadPhases = !isAero ? parseCadencia(ex.cadencia) : null
         const _ML = ['Subida', 'Descida']
         const metronomBtn = _cadPhases
