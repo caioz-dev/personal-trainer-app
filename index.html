@@ -3551,7 +3551,14 @@ async function editWorkout(workoutId) {
   document.getElementById('wf-btn').textContent = 'Atualizar Treino'
 
   if (profile.role === 'personal') {
-    document.getElementById('wf-student').value = workout.student_id
+    const grp = document.getElementById('wf-student-group')
+    const sel  = document.getElementById('wf-student')
+    if (workout.student_id === me.id) {
+      grp.style.display = 'none'
+      sel.innerHTML = `<option value="${me.id}" selected>${profile.name}</option>`
+    } else {
+      sel.value = workout.student_id
+    }
   }
   document.getElementById('wf-name').value     = workout.name || ''
   document.getElementById('wf-date').value     = isoToBR(workout.date)
