@@ -3613,12 +3613,6 @@ async function renderStudentSheet(studentId, studentName, gen) {
 
     const routinesData = routinesRes.data || []
 
-    if (!workouts.length && !executions.length && !routinesData.length) {
-      body.innerHTML = header + `<div class="empty-state"><div class="empty-icon">🏋️</div>
-        <p>Nenhum treino registrado para ${studentName}.</p></div>`
-      return
-    }
-
     const total = workouts.reduce((s, w) => s + getWorkoutVolume(w), 0)
 
     const rows = standAloneWorkouts.map(w => {
@@ -3943,6 +3937,29 @@ async function renderStudentSheet(studentId, studentName, gen) {
         ${studentProfileData.weight_kg ? `<div style="background:var(--accent-a08);border:1px solid var(--accent-a18);border-radius:var(--radius-lg);padding:.5rem 1rem;text-align:center"><div style="font-size:1.1rem;font-weight:800;color:var(--text-primary)">${studentProfileData.weight_kg}</div><div style="font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted)">kg</div></div>` : ''}
       </div>` : ''
 
+    const historyTableHTML = standAloneWorkouts.length
+      ? `<p style="font-size:.78rem;color:var(--text-muted);margin-bottom:.875rem">Clique em um treino para ver os exercícios.</p>
+      ${profile.role === 'personal' ? `<div id="bulk-select-bar" class="bulk-select-bar" style="display:none">
+        <label class="bulk-select-all-label">
+          <input type="checkbox" id="bulk-select-all-cb" onchange="toggleBulkSelectAll(this.checked)">
+          <span>Selecionar todos</span>
+        </label>
+        <span id="bulk-select-count" class="bulk-select-count"></span>
+        <div class="bulk-select-actions">
+          <button class="btn btn-sm btn-outline" onclick="cancelBulkSelection()">Cancelar</button>
+          <button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="showBulkDeleteConfirm()">🗑️ Excluir selecionados</button>
+        </div>
+      </div>` : ''}
+      <div class="table-wrap">
+        <table class="sheet-workout-table">
+          <thead><tr>
+            <th>Treino</th><th>Exercícios</th><th>Volume Total</th><th></th><th></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`
+      : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon">🏋️</div><p>Nenhum treino registrado para ${studentName}.</p></div>`
+
     body.innerHTML = `${header}
       ${profileStatsHTML}
       <div class="stats-grid" style="margin-bottom:1.25rem">
@@ -3962,26 +3979,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
       ${routinesSectionHTML}
       <div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border-subtle)">
       <div class="section-label" style="margin-bottom:.75rem">Histórico de Treinos</div>
-      <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:.875rem">Clique em um treino para ver os exercícios.</p>
-      ${profile.role === 'personal' ? `<div id="bulk-select-bar" class="bulk-select-bar" style="display:none">
-        <label class="bulk-select-all-label">
-          <input type="checkbox" id="bulk-select-all-cb" onchange="toggleBulkSelectAll(this.checked)">
-          <span>Selecionar todos</span>
-        </label>
-        <span id="bulk-select-count" class="bulk-select-count"></span>
-        <div class="bulk-select-actions">
-          <button class="btn btn-sm btn-outline" onclick="cancelBulkSelection()">Cancelar</button>
-          <button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="showBulkDeleteConfirm()">🗑️ Excluir selecionados</button>
-        </div>
-      </div>` : ''}
-      <div class="table-wrap">
-        <table class="sheet-workout-table">
-          <thead><tr>
-            <th>Treino</th><th>Exercícios</th><th>Volume Total</th><th></th><th></th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
+      ${historyTableHTML}
       <div style="margin-top:1.75rem;padding-top:1.5rem;border-top:1px solid var(--border-subtle)">
         <div class="section-label" style="margin-bottom:.875rem">Execuções Realizadas</div>
         ${execSectionHTML}
