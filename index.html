@@ -3082,7 +3082,7 @@ async function renderHistory(studentId, gen = 0) {
     workouts.forEach(w => { window._workoutsCache[w.id] = w })
     if (gen && navGen !== gen) return
 
-    let routinesSectionHTML = ''
+    let routinesCardsHTML = ''
     if (profile.role === 'student') {
       const todayStr = new Date().toISOString().slice(0, 10)
       const visibleRoutines = (routinesRes.data || []).filter(r => {
@@ -3117,9 +3117,7 @@ async function renderHistory(studentId, gen = 0) {
             </div>
           </div>`
         }).join('')
-        routinesSectionHTML = `
-          <div class="section-label reveal" style="margin-bottom:.75rem">Minhas Rotinas</div>
-          <div class="routines-grid reveal" style="margin-bottom:1.75rem">${cards}</div>`
+        routinesCardsHTML = `<div class="routines-grid">${cards}</div>`
       }
     }
 
@@ -3133,7 +3131,7 @@ async function renderHistory(studentId, gen = 0) {
         </div>`
       }
     }
-    body.innerHTML = bannerHTML + routinesSectionHTML + historyHTML(workouts, profile.name)
+    body.innerHTML = bannerHTML + historyHTML(workouts, profile.name, 'evo-chart', routinesCardsHTML)
     if (workouts.length) initChart('evo-chart', [...workouts].reverse())
     bindWorkoutRowClicks(body)
   } catch (err) {
@@ -3145,7 +3143,7 @@ async function renderHistory(studentId, gen = 0) {
   }
 }
 
-function historyHTML(ws, name, canvasId = 'evo-chart') {
+function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '') {
   if (!ws.length) return `<div class="empty-state">
     <div class="empty-icon">🏋️</div>
     <p>Nenhum treino registrado ainda para ${name}.<br>
@@ -3300,42 +3298,49 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
       </div>
     </div>
 
-    ${standAlone.length === 0
-      ? `<div class="reveal">
+    ${routinesCardsHTML
+      ? `<div class="section-grid reveal">
           <div class="card">
             <div class="card-header"><div class="card-title">📈 Evolução do Volume</div></div>
             <div class="chart-container"><canvas id="${canvasId}"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div class="card-title">📅 Minhas Rotinas</div></div>
+            ${routinesCardsHTML}
           </div>
         </div>`
-      : `<div class="section-grid reveal">
+      : `<div class="reveal">
           <div class="card">
             <div class="card-header"><div class="card-title">📈 Evolução do Volume</div></div>
             <div class="chart-container"><canvas id="${canvasId}"></canvas></div>
           </div>
-          <div class="card">
-            <div class="card-header"><div class="card-title">📋 Histórico de Treinos</div></div>
-            <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:1rem">Clique em um treino para ver os exercícios.</p>
-            ${profile.role === 'personal' ? `<div id="bulk-select-bar" class="bulk-select-bar" style="display:none">
-              <label class="bulk-select-all-label">
-                <input type="checkbox" id="bulk-select-all-cb" onchange="toggleBulkSelectAll(this.checked)">
-                <span>Selecionar todos</span>
-              </label>
-              <span id="bulk-select-count" class="bulk-select-count"></span>
-              <div class="bulk-select-actions">
-                <button class="btn btn-sm btn-outline" onclick="cancelBulkSelection()">Cancelar</button>
-                <button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="showBulkDeleteConfirm()">🗑️ Excluir selecionados</button>
-              </div>
-            </div>` : ''}
-            <div class="table-wrap">
-              <table class="history-main-table">
-                <thead><tr>
-                  <th>Treino</th><th>Exercícios</th><th>Volume</th><th>Progressão</th><th></th><th></th>
-                </tr></thead>
-                <tbody>${rows}</tbody>
-              </table>
+        </div>`}
+
+    ${standAlone.length > 0
+      ? `<div class="card reveal" style="margin-top:1.5rem">
+          <div class="card-header"><div class="card-title">📋 Histórico de Treinos</div></div>
+          <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:1rem">Clique em um treino para ver os exercícios.</p>
+          ${profile.role === 'personal' ? `<div id="bulk-select-bar" class="bulk-select-bar" style="display:none">
+            <label class="bulk-select-all-label">
+              <input type="checkbox" id="bulk-select-all-cb" onchange="toggleBulkSelectAll(this.checked)">
+              <span>Selecionar todos</span>
+            </label>
+            <span id="bulk-select-count" class="bulk-select-count"></span>
+            <div class="bulk-select-actions">
+              <button class="btn btn-sm btn-outline" onclick="cancelBulkSelection()">Cancelar</button>
+              <button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="showBulkDeleteConfirm()">🗑️ Excluir selecionados</button>
             </div>
+          </div>` : ''}
+          <div class="table-wrap">
+            <table class="history-main-table">
+              <thead><tr>
+                <th>Treino</th><th>Exercícios</th><th>Volume</th><th>Progressão</th><th></th><th></th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
           </div>
-        </div>`}`
+        </div>`
+      : ''}`
 }
 
 function bindWorkoutRowClicks(container) {
