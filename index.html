@@ -605,13 +605,20 @@
       position: fixed;
       inset: 0;
       z-index: 9000;
-      background: var(--overlay-a75);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 1rem;
+    }
+    /* backdrop separado para não bloquear teclado em input[type=date] no Chromium */
+    .routine-modal-overlay::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background: var(--overlay-a75);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
     }
     .routine-modal-card {
       background: var(--surface-dark-a99);
@@ -623,6 +630,8 @@
       max-height: 90vh;
       overflow-y: auto;
       box-shadow: 0 25px 60px var(--shadow-a50);
+      position: relative;
+      isolation: isolate;
     }
 
     /* ---- MAIN ---- */
