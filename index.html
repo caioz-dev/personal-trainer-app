@@ -3506,8 +3506,11 @@ async function renderStudentSheet(studentId, studentName, gen) {
     }
 
     const routinesData = routinesRes.data || []
+    console.log('[DEBUG ROTINAS] routinesRes:', routinesRes)
+    console.log('[DEBUG ROTINAS] workouts.length:', workouts.length, '| executions.length:', executions.length, '| routinesData.length:', routinesData.length)
 
     if (!workouts.length && !executions.length && !routinesData.length) {
+      console.warn('[DEBUG ROTINAS] → early-return acionado (tudo vazio)')
       body.innerHTML = header + `<div class="empty-state"><div class="empty-icon">🏋️</div>
         <p>Nenhum treino registrado para ${studentName}.</p></div>`
       return
@@ -3852,10 +3855,15 @@ async function renderStudentSheet(studentId, studentName, gen) {
       </div>`
     bindWorkoutRowClicks(body)
   } catch (err) {
-    body.innerHTML = `${header}<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <p>Erro ao carregar histórico.</p>
-      <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
-              onclick="openStudentSheet('${studentId}','${studentName.replace(/'/g, "\\'")}')">Tentar novamente</button></div>`
+    console.error('[DEBUG ROTINAS] catch em renderStudentSheet:', err)
+    try {
+      body.innerHTML = `${header}<div class="empty-state"><div class="empty-icon">⚠️</div>
+        <p>Erro ao carregar histórico.</p>
+        <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
+                onclick="openStudentSheet('${studentId}','${studentName.replace(/'/g, "\\'")}')">Tentar novamente</button></div>`
+    } catch (innerErr) {
+      console.error('[DEBUG ROTINAS] catch interno (erro ao renderizar mensagem de erro):', innerErr)
+    }
   }
 }
 
