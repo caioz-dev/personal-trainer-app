@@ -4914,7 +4914,7 @@ async function setupWorkoutForm(opts = {}) {
       try { await fetchStudents() }
       catch (err) { toast('Erro ao carregar lista de alunos: ' + err.message, 'error') }
     }
-    if (opts.prefilledStudentId && students.find(s => s.id === opts.prefilledStudentId)) {
+    if (opts.prefilledStudentId && (opts.prefilledStudentId === me.id || students.find(s => s.id === opts.prefilledStudentId))) {
       grp.style.display = 'none'
       sel.innerHTML = `<option value="${opts.prefilledStudentId}" selected>${opts.prefilledStudentName || ''}</option>`
       sel.required = true
