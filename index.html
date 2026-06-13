@@ -3486,8 +3486,17 @@ async function renderStudentSheet(studentId, studentName, gen) {
   body.innerHTML = header + '<div class="loading"><div class="spinner"></div>Carregando…</div>'
 
   try {
-    const [workouts, execRes, spRes, reviewsRes, routinesRes] = await Promise.all([
-      fetchWorkouts(studentId),
+    // workouts fetched first, isolated — FK routine_id addition must not affect this
+    const { data: _wData, error: _wErr } = await sb.from('workouts')
+      .select('*, workout_exercises(*)')
+      .eq('student_id', studentId)
+      .order('date', { ascending: false })
+      .order('created_at', { ascending: false })
+    console.error('[DEBUG ROTINAS] workoutsRes:', { data: _wData, error: _wErr, studentId })
+    if (_wErr) throw _wErr
+    const workouts = _wData || []
+
+    const [execRes, spRes, reviewsRes, routinesRes] = await Promise.all([
       sb.from('workout_executions')
         .select('*, workout_exercises(exercise_name, exercise_type, sets, reps, weight_kg, duration_min, distance_km, speed_kmh, hr_min, hr_max, training_method, method_description), workouts(name, date)')
         .eq('student_id', studentId)
