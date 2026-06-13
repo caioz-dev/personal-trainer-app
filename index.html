@@ -2172,6 +2172,11 @@
           <div id="routine-detail-body"></div>
         </div>
 
+        <!-- VIEW: Meu Treino (personal como atleta) -->
+        <div id="view-my-workout" class="view" style="display:none">
+          <div id="my-workout-body"></div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -2765,7 +2770,7 @@ function buildSidebar() {
   badge.className   = `role-badge ${isP ? 'role-personal' : 'role-student'}`
 
   const items = isP
-    ? [['students','👥','Alunos'],['calculator','🧮','Calculadora'],['progress','📈','Progresso']]
+    ? [['students','👥','Alunos'],['my-workout','🏋️','Meu Treino'],['calculator','🧮','Calculadora'],['progress','📈','Progresso']]
     : [['history','📊','Meu Histórico'],['profile','👤','Meu Perfil'],['calculator','🧮','Calculadora'],['progress','📈','Progresso']]
 
   document.getElementById('nav-list').innerHTML = items.map(([id, icon, label]) => `
@@ -2791,7 +2796,7 @@ function closeSidebar() {
 // NAVIGATION
 // ─────────────────────────────────────────────
 const VIEW_TITLES = {
-  students: 'Alunos', workout: 'Novo Treino',
+  students: 'Alunos', 'my-workout': 'Meu Treino', workout: 'Novo Treino',
   calculator: 'Calculadora', history: 'Meu Histórico',
   progress: 'Dashboard de Progresso', profile: 'Meu Perfil',
   'student-sheet': 'Ficha do Aluno', 'routine-detail': 'Rotina'
@@ -2822,6 +2827,7 @@ async function navigateTo(view, opts = {}) {
     else if (view === 'student-sheet')  await renderStudentSheet(opts.studentId, opts.studentName, gen)
     else if (view === 'routine-detail') await renderRoutineDetail(opts, gen)
     else if (view === 'workout')        await setupWorkoutForm(opts)
+    else if (view === 'my-workout')     await renderMyWorkout(gen)
     else if (view === 'calculator')     await setupCalc()
     else if (view === 'history')        await renderHistory(profile.id, gen)
     else if (view === 'progress')       await renderProgress()
@@ -2860,6 +2866,7 @@ async function fetchStudents() {
     .from('personal_students')
     .select('student_id')
     .eq('personal_id', me.id)
+    .neq('student_id', me.id)
   if (lErr) throw lErr
 
   const ids = (links || []).map(l => l.student_id)
@@ -3514,7 +3521,8 @@ async function deleteExecutionGroup(workoutId, executedAt, studentId, studentNam
     .lte('executed_at', to)
   if (error) { toast('Erro ao apagar execução: ' + error.message, 'error'); return }
   toast('Execução apagada com sucesso.', 'success')
-  openStudentSheet(studentId, studentName)
+  if (historyCtx?.view === 'my-workout') navigateTo('my-workout')
+  else openStudentSheet(studentId, studentName)
 }
 
 async function deleteWorkoutFromSheet(workoutId, studentId, studentName) {
@@ -3522,7 +3530,8 @@ async function deleteWorkoutFromSheet(workoutId, studentId, studentName) {
   const err = await _cascadeDeleteWorkout(workoutId)
   if (err) { toast(err, 'error'); return }
   toast('Treino excluído com sucesso!', 'success')
-  openStudentSheet(studentId, studentName)
+  if (historyCtx?.view === 'my-workout') navigateTo('my-workout')
+  else openStudentSheet(studentId, studentName)
 }
 
 async function editWorkout(workoutId) {
@@ -4038,6 +4047,264 @@ function closeStudentSheet() {
 }
 
 // ─────────────────────────────────────────────
+// VIEW: MEU TREINO (personal como atleta)
+// ─────────────────────────────────────────────
+async function renderMyWorkout(gen) {
+  const studentId   = profile.id
+  const studentName = profile.name
+  historyCtx = { studentId, name: studentName, isDetail: false, view: 'my-workout' }
+  _selectedWorkoutIds.clear()
+  const body = document.getElementById('my-workout-body')
+  body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando…</div>'
+
+  try {
+    const { data: _wData, error: _wErr } = await sb.from('workouts')
+      .select('*, workout_exercises(*)')
+      .eq('student_id', studentId)
+      .order('date', { ascending: false })
+      .order('created_at', { ascending: false })
+    if (_wErr) throw _wErr
+    const workouts = _wData || []
+    window._workoutsCache = window._workoutsCache || {}
+    workouts.forEach(w => { window._workoutsCache[w.id] = w })
+    if (gen && navGen !== gen) return
+
+    const standAloneWorkouts = workouts.filter(w => !w.routine_id)
+    const workoutsByRoutine  = {}
+    for (const w of workouts) {
+      if (w.routine_id) {
+        if (!workoutsByRoutine[w.routine_id]) workoutsByRoutine[w.routine_id] = []
+        workoutsByRoutine[w.routine_id].push(w)
+      }
+    }
+
+    const [execRes, reviewsRes, routinesRes] = await Promise.all([
+      sb.from('workout_executions')
+        .select('*, workout_exercises(exercise_name, exercise_type, sets, reps, weight_kg, duration_min, distance_km, speed_kmh, hr_min, hr_max, training_method, method_description), workouts(name, date)')
+        .eq('student_id', studentId)
+        .order('executed_at', { ascending: false }),
+      sb.from('workout_reviews').select('*').eq('student_id', studentId).order('created_at', { ascending: false }),
+      sb.from('routines').select('*').eq('student_id', studentId).order('created_at', { ascending: false })
+    ])
+    if (gen && navGen !== gen) return
+
+    const executions = execRes.data || []
+    const reviewsByWorkout = {}
+    for (const r of (reviewsRes.data || [])) {
+      if (!reviewsByWorkout[r.workout_id]) reviewsByWorkout[r.workout_id] = r
+    }
+    const routinesData = routinesRes.data || []
+    const total        = workouts.reduce((s, w) => s + getWorkoutVolume(w), 0)
+    const snSafe       = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+
+    // ── Routine cards ──
+    const routineCardsHTML = routinesData.length === 0
+      ? `<p style="font-size:.82rem;color:var(--text-muted);padding:.5rem 0 .25rem">Nenhuma rotina criada ainda.</p>`
+      : `<div class="routines-grid">${routinesData.map(r => {
+          const period    = r.start_date || r.end_date
+            ? `📅 ${r.start_date ? fmtDate(r.start_date) : '—'} → ${r.end_date ? fmtDate(r.end_date) : '—'}`
+            : null
+          const wCount    = (workoutsByRoutine[r.id] || []).length
+          const rNameSafe = r.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+          return `<div class="routine-card" role="button" style="cursor:pointer"
+              onclick="openRoutineDetail('${studentId}','${snSafe}','${r.id}','${rNameSafe}','my-workout')">
+            <div class="routine-card-name">${escHtml(r.name)}</div>
+            <div class="routine-card-meta">
+              ${period ? `<span>${period}</span>` : `<span style="font-style:italic">Sem período definido</span>`}
+            </div>
+            <div class="routine-card-footer">
+              <span class="routine-count-badge">${wCount} treino${wCount !== 1 ? 's' : ''}</span>
+              <div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end">
+                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openRoutineModal('${studentId}','${snSafe}','${r.id}')">✏️</button>
+                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteRoutine('${r.id}','${studentId}','${snSafe}')">🗑️</button>
+              </div>
+            </div>
+          </div>`
+        }).join('')}</div>`
+
+    // ── Execution groups ──
+    const execByWorkout = {}
+    for (const ex of executions) {
+      const key = ex.workout_id
+      if (!execByWorkout[key]) {
+        execByWorkout[key] = { workoutId: ex.workout_id, workoutName: ex.workouts?.name || (ex.workouts?.date ? fmtDate(ex.workouts.date) : '—'), executedAt: ex.executed_at, exerciseMap: {} }
+      }
+      const exId = ex.exercise_id
+      if (!execByWorkout[key].exerciseMap[exId]) {
+        execByWorkout[key].exerciseMap[exId] = { exercise_id: exId, workout_exercises: ex.workout_exercises, duration_executed_min: null, distance_executed_km: null, speed_executed_kmh: null, sets: [] }
+      }
+      const entry = execByWorkout[key].exerciseMap[exId]
+      if (ex.duration_executed_min != null) entry.duration_executed_min = ex.duration_executed_min
+      if (ex.distance_executed_km  != null) entry.distance_executed_km  = ex.distance_executed_km
+      if (ex.speed_executed_kmh    != null) entry.speed_executed_kmh    = ex.speed_executed_kmh
+      if (ex.weight_executed != null || ex.reps_executed != null)
+        entry.sets.push({ set_number: ex.set_number || 1, weight_executed: ex.weight_executed, reps_executed: ex.reps_executed })
+    }
+    const execGroups = Object.values(execByWorkout).map(g => ({
+      workoutId: g.workoutId, workoutName: g.workoutName, executedAt: g.executedAt,
+      items: Object.values(g.exerciseMap).sort((a, b) => a.exercise_id > b.exercise_id ? 1 : -1)
+    }))
+
+    const execSectionHTML = execGroups.length
+      ? execGroups.map(group => {
+          let totalPlannedMusc = 0, totalExecutedMusc = 0, totalPlannedAero = 0, totalExecutedAero = 0
+          const exRows = group.items.map(ex => {
+            const we = ex.workout_exercises
+            const isAero = we?.exercise_type === 'aerobico' || we?.duration_min != null || ex.duration_executed_min != null
+            if (isAero) {
+              const planDur = parseFloat(we?.duration_min) || 0, planDist = parseFloat(we?.distance_km) || 0, planSpd = parseFloat(we?.speed_kmh) || 0
+              const execDur = parseFloat(ex.duration_executed_min) || 0, execDist = parseFloat(ex.distance_executed_km) || 0, execSpd = parseFloat(ex.speed_executed_kmh) || 0
+              const planned = planDist > 0 ? planDist : planDur, executed = execDist > 0 ? execDist : execDur, unit = planDist > 0 ? 'km' : 'min'
+              const diff = executed - planned
+              totalPlannedAero += planned; totalExecutedAero += executed
+              const plannedTxt  = [planDur > 0 ? planDur + ' min' : null, planDist > 0 ? planDist + ' km' : null, planSpd > 0 ? planSpd + ' km/h' : null, (we?.hr_min || we?.hr_max) ? `❤️ FC: ${we.hr_min || '?'}–${we.hr_max || '?'} bpm` : null].filter(Boolean).join(' · ') || '—'
+              const executedTxt = [execDur > 0 ? execDur.toLocaleString('pt-BR') + ' min' : null, execDist > 0 ? execDist.toLocaleString('pt-BR') + ' km' : null, execSpd > 0 ? execSpd.toLocaleString('pt-BR') + ' km/h' : null].filter(Boolean).join(' · ') || '—'
+              const diffCell    = diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>` : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} ${unit}</span>` : `<span style="color:var(--text-muted)">= 0 ${unit}</span>`
+              return `<tr><td style="font-weight:500;color:var(--text-secondary)">🏃 ${we?.exercise_name || '—'}</td><td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td><td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td><td style="font-size:.82rem">${diffCell}</td></tr>`
+            } else {
+              const planSets = we?.sets || 0, planWeight = parseFloat(we?.weight_kg) || 0, planReps = we?.reps || 0, planned = planSets * planReps * planWeight
+              totalPlannedMusc += planned
+              const sortedSets = (ex.sets || []).sort((a, b) => a.set_number - b.set_number)
+              let executed = 0; sortedSets.forEach(s => { executed += (parseFloat(s.weight_executed) || 0) * (s.reps_executed || 0) }); totalExecutedMusc += executed
+              const diff        = executed - planned
+              const plannedTxt  = planned > 0 ? `${planWeight} kg × ${planReps} reps × ${planSets} séries = ${planned.toLocaleString('pt-BR')} kg` : '—'
+              const executedTxt = sortedSets.length > 0 ? sortedSets.map(s => `S${s.set_number}: ${s.weight_executed}×${s.reps_executed}`).join(' · ') + ` = ${executed.toLocaleString('pt-BR')} kg` : '—'
+              const diffCell    = diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>` : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>` : `<span style="color:var(--text-muted)">= 0 kg</span>`
+              return `<tr><td style="font-weight:500;color:var(--text-secondary)">${we?.exercise_name || '—'}${we?.training_method ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">⚡ ${we.training_method}</div>` : ''}</td><td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td><td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td><td style="font-size:.82rem">${diffCell}</td></tr>`
+            }
+          }).join('')
+          const footerRows = []
+          if (totalPlannedMusc > 0 || totalExecutedMusc > 0) {
+            const d = totalExecutedMusc - totalPlannedMusc
+            footerRows.push(`<tr style="border-top:1px solid var(--neutral-a15)"><td style="font-weight:700;color:var(--text-primary);font-size:.82rem">Total musculação</td><td style="color:var(--text-muted);font-size:.82rem">${totalPlannedMusc.toLocaleString('pt-BR')} kg</td><td class="vol-cell" style="font-size:.82rem">${totalExecutedMusc.toLocaleString('pt-BR')} kg</td><td style="font-size:.82rem">${d > 0 ? `<span style="color:var(--success)">+${d.toLocaleString('pt-BR')} kg</span>` : d < 0 ? `<span style="color:var(--danger)">${d.toLocaleString('pt-BR')} kg</span>` : `<span style="color:var(--text-muted)">= 0 kg</span>`}</td></tr>`)
+          }
+          if (totalPlannedAero > 0 || totalExecutedAero > 0) {
+            const d = totalExecutedAero - totalPlannedAero
+            footerRows.push(`<tr style="border-top:1px solid var(--neutral-a15)"><td style="font-weight:700;color:var(--text-primary);font-size:.82rem">Total aeróbico</td><td style="color:var(--text-muted);font-size:.82rem">${totalPlannedAero.toLocaleString('pt-BR')}</td><td class="vol-cell" style="font-size:.82rem">${totalExecutedAero.toLocaleString('pt-BR')}</td><td style="font-size:.82rem">${d > 0 ? `<span style="color:var(--success)">+${d.toLocaleString('pt-BR')}</span>` : d < 0 ? `<span style="color:var(--danger)">${d.toLocaleString('pt-BR')}</span>` : `<span style="color:var(--text-muted)">= 0</span>`}</td></tr>`)
+          }
+          const review        = reviewsByWorkout[group.workoutId]
+          const feelingEmojis = ['😩','😕','😐','🙂','😄']
+          const reviewHTML    = review ? `
+            <div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--neutral-a08)">
+              <div style="font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted);margin-bottom:.5rem">Autoavaliação</div>
+              <div style="display:flex;gap:1.25rem;flex-wrap:wrap;align-items:flex-start">
+                ${review.feeling ? `<div style="text-align:center"><div style="font-size:1.6rem;line-height:1">${feelingEmojis[review.feeling - 1]}</div><div style="font-size:.62rem;color:var(--text-muted);margin-top:.2rem">Sensação</div></div>` : ''}
+                ${review.perceived_effort ? `<div style="text-align:center"><div style="font-size:1.15rem;font-weight:800;color:var(--accent-soft);line-height:1">${review.perceived_effort}<span style="font-size:.65rem;color:var(--text-muted)">/10</span></div><div style="font-size:.62rem;color:var(--text-muted);margin-top:.2rem">Esforço (PSE)</div></div>` : ''}
+                ${review.notes ? `<div style="flex:1;min-width:120px;font-size:.78rem;color:var(--text-muted);font-style:italic;padding-top:.1rem">"${review.notes}"</div>` : ''}
+              </div>
+            </div>` : ''
+          return `
+          <div style="background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:1rem 1.1rem;margin-bottom:.875rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
+              <div style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${group.workoutName}</div>
+              <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+                <div style="font-size:.75rem;color:var(--text-muted)">${fmtDateTime(group.executedAt)}</div>
+                <button class="btn btn-sm btn-ghost-danger" onclick="deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}','${snSafe}')">🗑️ Apagar execução</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table><thead><tr><th>Exercício</th><th>Previsto</th><th>Executado</th><th>Diferença</th></tr></thead>
+              <tbody>${exRows}</tbody><tfoot>${footerRows.join('')}</tfoot></table>
+            </div>
+            ${reviewHTML}
+          </div>`
+        }).join('')
+      : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">📊</div><p>Nenhuma execução registrada ainda.</p></div>`
+
+    // ── Standalone workouts (edge case) ──
+    const standAloneRows = standAloneWorkouts.map(w => {
+      const exes = w.workout_exercises || []
+      const vol  = getWorkoutVolume(w)
+      const uid  = 'mw' + w.id.replace(/-/g, '')
+      const dateRange = w.end_date ? `${fmtDate(w.date)} até ${fmtDate(w.end_date)}` : fmtDate(w.date)
+      const dateSub   = w.name ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">${dateRange}</div>` : ''
+      const exPairs   = exes.length
+        ? exes.map(ex => {
+            const isAero  = ex.exercise_type === 'aerobico'
+            const detail  = isAero ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—' : `${ex.sets}×${ex.reps} @ ${ex.weight_kg} kg`
+            const volCell = isAero ? '—' : `${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
+            const row  = `<tr><td style="padding-left:1.5rem;font-weight:500;color:var(--text-secondary)">${ex.exercise_name}</td><td>${detail}</td><td class="vol-cell">${volCell}</td></tr>`
+            const card = `<div class="ex-card"><div class="ex-card-name">${ex.exercise_name}</div><div class="ex-card-detail">${detail}${isAero ? '' : ` — Vol: ${volCell}`}</div></div>`
+            return { row, card }
+          })
+        : [{ row: `<tr><td colspan="3" style="padding:.75rem 1rem;font-style:italic;color:var(--text-muted)">Sem detalhes disponíveis</td></tr>`, card: `<div class="ex-card ex-card-legacy">Sem detalhes disponíveis</div>` }]
+      const exRows  = exPairs.map(p => p.row).join('')
+      const exCards = exPairs.map(p => p.card).join('')
+      return `
+        <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
+          <td><strong>${w.name || fmtDate(w.date)}</strong>${dateSub}</td>
+          <td style="color:var(--text-muted);font-size:.83rem">${exes.length} exercício${exes.length !== 1 ? 's' : ''}</td>
+          <td class="vol-cell">${vol.toLocaleString('pt-BR')} kg</td>
+          <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">▶</span></td>
+          <td style="text-align:center;white-space:nowrap">
+            <button class="btn-start-workout workout-timer-btn" style="font-size:.75rem;padding:.35rem .85rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar'}</button>
+            <button class="edit-btn" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar">✏️</button>
+            <button class="del-btn" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}','${snSafe}')" title="Excluir">🗑️</button>
+          </td>
+        </tr>
+        <tr id="wd-${uid}" style="display:none" class="history-detail-row">
+          <td colspan="5"><div class="history-detail-inner">
+            <table class="ex-detail-table">
+              <thead><tr><th style="padding-left:1.5rem">Exercício</th><th>Série × Reps @ Carga</th><th>Volume</th></tr></thead>
+              <tbody>${exRows}</tbody>
+            </table>
+            <div class="ex-detail-cards">${exCards}</div>
+            <div style="padding:.625rem 1rem .875rem;border-top:1px solid var(--neutral-a06)">
+              <button class="btn-start-workout workout-timer-btn" style="font-size:.8rem;padding:.5rem 1.25rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar Treino'}</button>
+            </div>
+          </div></td>
+        </tr>`
+    }).join('')
+
+    const avulsoHTML = standAloneWorkouts.length
+      ? `<div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border-subtle)">
+          <div class="section-label" style="margin-bottom:.75rem">Treinos Avulsos</div>
+          <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:.875rem">Clique em um treino para ver os exercícios.</p>
+          <div class="table-wrap">
+            <table class="sheet-workout-table">
+              <thead><tr><th>Treino</th><th>Exercícios</th><th>Volume Total</th><th></th><th></th></tr></thead>
+              <tbody>${standAloneRows}</tbody>
+            </table>
+          </div>
+        </div>`
+      : ''
+
+    body.innerHTML = `
+      <div class="stats-grid" style="margin-bottom:1.25rem">
+        <div class="stat-card" style="padding:1rem 1.25rem">
+          <div class="stat-value" style="font-size:1.6rem">${workouts.length}</div>
+          <div class="stat-label">Treinos</div>
+        </div>
+        <div class="stat-card" style="padding:1rem 1.25rem;border-left-color:var(--success)">
+          <div class="stat-value" style="font-size:1.3rem">${total.toLocaleString('pt-BR')} kg</div>
+          <div class="stat-label">Volume acumulado</div>
+        </div>
+        <div class="stat-card" style="padding:1rem 1.25rem;border-left-color:var(--warning)">
+          <div class="stat-value" style="font-size:1.6rem">${execGroups.length}</div>
+          <div class="stat-label">Execuções</div>
+        </div>
+      </div>
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
+          <div class="section-label" style="margin-bottom:0">Minhas Rotinas</div>
+          <button class="btn btn-primary btn-sm" onclick="openRoutineModal('${studentId}','${snSafe}')">➕ Nova Rotina</button>
+        </div>
+        ${routineCardsHTML}
+      </div>
+      ${avulsoHTML}
+      <div style="margin-top:1.75rem;padding-top:1.5rem;border-top:1px solid var(--border-subtle)">
+        <div class="section-label" style="margin-bottom:.875rem">Execuções Realizadas</div>
+        ${execSectionHTML}
+      </div>`
+    bindWorkoutRowClicks(body)
+  } catch (err) {
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <p>Erro ao carregar.</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:.75rem" onclick="navigateTo('my-workout')">Tentar novamente</button></div>`
+  }
+}
+
+// ─────────────────────────────────────────────
 // VIEW: DETALHES DA ROTINA
 // ─────────────────────────────────────────────
 function openRoutineDetail(studentId, studentName, routineId, routineName, fromView) {
@@ -4045,7 +4312,8 @@ function openRoutineDetail(studentId, studentName, routineId, routineName, fromV
 }
 
 function closeRoutineDetail(studentId, studentName) {
-  if (historyCtx?.fromView === 'history') navigateTo('history')
+  if (historyCtx?.fromView === 'history')    navigateTo('history')
+  else if (historyCtx?.fromView === 'my-workout') navigateTo('my-workout')
   else openStudentSheet(studentId, studentName)
 }
 
@@ -4124,7 +4392,8 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
             <div style="display:flex;align-items:center;gap:.4rem;flex-shrink:0">
               ${profile.role === 'personal'
                 ? `<button class="btn btn-sm btn-outline" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar">✏️</button>
-                   <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromRoutine('${w.id}','${studentId}','${snSafe}','${routineId}','${rNameSafe}')" title="Excluir">🗑️</button>`
+                   <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromRoutine('${w.id}','${studentId}','${snSafe}','${routineId}','${rNameSafe}')" title="Excluir">🗑️</button>
+                   ${opts.fromView === 'my-workout' ? `<button class="btn-start-workout workout-timer-btn" style="font-size:.78rem;padding:.4rem 1rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar Treino'}</button>` : ''}`
                 : `<button class="btn-start-workout workout-timer-btn" style="font-size:.78rem;padding:.4rem 1rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar Treino'}</button>`}
               <span id="rdi-${uid}" style="color:var(--text-muted);font-size:.85rem;margin-left:.25rem;pointer-events:none">▶</span>
             </div>
@@ -4163,11 +4432,11 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
     body.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.75rem">
         <div>
-          <div class="section-label" style="margin-bottom:.25rem">${profile.role === 'student' ? 'Minha Rotina' : `Rotina · ${escHtml(studentName)}`}</div>
+          <div class="section-label" style="margin-bottom:.25rem">${profile.role === 'student' ? 'Minha Rotina' : opts.fromView === 'my-workout' ? 'Meu Treino' : `Rotina · ${escHtml(studentName)}`}</div>
           <div style="font-size:1.05rem;font-weight:800;letter-spacing:-0.02em">${escHtml(routine.name)}</div>
         </div>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-          ${profile.role === 'personal' ? `<button class="btn btn-primary btn-sm" onclick="openNewWorkoutForRoutine('${studentId}','${snSafe}','${routineId}','${rNameSafe}')">➕ Adicionar Treino</button>` : ''}
+          ${profile.role === 'personal' ? `<button class="btn btn-primary btn-sm" onclick="openNewWorkoutForRoutine('${studentId}','${snSafe}','${routineId}','${rNameSafe}',historyCtx?.fromView)">➕ Adicionar Treino</button>` : ''}
           <button class="btn btn-outline btn-sm" onclick="closeRoutineDetail('${studentId}','${snSafe}')">← Voltar</button>
         </div>
       </div>
@@ -4194,7 +4463,7 @@ async function deleteWorkoutFromRoutine(workoutId, studentId, studentName, routi
   const err = await _cascadeDeleteWorkout(workoutId)
   if (err) { toast(err, 'error'); return }
   toast('Treino excluído com sucesso!', 'success')
-  openRoutineDetail(studentId, studentName, routineId, routineName)
+  openRoutineDetail(studentId, studentName, routineId, routineName, historyCtx?.fromView)
 }
 
 // ─────────────────────────────────────────────
@@ -4269,7 +4538,8 @@ async function saveRoutine(e) {
 
   toast(_editingRoutineId ? 'Rotina atualizada!' : 'Rotina criada!', 'success')
   closeRoutineModal()
-  openStudentSheet(studentId, studentName)
+  if (historyCtx?.view === 'my-workout') navigateTo('my-workout')
+  else openStudentSheet(studentId, studentName)
 }
 
 async function deleteRoutine(routineId, studentId, studentName) {
@@ -4277,19 +4547,21 @@ async function deleteRoutine(routineId, studentId, studentName) {
   const { error } = await sb.from('routines').delete().eq('id', routineId)
   if (error) { toast('Erro ao excluir: ' + error.message, 'error'); return }
   toast('Rotina excluída.', 'success')
-  openStudentSheet(studentId, studentName)
+  if (historyCtx?.view === 'my-workout') navigateTo('my-workout')
+  else openStudentSheet(studentId, studentName)
 }
 
 async function openNewWorkoutForStudent(studentId, studentName) {
   await navigateTo('workout', { prefilledStudentId: studentId, prefilledStudentName: studentName })
 }
 
-async function openNewWorkoutForRoutine(studentId, studentName, routineId, routineName) {
+async function openNewWorkoutForRoutine(studentId, studentName, routineId, routineName, fromView) {
   await navigateTo('workout', {
     prefilledStudentId:   studentId,
     prefilledStudentName: studentName,
     prefilledRoutineId:   routineId,
-    prefilledRoutineName: routineName
+    prefilledRoutineName: routineName,
+    prefilledFromView:    fromView || null
   })
 }
 
@@ -5009,8 +5281,9 @@ async function saveWorkout(e) {
       toast('Treino atualizado com sucesso!', 'success')
       const ctx = historyCtx
       editingWorkoutId = null
-      if (ctx?.view === 'routine-detail') openRoutineDetail(ctx.studentId, ctx.name, ctx.routineId, ctx.routineName)
+      if (ctx?.view === 'routine-detail') openRoutineDetail(ctx.studentId, ctx.name, ctx.routineId, ctx.routineName, ctx.fromView)
       else if (ctx?.view === 'student-sheet') openStudentSheet(ctx.studentId, ctx.name)
+      else if (ctx?.view === 'my-workout') navigateTo('my-workout')
       else if (ctx?.isDetail) navigateTo('student-detail', { id: ctx.studentId, name: ctx.name })
       else navigateTo('students')
     } else {
@@ -5054,10 +5327,12 @@ async function saveWorkout(e) {
       const prefName      = currentViewOpts.prefilledStudentName
       const prefRoutineId = currentViewOpts.prefilledRoutineId
       const prefRoutineNm = currentViewOpts.prefilledRoutineName
+      const prefFromView  = currentViewOpts.prefilledFromView
       if (prefRoutineId && prefId) {
-        openRoutineDetail(prefId, prefName || '', prefRoutineId, prefRoutineNm || '')
+        openRoutineDetail(prefId, prefName || '', prefRoutineId, prefRoutineNm || '', prefFromView || null)
       } else if (prefId) {
-        openStudentSheet(prefId, prefName || '')
+        if (prefFromView === 'my-workout') navigateTo('my-workout')
+        else openStudentSheet(prefId, prefName || '')
       } else {
         await setupWorkoutForm()
       }
