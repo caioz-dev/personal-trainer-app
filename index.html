@@ -3300,16 +3300,21 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
       </div>
     </div>
 
-    <div class="section-grid reveal">
-      <div class="card">
-        <div class="card-header"><div class="card-title">📈 Evolução do Volume</div></div>
-        <div class="chart-container"><canvas id="${canvasId}"></canvas></div>
-      </div>
-      <div class="card">
-        <div class="card-header"><div class="card-title">📋 Histórico de Treinos</div></div>
-        ${standAlone.length === 0
-          ? `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon">🏋️</div><p>Nenhum treino avulso registrado.</p></div>`
-          : `<p style="font-size:.78rem;color:var(--text-muted);margin-bottom:1rem">Clique em um treino para ver os exercícios.</p>
+    ${standAlone.length === 0
+      ? `<div class="reveal">
+          <div class="card">
+            <div class="card-header"><div class="card-title">📈 Evolução do Volume</div></div>
+            <div class="chart-container"><canvas id="${canvasId}"></canvas></div>
+          </div>
+        </div>`
+      : `<div class="section-grid reveal">
+          <div class="card">
+            <div class="card-header"><div class="card-title">📈 Evolução do Volume</div></div>
+            <div class="chart-container"><canvas id="${canvasId}"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div class="card-title">📋 Histórico de Treinos</div></div>
+            <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:1rem">Clique em um treino para ver os exercícios.</p>
             ${profile.role === 'personal' ? `<div id="bulk-select-bar" class="bulk-select-bar" style="display:none">
               <label class="bulk-select-all-label">
                 <input type="checkbox" id="bulk-select-all-cb" onchange="toggleBulkSelectAll(this.checked)">
@@ -3328,9 +3333,9 @@ function historyHTML(ws, name, canvasId = 'evo-chart') {
                 </tr></thead>
                 <tbody>${rows}</tbody>
               </table>
-            </div>`}
-      </div>
-    </div>`
+            </div>
+          </div>
+        </div>`}`
 }
 
 function bindWorkoutRowClicks(container) {
