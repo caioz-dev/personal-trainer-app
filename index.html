@@ -121,7 +121,7 @@
         linear-gradient(#EEF1F8 0%, #E8ECF5 100%);
     }
     html.light select.form-control           { color-scheme: light; }
-    html.light input[type="date"].form-control { color-scheme: light; }
+    html.light input[type="date"] { color-scheme: light; }
     html.light .workout-checkbox { color-scheme: light; }
     /* mensagens de feedback: cor de texto ajustada para contraste em fundo claro */
     html.light .msg.error   { color: var(--danger); }
@@ -340,7 +340,7 @@
     }
 
     select.form-control           { cursor: pointer; color-scheme: dark; }
-    input[type="date"].form-control { color-scheme: dark; }
+    input[type="date"] { color-scheme: dark; }
     option { background: #0C1224; color: var(--text-primary); }
 
     .btn {
@@ -3503,7 +3503,6 @@ async function renderStudentSheet(studentId, studentName, gen) {
       .eq('student_id', studentId)
       .order('date', { ascending: false })
       .order('created_at', { ascending: false })
-    console.error('[DEBUG ROTINAS] workoutsRes:', { data: _wData, error: _wErr, studentId })
     if (_wErr) throw _wErr
     const workouts = _wData || []
 
@@ -3526,11 +3525,8 @@ async function renderStudentSheet(studentId, studentName, gen) {
     }
 
     const routinesData = routinesRes.data || []
-    console.log('[DEBUG ROTINAS] routinesRes:', routinesRes)
-    console.log('[DEBUG ROTINAS] workouts.length:', workouts.length, '| executions.length:', executions.length, '| routinesData.length:', routinesData.length)
 
     if (!workouts.length && !executions.length && !routinesData.length) {
-      console.warn('[DEBUG ROTINAS] → early-return acionado (tudo vazio)')
       body.innerHTML = header + `<div class="empty-state"><div class="empty-icon">🏋️</div>
         <p>Nenhum treino registrado para ${studentName}.</p></div>`
       return
@@ -3875,15 +3871,10 @@ async function renderStudentSheet(studentId, studentName, gen) {
       </div>`
     bindWorkoutRowClicks(body)
   } catch (err) {
-    console.error('[DEBUG ROTINAS] catch em renderStudentSheet:', err)
-    try {
-      body.innerHTML = `${header}<div class="empty-state"><div class="empty-icon">⚠️</div>
-        <p>Erro ao carregar histórico.</p>
-        <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
-                onclick="openStudentSheet('${studentId}','${studentName.replace(/'/g, "\\'")}')">Tentar novamente</button></div>`
-    } catch (innerErr) {
-      console.error('[DEBUG ROTINAS] catch interno (erro ao renderizar mensagem de erro):', innerErr)
-    }
+    body.innerHTML = `${header}<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <p>Erro ao carregar histórico.</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
+              onclick="openStudentSheet('${studentId}','${studentName.replace(/'/g, "\\'")}')">Tentar novamente</button></div>`
   }
 }
 
@@ -3921,21 +3912,6 @@ async function openRoutineModal(studentId, studentName, routineId = null) {
   modal.style.display = 'flex'
   document.body.style.overflow = 'hidden'
   setTimeout(() => document.getElementById('rf-name').focus(), 60)
-
-  // ---- DEBUG DATE INPUT ----
-  function _debugDateKey(e) {
-    console.log('[DEBUG DATE] keydown:', e.key,
-      '| target tag:', e.target.tagName,
-      '| target type:', e.target.type,
-      '| target id:', e.target.id,
-      '| defaultPrevented:', e.defaultPrevented,
-      '| activeElement:', document.activeElement?.id,
-      '| activeElement type:', document.activeElement?.type)
-  }
-  // captura=true: dispara antes de qualquer listener do input
-  document.addEventListener('keydown', _debugDateKey, true)
-  modal._debugDateKey = _debugDateKey
-  // ---- FIM DEBUG ----
 }
 
 function closeRoutineModal() {
@@ -3943,12 +3919,6 @@ function closeRoutineModal() {
   modal.style.display = 'none'
   document.body.style.overflow = ''
   _editingRoutineId = null
-  // ---- DEBUG DATE INPUT ----
-  if (modal._debugDateKey) {
-    document.removeEventListener('keydown', modal._debugDateKey, true)
-    modal._debugDateKey = null
-  }
-  // ---- FIM DEBUG ----
 }
 
 async function saveRoutine(e) {
