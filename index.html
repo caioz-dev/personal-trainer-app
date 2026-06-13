@@ -5875,11 +5875,30 @@ function confirmExerciseCompletion() {
   if (card) {
     card.classList.add('done')
     const btn = card.querySelector('.exec-complete-btn')
-    if (btn) { btn.innerHTML = '✅ Concluído'; btn.disabled = true }
+    if (btn) {
+      btn.innerHTML = '↺ Desfazer'
+      btn.disabled = false
+      btn.setAttribute('onclick', `uncompleteExercise('${exerciseId}')`)
+    }
     const resultEl = document.getElementById(`exec-ex-result-${exerciseId}`)
     if (resultEl) { resultEl.style.display = 'block'; resultEl.textContent = `Executado: ${resultText}` }
   }
   closeExerciseCompletionModal()
+}
+
+function uncompleteExercise(exerciseId) {
+  delete exerciseExecutions[exerciseId]
+  const card = document.getElementById(`exec-ex-${exerciseId}`)
+  if (!card) return
+  card.classList.remove('done')
+  const btn = card.querySelector('.exec-complete-btn')
+  if (btn) {
+    btn.innerHTML = '✓ Concluir'
+    btn.disabled = false
+    btn.setAttribute('onclick', `openExerciseCompletionModal('${exerciseId}')`)
+  }
+  const resultEl = document.getElementById(`exec-ex-result-${exerciseId}`)
+  if (resultEl) { resultEl.style.display = 'none'; resultEl.textContent = '' }
 }
 
 function finishWorkout() {
