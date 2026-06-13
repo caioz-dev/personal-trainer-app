@@ -590,13 +590,6 @@
       max-width: 100%;
       display: block;
     }
-    .routine-card-footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding-top: .75rem;
-      border-top: 1px solid var(--neutral-a08);
-    }
     .routine-count-badge {
       font-size: .72rem;
       font-weight: 700;
@@ -605,6 +598,55 @@
       border: 1px solid var(--accent-a15);
       border-radius: var(--radius-pill);
       padding: .15rem .6rem;
+    }
+    .routine-workout-list {
+      margin: .625rem 0 .5rem;
+      border-top: 1px solid var(--neutral-a08);
+      padding-top: .5rem;
+    }
+    .routine-workout-day-label {
+      font-size: .62rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .09em;
+      color: var(--text-muted);
+      margin: .45rem 0 .2rem;
+    }
+    .routine-workout-day-label:first-child { margin-top: 0; }
+    .routine-workout-item {
+      display: flex;
+      align-items: center;
+      gap: .3rem;
+      padding: .2rem 0;
+      font-size: .77rem;
+      color: var(--text-secondary);
+    }
+    .routine-workout-item-connector {
+      color: var(--text-muted);
+      flex-shrink: 0;
+      font-size: .8rem;
+    }
+    .routine-workout-item-name {
+      flex: 1;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .routine-workout-item-count {
+      font-size: .68rem;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+    .routine-card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: .4rem;
+      padding-top: .625rem;
+      border-top: 1px solid var(--neutral-a08);
+      margin-top: .625rem;
     }
     .routine-modal-overlay {
       position: fixed;
@@ -2044,6 +2086,21 @@
                 </div>
               </div>
 
+              <input type="hidden" id="wf-routine-id" value="">
+              <div class="form-group" id="wf-day-group" style="display:none;margin-bottom:.875rem">
+                <label>Dia da Semana <span style="color:var(--danger)">*</span></label>
+                <select id="wf-day-of-week" class="form-control">
+                  <option value="">Selecione o dia…</option>
+                  <option value="segunda">Segunda-feira</option>
+                  <option value="terca">Terça-feira</option>
+                  <option value="quarta">Quarta-feira</option>
+                  <option value="quinta">Quinta-feira</option>
+                  <option value="sexta">Sexta-feira</option>
+                  <option value="sabado">Sábado</option>
+                  <option value="domingo">Domingo</option>
+                </select>
+              </div>
+
               <div class="add-ex-bar">
                 <span class="add-ex-title">🏋️ Exercícios</span>
                 <button type="button" class="btn btn-outline btn-sm" onclick="addExercise()">+ Adicionar exercício</button>
@@ -3469,6 +3526,21 @@ async function editWorkout(workoutId) {
     })
   }
   refreshTotalVolume()
+
+  // Exibe campo de dia da semana se o treino pertence a uma rotina
+  const _riEl  = document.getElementById('wf-routine-id')
+  const _dgEl  = document.getElementById('wf-day-group')
+  const _dwEl  = document.getElementById('wf-day-of-week')
+  if (workout.routine_id) {
+    if (_riEl) _riEl.value = workout.routine_id
+    if (_dgEl) _dgEl.style.display = 'block'
+    if (_dwEl) { _dwEl.required = true; _dwEl.value = workout.day_of_week || '' }
+    document.querySelector('#view-workout .card-title').textContent = 'Editar Treino (Rotina)'
+  } else {
+    if (_riEl) _riEl.value = ''
+    if (_dgEl) _dgEl.style.display = 'none'
+    if (_dwEl) { _dwEl.required = false; _dwEl.value = '' }
+  }
 }
 
 function openStudentSheet(studentId, studentName) {
@@ -3476,7 +3548,7 @@ function openStudentSheet(studentId, studentName) {
 }
 
 async function renderStudentSheet(studentId, studentName, gen) {
-  historyCtx = { studentId, name: studentName, isDetail: true }
+  historyCtx = { studentId, name: studentName, isDetail: true, view: 'student-sheet' }
   _selectedWorkoutIds.clear()
   if (sheetChart) { sheetChart.destroy(); sheetChart = null }
   const body = document.getElementById('student-sheet-body')
@@ -3511,6 +3583,16 @@ async function renderStudentSheet(studentId, studentName, gen) {
     if (_wErr) throw _wErr
     const workouts = _wData || []
 
+    // Separa treinos avulsos (sem rotina) dos treinos vinculados a rotinas
+    const standAloneWorkouts = workouts.filter(w => !w.routine_id)
+    const workoutsByRoutine  = {}
+    for (const w of workouts) {
+      if (w.routine_id) {
+        if (!workoutsByRoutine[w.routine_id]) workoutsByRoutine[w.routine_id] = []
+        workoutsByRoutine[w.routine_id].push(w)
+      }
+    }
+
     const [execRes, spRes, reviewsRes, routinesRes] = await Promise.all([
       sb.from('workout_executions')
         .select('*, workout_exercises(exercise_name, exercise_type, sets, reps, weight_kg, duration_min, distance_km, speed_kmh, hr_min, hr_max, training_method, method_description), workouts(name, date)')
@@ -3539,7 +3621,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
 
     const total = workouts.reduce((s, w) => s + getWorkoutVolume(w), 0)
 
-    const rows = workouts.map(w => {
+    const rows = standAloneWorkouts.map(w => {
       const exes = w.workout_exercises || []
       const vol  = getWorkoutVolume(w)
       const uid       = 'sh' + w.id.replace(/-/g, '')
@@ -3791,12 +3873,41 @@ async function renderStudentSheet(studentId, studentName, gen) {
       : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">📊</div><p>Nenhuma execução registrada ainda.</p></div>`
 
     const snSafe = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    const DAY_ORDER  = ['segunda','terca','quarta','quinta','sexta','sabado','domingo']
+    const DAY_LABELS = { segunda:'Segunda-feira', terca:'Terça-feira', quarta:'Quarta-feira', quinta:'Quinta-feira', sexta:'Sexta-feira', sabado:'Sábado', domingo:'Domingo' }
     const routineCardsHTML = routinesData.length === 0
       ? `<p style="font-size:.82rem;color:var(--text-muted);padding:.5rem 0 .25rem">Nenhuma rotina criada ainda.</p>`
       : `<div class="routines-grid">${routinesData.map(r => {
           const period = r.start_date || r.end_date
             ? `📅 ${r.start_date ? fmtDate(r.start_date) : '—'} → ${r.end_date ? fmtDate(r.end_date) : '—'}`
             : null
+          const rWorkouts  = workoutsByRoutine[r.id] || []
+          const wCount     = rWorkouts.length
+          const rNameSafe  = r.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+          const byDay      = {}
+          for (const w of rWorkouts) {
+            const d = w.day_of_week || '__noday__'
+            if (!byDay[d]) byDay[d] = []
+            byDay[d].push(w)
+          }
+          const mkWorkoutItems = (list) => list.map(w => {
+            const exCount = (w.workout_exercises || []).length
+            return `<div class="routine-workout-item">
+              <span class="routine-workout-item-connector">├</span>
+              <span class="routine-workout-item-name">${escHtml(w.name || 'Treino sem nome')}</span>
+              <span class="routine-workout-item-count">${exCount} ex.</span>
+              <button class="btn btn-sm btn-outline" style="padding:.15rem .4rem;font-size:.67rem;line-height:1;flex-shrink:0" onclick="event.stopPropagation();editWorkout('${w.id}')">✏️</button>
+              <button class="btn btn-sm btn-ghost-danger" style="padding:.15rem .4rem;font-size:.67rem;line-height:1;flex-shrink:0" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}','${snSafe}')">🗑️</button>
+            </div>`
+          }).join('')
+          const workoutListHTML = rWorkouts.length === 0 ? '' : `<div class="routine-workout-list">${
+            DAY_ORDER.filter(d => byDay[d]?.length).map(d =>
+              `<div class="routine-workout-day-label">${DAY_LABELS[d]}</div>${mkWorkoutItems(byDay[d])}`
+            ).join('') +
+            (byDay['__noday__']?.length
+              ? `<div class="routine-workout-day-label" style="color:var(--warning)">Sem dia definido</div>${mkWorkoutItems(byDay['__noday__'])}`
+              : '')
+          }</div>`
           return `<div class="routine-card">
             <div class="routine-card-name">${escHtml(r.name)}</div>
             <div class="routine-card-meta">
@@ -3805,9 +3916,11 @@ async function renderStudentSheet(studentId, studentName, gen) {
               ${r.auto_archive ? `<span>📦 Arquivamento automático</span>` : ''}
               ${r.general_instructions ? `<span class="routine-meta-notes" title="${escHtml(r.general_instructions)}">📝 ${escHtml(r.general_instructions)}</span>` : ''}
             </div>
+            ${workoutListHTML}
             <div class="routine-card-footer">
-              <span class="routine-count-badge">0 treinos</span>
-              <div style="display:flex;gap:.4rem">
+              <span class="routine-count-badge">${wCount} treino${wCount !== 1 ? 's' : ''}</span>
+              <div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end">
+                <button class="btn btn-sm btn-primary" style="font-size:.72rem" onclick="openNewWorkoutForRoutine('${studentId}','${snSafe}','${r.id}','${rNameSafe}')">+ Treino</button>
                 <button class="btn btn-sm btn-outline" onclick="openRoutineModal('${studentId}','${snSafe}','${r.id}')">✏️</button>
                 <button class="btn btn-sm btn-ghost-danger" onclick="deleteRoutine('${r.id}','${studentId}','${snSafe}')">🗑️</button>
               </div>
@@ -3973,6 +4086,15 @@ async function deleteRoutine(routineId, studentId, studentName) {
 
 async function openNewWorkoutForStudent(studentId, studentName) {
   await navigateTo('workout', { prefilledStudentId: studentId, prefilledStudentName: studentName })
+}
+
+async function openNewWorkoutForRoutine(studentId, studentName, routineId, routineName) {
+  await navigateTo('workout', {
+    prefilledStudentId:   studentId,
+    prefilledStudentName: studentName,
+    prefilledRoutineId:   routineId,
+    prefilledRoutineName: routineName
+  })
 }
 
 async function checkNewWorkout() {
@@ -4346,6 +4468,22 @@ async function setupWorkoutForm(opts = {}) {
   document.getElementById('wf-end-date').value = ''
   document.getElementById('wf-notes').value    = ''
 
+  // Rotina: mostra/oculta campo de dia da semana e guarda routine_id
+  const riEl = document.getElementById('wf-routine-id')
+  const dgEl = document.getElementById('wf-day-group')
+  const dwEl = document.getElementById('wf-day-of-week')
+  if (opts.prefilledRoutineId) {
+    if (riEl) riEl.value = opts.prefilledRoutineId
+    if (dgEl) dgEl.style.display = 'block'
+    if (dwEl) { dwEl.required = true; dwEl.value = '' }
+    document.querySelector('#view-workout .card-title').textContent =
+      `Novo Treino — ${opts.prefilledRoutineName || ''}`
+  } else {
+    if (riEl) riEl.value = ''
+    if (dgEl) dgEl.style.display = 'none'
+    if (dwEl) { dwEl.required = false; dwEl.value = '' }
+  }
+
   // Reset exercise list
   const list = document.getElementById('exercise-list')
   list.innerHTML = ''
@@ -4565,6 +4703,14 @@ async function saveWorkout(e) {
     return
   }
 
+  const routineId = document.getElementById('wf-routine-id')?.value || null
+  const dayOfWeek = document.getElementById('wf-day-of-week')?.value || null
+  if (routineId && !dayOfWeek) {
+    toast('Selecione o dia da semana para este treino da rotina.', 'error')
+    btn.textContent = 'Salvar Treino'; btn.disabled = false
+    return
+  }
+
   const workoutName = document.getElementById('wf-name').value.trim()
   const dateRaw     = document.getElementById('wf-date').value.trim()
   const endDateRaw  = document.getElementById('wf-end-date').value.trim()
@@ -4650,7 +4796,9 @@ async function saveWorkout(e) {
         date,
         end_date:     endDate,
         total_volume: parseFloat(totalVolume.toFixed(2)),
-        notes:        notes || null
+        notes:        notes || null,
+        routine_id:   routineId  || null,
+        day_of_week:  dayOfWeek  || null
       }).eq('id', editingWorkoutId)
       if (wErr) throw wErr
 
@@ -4665,7 +4813,8 @@ async function saveWorkout(e) {
       toast('Treino atualizado com sucesso!', 'success')
       const ctx = historyCtx
       editingWorkoutId = null
-      if (ctx?.isDetail) navigateTo('student-detail', { id: ctx.studentId, name: ctx.name })
+      if (ctx?.view === 'student-sheet') openStudentSheet(ctx.studentId, ctx.name)
+      else if (ctx?.isDetail) navigateTo('student-detail', { id: ctx.studentId, name: ctx.name })
       else navigateTo('students')
     } else {
       const { data: workout, error: wErr } = await sb.from('workouts').insert({
@@ -4675,6 +4824,8 @@ async function saveWorkout(e) {
         end_date:     endDate,
         total_volume: parseFloat(totalVolume.toFixed(2)),
         notes:        notes || null,
+        routine_id:   routineId  || null,
+        day_of_week:  dayOfWeek  || null,
         created_by:   me.id
       }).select().maybeSingle()
       if (wErr) throw wErr
