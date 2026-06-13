@@ -120,7 +120,8 @@
         radial-gradient(circle at 50% 0%, rgba(74,108,247,0.07), transparent 30%),
         linear-gradient(#EEF1F8 0%, #E8ECF5 100%);
     }
-    html.light select.form-control  { color-scheme: light; }
+    html.light select.form-control           { color-scheme: light; }
+    html.light input[type="date"].form-control { color-scheme: light; }
     html.light .workout-checkbox { color-scheme: light; }
     /* mensagens de feedback: cor de texto ajustada para contraste em fundo claro */
     html.light .msg.error   { color: var(--danger); }
@@ -338,7 +339,8 @@
       box-shadow: 0 0 0 3px var(--accent-a10);
     }
 
-    select.form-control { cursor: pointer; color-scheme: dark; }
+    select.form-control           { cursor: pointer; color-scheme: dark; }
+    input[type="date"].form-control { color-scheme: dark; }
     option { background: #0C1224; color: var(--text-primary); }
 
     .btn {
