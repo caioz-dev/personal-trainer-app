@@ -2167,6 +2167,11 @@
           <div id="student-sheet-body"></div>
         </div>
 
+        <!-- VIEW: Detalhes da Rotina (personal) -->
+        <div id="view-routine-detail" class="view" style="display:none">
+          <div id="routine-detail-body"></div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -2789,7 +2794,7 @@ const VIEW_TITLES = {
   students: 'Alunos', workout: 'Novo Treino',
   calculator: 'Calculadora', history: 'Meu Histórico',
   progress: 'Dashboard de Progresso', profile: 'Meu Perfil',
-  'student-sheet': 'Ficha do Aluno'
+  'student-sheet': 'Ficha do Aluno', 'routine-detail': 'Rotina'
 }
 
 async function navigateTo(view, opts = {}) {
@@ -2803,8 +2808,9 @@ async function navigateTo(view, opts = {}) {
   const navEl = document.getElementById('nav-' + view)
   if (navEl) navEl.classList.add('active')
   document.getElementById('page-title').textContent =
-    view === 'student-detail' ? (opts.name || 'Aluno') :
-    view === 'student-sheet'  ? (opts.studentName || 'Aluno') :
+    view === 'student-detail'  ? (opts.name || 'Aluno') :
+    view === 'student-sheet'   ? (opts.studentName || 'Aluno') :
+    view === 'routine-detail'  ? (opts.routineName || 'Rotina') :
     (VIEW_TITLES[view] || view)
 
   const el = document.getElementById('view-' + view)
@@ -2814,6 +2820,7 @@ async function navigateTo(view, opts = {}) {
     if      (view === 'students')       await renderStudents()
     else if (view === 'student-detail') await renderDetail(opts.id, opts.name, gen)
     else if (view === 'student-sheet')  await renderStudentSheet(opts.studentId, opts.studentName, gen)
+    else if (view === 'routine-detail') await renderRoutineDetail(opts, gen)
     else if (view === 'workout')        await setupWorkoutForm(opts)
     else if (view === 'calculator')     await setupCalc()
     else if (view === 'history')        await renderHistory(profile.id, gen)
@@ -3867,56 +3874,28 @@ async function renderStudentSheet(studentId, studentName, gen) {
       : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">📊</div><p>Nenhuma execução registrada ainda.</p></div>`
 
     const snSafe = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-    const DAY_ORDER  = ['segunda','terca','quarta','quinta','sexta','sabado','domingo']
-    const DAY_LABELS = { segunda:'Segunda-feira', terca:'Terça-feira', quarta:'Quarta-feira', quinta:'Quinta-feira', sexta:'Sexta-feira', sabado:'Sábado', domingo:'Domingo' }
     const routineCardsHTML = routinesData.length === 0
       ? `<p style="font-size:.82rem;color:var(--text-muted);padding:.5rem 0 .25rem">Nenhuma rotina criada ainda.</p>`
       : `<div class="routines-grid">${routinesData.map(r => {
-          const period = r.start_date || r.end_date
+          const period    = r.start_date || r.end_date
             ? `📅 ${r.start_date ? fmtDate(r.start_date) : '—'} → ${r.end_date ? fmtDate(r.end_date) : '—'}`
             : null
-          const rWorkouts  = workoutsByRoutine[r.id] || []
-          const wCount     = rWorkouts.length
-          const rNameSafe  = r.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-          const byDay      = {}
-          for (const w of rWorkouts) {
-            const d = w.day_of_week || '__noday__'
-            if (!byDay[d]) byDay[d] = []
-            byDay[d].push(w)
-          }
-          const mkWorkoutItems = (list) => list.map(w => {
-            const exCount = (w.workout_exercises || []).length
-            return `<div class="routine-workout-item">
-              <span class="routine-workout-item-connector">├</span>
-              <span class="routine-workout-item-name">${escHtml(w.name || 'Treino sem nome')}</span>
-              <span class="routine-workout-item-count">${exCount} ex.</span>
-              <button class="btn btn-sm btn-outline" style="padding:.15rem .4rem;font-size:.67rem;line-height:1;flex-shrink:0" onclick="event.stopPropagation();editWorkout('${w.id}')">✏️</button>
-              <button class="btn btn-sm btn-ghost-danger" style="padding:.15rem .4rem;font-size:.67rem;line-height:1;flex-shrink:0" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}','${snSafe}')">🗑️</button>
-            </div>`
-          }).join('')
-          const workoutListHTML = rWorkouts.length === 0 ? '' : `<div class="routine-workout-list">${
-            DAY_ORDER.filter(d => byDay[d]?.length).map(d =>
-              `<div class="routine-workout-day-label">${DAY_LABELS[d]}</div>${mkWorkoutItems(byDay[d])}`
-            ).join('') +
-            (byDay['__noday__']?.length
-              ? `<div class="routine-workout-day-label" style="color:var(--warning)">Sem dia definido</div>${mkWorkoutItems(byDay['__noday__'])}`
-              : '')
-          }</div>`
-          return `<div class="routine-card">
+          const rWorkouts = workoutsByRoutine[r.id] || []
+          const wCount    = rWorkouts.length
+          const rNameSafe = r.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+          return `<div class="routine-card" role="button" style="cursor:pointer"
+              onclick="openRoutineDetail('${studentId}','${snSafe}','${r.id}','${rNameSafe}')">
             <div class="routine-card-name">${escHtml(r.name)}</div>
             <div class="routine-card-meta">
               ${period ? `<span>${period}</span>` : `<span style="font-style:italic">Sem período definido</span>`}
               <span>👁 ${r.show_to_student === 'sempre' ? 'Sempre visível ao aluno' : 'Visível só na vigência'}</span>
               ${r.auto_archive ? `<span>📦 Arquivamento automático</span>` : ''}
-              ${r.general_instructions ? `<span class="routine-meta-notes" title="${escHtml(r.general_instructions)}">📝 ${escHtml(r.general_instructions)}</span>` : ''}
             </div>
-            ${workoutListHTML}
             <div class="routine-card-footer">
               <span class="routine-count-badge">${wCount} treino${wCount !== 1 ? 's' : ''}</span>
               <div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end">
-                <button class="btn btn-sm btn-primary" style="font-size:.72rem" onclick="openNewWorkoutForRoutine('${studentId}','${snSafe}','${r.id}','${rNameSafe}')">+ Treino</button>
-                <button class="btn btn-sm btn-outline" onclick="openRoutineModal('${studentId}','${snSafe}','${r.id}')">✏️</button>
-                <button class="btn btn-sm btn-ghost-danger" onclick="deleteRoutine('${r.id}','${studentId}','${snSafe}')">🗑️</button>
+                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openRoutineModal('${studentId}','${snSafe}','${r.id}')">✏️</button>
+                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteRoutine('${r.id}','${studentId}','${snSafe}')">🗑️</button>
               </div>
             </div>
           </div>`
@@ -3997,6 +3976,161 @@ async function renderStudentSheet(studentId, studentName, gen) {
 function closeStudentSheet() {
   if (sheetChart) { sheetChart.destroy(); sheetChart = null }
   navigateTo('students')
+}
+
+// ─────────────────────────────────────────────
+// VIEW: DETALHES DA ROTINA
+// ─────────────────────────────────────────────
+function openRoutineDetail(studentId, studentName, routineId, routineName) {
+  navigateTo('routine-detail', { studentId, studentName, routineId, routineName })
+}
+
+function closeRoutineDetail(studentId, studentName) {
+  openStudentSheet(studentId, studentName)
+}
+
+async function renderRoutineDetail(opts = {}, gen = 0) {
+  const { studentId, studentName, routineId } = opts
+  const body = document.getElementById('routine-detail-body')
+  if (!body) return
+
+  const snSafe = (studentName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+  body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando…</div>'
+
+  try {
+    const [routineRes, workoutsRes] = await Promise.all([
+      sb.from('routines').select('*').eq('id', routineId).single(),
+      sb.from('workouts')
+        .select('*, workout_exercises(*)')
+        .eq('routine_id', routineId)
+        .order('created_at', { ascending: true })
+    ])
+    if (routineRes.error) throw routineRes.error
+    if (navGen !== gen) return
+
+    const routine  = routineRes.data
+    const workouts = workoutsRes.data || []
+
+    // Sync page title with actual routine name (opts.routineName may be stale after edit)
+    const titleEl = document.getElementById('page-title')
+    if (titleEl) titleEl.textContent = routine.name
+
+    historyCtx = { studentId, name: studentName, view: 'routine-detail', routineId, routineName: routine.name }
+
+    const DAY_ORDER  = ['segunda','terca','quarta','quinta','sexta','sabado','domingo']
+    const DAY_LABELS = { segunda:'Segunda-feira', terca:'Terça-feira', quarta:'Quarta-feira', quinta:'Quinta-feira', sexta:'Sexta-feira', sabado:'Sábado', domingo:'Domingo' }
+
+    const byDay = {}
+    for (const w of workouts) {
+      const d = w.day_of_week || '__noday__'
+      if (!byDay[d]) byDay[d] = []
+      byDay[d].push(w)
+    }
+
+    const rNameSafe = routine.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+
+    const mkWorkoutCard = (w) => {
+      const exes    = w.workout_exercises || []
+      const uid     = 'rd' + w.id.replace(/-/g, '')
+      const exCount = exes.length
+      const vol     = getWorkoutVolume(w)
+      const exRows  = exes.length
+        ? exes.map(ex => {
+            const isAero  = ex.exercise_type === 'aerobico'
+            const detail  = isAero
+              ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—'
+              : `${ex.sets}×${ex.reps} @ ${ex.weight_kg} kg`
+            const volCell = isAero ? '—' : `${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
+            return `<tr>
+              <td style="font-weight:500;color:var(--text-secondary)">
+                ${escHtml(ex.exercise_name)}${ex.training_method ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">⚡ ${ex.training_method}</div>` : ''}
+              </td>
+              <td>${detail}</td>
+              <td class="vol-cell">${volCell}</td>
+            </tr>`
+          }).join('')
+        : `<tr><td colspan="3" style="padding:.75rem 1rem;font-style:italic;color:var(--text-muted)">Sem detalhes disponíveis</td></tr>`
+
+      return `
+        <div style="background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);margin-bottom:.625rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.75rem 1rem;cursor:pointer"
+               onclick="(function(){ const d=document.getElementById('rdd-${uid}'),i=document.getElementById('rdi-${uid}'),o=d.style.display!=='none'; d.style.display=o?'none':'block'; i.textContent=o?'▶':'▼'; })()">
+            <div style="min-width:0;flex:1">
+              <div style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${escHtml(w.name || 'Treino sem nome')}</div>
+              <div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem">${exCount} exercício${exCount !== 1 ? 's' : ''} · Vol: ${vol.toLocaleString('pt-BR')} kg</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:.4rem;flex-shrink:0">
+              <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar">✏️</button>
+              <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromRoutine('${w.id}','${studentId}','${snSafe}','${routineId}','${rNameSafe}')" title="Excluir">🗑️</button>
+              <span id="rdi-${uid}" style="color:var(--text-muted);font-size:.85rem;margin-left:.25rem;pointer-events:none">▶</span>
+            </div>
+          </div>
+          <div id="rdd-${uid}" style="display:none;border-top:1px solid var(--border-subtle);padding:.75rem 1rem">
+            <div class="table-wrap">
+              <table class="ex-detail-table">
+                <thead><tr><th>Exercício</th><th>Série × Reps @ Carga</th><th>Volume</th></tr></thead>
+                <tbody>${exRows}</tbody>
+              </table>
+            </div>
+          </div>
+        </div>`
+    }
+
+    const workoutListHTML = workouts.length === 0
+      ? `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon">📋</div>
+         <p>Nenhum treino nesta rotina ainda.<br>Use "Adicionar Treino" para criar o primeiro!</p></div>`
+      : [
+          ...DAY_ORDER.filter(d => byDay[d]?.length).map(d => `
+            <div style="margin-bottom:1.25rem">
+              <div class="section-label" style="margin-bottom:.625rem">${DAY_LABELS[d]}</div>
+              ${byDay[d].map(mkWorkoutCard).join('')}
+            </div>`),
+          byDay['__noday__']?.length ? `
+            <div style="margin-bottom:1.25rem">
+              <div class="section-label" style="margin-bottom:.625rem;color:var(--warning)">Sem dia definido</div>
+              ${byDay['__noday__'].map(mkWorkoutCard).join('')}
+            </div>` : ''
+        ].join('')
+
+    const period = routine.start_date || routine.end_date
+      ? `📅 ${routine.start_date ? fmtDate(routine.start_date) : '—'} → ${routine.end_date ? fmtDate(routine.end_date) : '—'}`
+      : null
+
+    body.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.75rem">
+        <div>
+          <div class="section-label" style="margin-bottom:.25rem">Rotina · ${escHtml(studentName)}</div>
+          <div style="font-size:1.05rem;font-weight:800;letter-spacing:-0.02em">${escHtml(routine.name)}</div>
+        </div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="openNewWorkoutForRoutine('${studentId}','${snSafe}','${routineId}','${rNameSafe}')">➕ Adicionar Treino</button>
+          <button class="btn btn-outline btn-sm" onclick="closeRoutineDetail('${studentId}','${snSafe}')">← Voltar</button>
+        </div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.25rem">
+        ${period ? `<span style="font-size:.78rem;color:var(--text-muted);background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.3rem .75rem">${period}</span>` : ''}
+        <span style="font-size:.78rem;color:var(--text-muted);background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.3rem .75rem">👁 ${routine.show_to_student === 'sempre' ? 'Sempre visível ao aluno' : 'Visível só na vigência'}</span>
+        ${routine.auto_archive ? `<span style="font-size:.78rem;color:var(--text-muted);background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.3rem .75rem">📦 Arquivamento automático</span>` : ''}
+        <span class="routine-count-badge">${workouts.length} treino${workouts.length !== 1 ? 's' : ''}</span>
+      </div>
+      ${routine.general_instructions ? `<div style="background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.75rem 1rem;margin-bottom:1.25rem;font-size:.83rem;color:var(--text-secondary)">📝 ${escHtml(routine.general_instructions)}</div>` : ''}
+      <div class="section-label" style="margin-bottom:.75rem">Treinos</div>
+      ${workoutListHTML}`
+  } catch (err) {
+    const errSnSafe = (opts.studentName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <p>Erro ao carregar rotina.</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
+              onclick="openRoutineDetail('${opts.studentId || ''}','${errSnSafe}','${opts.routineId || ''}','')">Tentar novamente</button></div>`
+  }
+}
+
+async function deleteWorkoutFromRoutine(workoutId, studentId, studentName, routineId, routineName) {
+  if (!confirm('Tem certeza que deseja excluir este treino? Esta ação não pode ser desfeita.')) return
+  const err = await _cascadeDeleteWorkout(workoutId)
+  if (err) { toast(err, 'error'); return }
+  toast('Treino excluído com sucesso!', 'success')
+  openRoutineDetail(studentId, studentName, routineId, routineName)
 }
 
 // ─────────────────────────────────────────────
@@ -4811,7 +4945,8 @@ async function saveWorkout(e) {
       toast('Treino atualizado com sucesso!', 'success')
       const ctx = historyCtx
       editingWorkoutId = null
-      if (ctx?.view === 'student-sheet') openStudentSheet(ctx.studentId, ctx.name)
+      if (ctx?.view === 'routine-detail') openRoutineDetail(ctx.studentId, ctx.name, ctx.routineId, ctx.routineName)
+      else if (ctx?.view === 'student-sheet') openStudentSheet(ctx.studentId, ctx.name)
       else if (ctx?.isDetail) navigateTo('student-detail', { id: ctx.studentId, name: ctx.name })
       else navigateTo('students')
     } else {
@@ -4851,9 +4986,13 @@ async function saveWorkout(e) {
         })
       }).catch(err => console.warn('[notify-new-workout] falhou silenciosamente:', err))
 
-      const prefId   = currentViewOpts.prefilledStudentId
-      const prefName = currentViewOpts.prefilledStudentName
-      if (prefId) {
+      const prefId        = currentViewOpts.prefilledStudentId
+      const prefName      = currentViewOpts.prefilledStudentName
+      const prefRoutineId = currentViewOpts.prefilledRoutineId
+      const prefRoutineNm = currentViewOpts.prefilledRoutineName
+      if (prefRoutineId && prefId) {
+        openRoutineDetail(prefId, prefName || '', prefRoutineId, prefRoutineNm || '')
+      } else if (prefId) {
         openStudentSheet(prefId, prefName || '')
       } else {
         await setupWorkoutForm()
