@@ -2951,7 +2951,33 @@ async function renderStudents() {
     })))
 
     const withData = withLast.filter(s => s.last).length
+
+    let execBanner = ''
+    {
+      const ids = students.map(s => s.id)
+      const { data: le } = await sb
+        .from('workout_executions')
+        .select('executed_at, student_id, workouts(name)')
+        .in('student_id', ids)
+        .order('executed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (le) {
+        const diffHours = (Date.now() - new Date(le.executed_at).getTime()) / 36e5
+        if (diffHours < 24) {
+          const sName    = students.find(s => s.id === le.student_id)?.name || 'Aluno'
+          const wName    = le.workouts?.name || 'Treino'
+          const execDate = fmtDate(le.executed_at.slice(0, 10))
+          execBanner = `<div class="new-workout-alert">
+            <span style="font-size:1.2rem">🏋️</span>
+            <span>${escHtml(sName)} concluiu o treino "${escHtml(wName)}" em ${execDate}.</span>
+          </div>`
+        }
+      }
+    }
+
     body.innerHTML = `
+      ${execBanner}
       ${linkForm}
       <div class="section-label reveal">Gestão de Alunos</div>
       <div class="stats-grid reveal-stagger">
