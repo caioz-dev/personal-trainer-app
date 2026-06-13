@@ -3072,10 +3072,57 @@ async function renderHistory(studentId, gen = 0) {
   body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando histórico…</div>'
 
   try {
-    const workouts = await fetchWorkouts(studentId)
+    const [workouts, routinesRes] = await Promise.all([
+      fetchWorkouts(studentId),
+      profile.role === 'student'
+        ? sb.from('routines').select('*').eq('student_id', studentId).order('created_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null })
+    ])
     window._workoutsCache = window._workoutsCache || {}
     workouts.forEach(w => { window._workoutsCache[w.id] = w })
     if (gen && navGen !== gen) return
+
+    let routinesSectionHTML = ''
+    if (profile.role === 'student') {
+      const todayStr = new Date().toISOString().slice(0, 10)
+      const visibleRoutines = (routinesRes.data || []).filter(r => {
+        if (r.show_to_student === 'sempre') return true
+        const afterStart = !r.start_date || todayStr >= r.start_date
+        const beforeEnd  = !r.end_date   || todayStr <= r.end_date
+        return afterStart && beforeEnd
+      })
+      if (visibleRoutines.length) {
+        const snSafe = profile.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+        const workoutsByRoutine = {}
+        for (const w of workouts) {
+          if (w.routine_id) {
+            if (!workoutsByRoutine[w.routine_id]) workoutsByRoutine[w.routine_id] = []
+            workoutsByRoutine[w.routine_id].push(w)
+          }
+        }
+        const cards = visibleRoutines.map(r => {
+          const period    = r.start_date || r.end_date
+            ? `📅 ${r.start_date ? fmtDate(r.start_date) : '—'} → ${r.end_date ? fmtDate(r.end_date) : '—'}`
+            : null
+          const wCount    = (workoutsByRoutine[r.id] || []).length
+          const rNameSafe = r.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+          return `<div class="routine-card" role="button" style="cursor:pointer"
+              onclick="openRoutineDetail('${studentId}','${snSafe}','${r.id}','${rNameSafe}','history')">
+            <div class="routine-card-name">${escHtml(r.name)}</div>
+            <div class="routine-card-meta">
+              ${period ? `<span>${period}</span>` : `<span style="font-style:italic">Sem período definido</span>`}
+            </div>
+            <div class="routine-card-footer">
+              <span class="routine-count-badge">${wCount} treino${wCount !== 1 ? 's' : ''}</span>
+            </div>
+          </div>`
+        }).join('')
+        routinesSectionHTML = `
+          <div class="section-label reveal" style="margin-bottom:.75rem">Minhas Rotinas</div>
+          <div class="routines-grid reveal" style="margin-bottom:1.75rem">${cards}</div>`
+      }
+    }
+
     let bannerHTML = ''
     if (workouts.length) {
       const diffHours = (Date.now() - new Date(workouts[0].created_at).getTime()) / 36e5
@@ -3086,7 +3133,7 @@ async function renderHistory(studentId, gen = 0) {
         </div>`
       }
     }
-    body.innerHTML = bannerHTML + historyHTML(workouts, profile.name)
+    body.innerHTML = bannerHTML + routinesSectionHTML + historyHTML(workouts, profile.name)
     if (workouts.length) initChart('evo-chart', [...workouts].reverse())
     bindWorkoutRowClicks(body)
   } catch (err) {
@@ -3981,12 +4028,13 @@ function closeStudentSheet() {
 // ─────────────────────────────────────────────
 // VIEW: DETALHES DA ROTINA
 // ─────────────────────────────────────────────
-function openRoutineDetail(studentId, studentName, routineId, routineName) {
-  navigateTo('routine-detail', { studentId, studentName, routineId, routineName })
+function openRoutineDetail(studentId, studentName, routineId, routineName, fromView) {
+  navigateTo('routine-detail', { studentId, studentName, routineId, routineName, fromView })
 }
 
 function closeRoutineDetail(studentId, studentName) {
-  openStudentSheet(studentId, studentName)
+  if (historyCtx?.fromView === 'history') navigateTo('history')
+  else openStudentSheet(studentId, studentName)
 }
 
 async function renderRoutineDetail(opts = {}, gen = 0) {
@@ -4010,12 +4058,14 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
 
     const routine  = routineRes.data
     const workouts = workoutsRes.data || []
+    window._workoutsCache = window._workoutsCache || {}
+    workouts.forEach(w => { window._workoutsCache[w.id] = w })
 
     // Sync page title with actual routine name (opts.routineName may be stale after edit)
     const titleEl = document.getElementById('page-title')
     if (titleEl) titleEl.textContent = routine.name
 
-    historyCtx = { studentId, name: studentName, view: 'routine-detail', routineId, routineName: routine.name }
+    historyCtx = { studentId, name: studentName, view: 'routine-detail', routineId, routineName: routine.name, fromView: opts.fromView || null }
 
     const DAY_ORDER  = ['segunda','terca','quarta','quinta','sexta','sabado','domingo']
     const DAY_LABELS = { segunda:'Segunda-feira', terca:'Terça-feira', quarta:'Quarta-feira', quinta:'Quinta-feira', sexta:'Sexta-feira', sabado:'Sábado', domingo:'Domingo' }
@@ -4060,8 +4110,10 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
               <div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem">${exCount} exercício${exCount !== 1 ? 's' : ''} · Vol: ${vol.toLocaleString('pt-BR')} kg</div>
             </div>
             <div style="display:flex;align-items:center;gap:.4rem;flex-shrink:0">
-              <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar">✏️</button>
-              <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromRoutine('${w.id}','${studentId}','${snSafe}','${routineId}','${rNameSafe}')" title="Excluir">🗑️</button>
+              ${profile.role === 'personal'
+                ? `<button class="btn btn-sm btn-outline" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar">✏️</button>
+                   <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromRoutine('${w.id}','${studentId}','${snSafe}','${routineId}','${rNameSafe}')" title="Excluir">🗑️</button>`
+                : `<button class="btn-start-workout workout-timer-btn" style="font-size:.78rem;padding:.4rem 1rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar Treino'}</button>`}
               <span id="rdi-${uid}" style="color:var(--text-muted);font-size:.85rem;margin-left:.25rem;pointer-events:none">▶</span>
             </div>
           </div>
@@ -4078,7 +4130,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
 
     const workoutListHTML = workouts.length === 0
       ? `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon">📋</div>
-         <p>Nenhum treino nesta rotina ainda.<br>Use "Adicionar Treino" para criar o primeiro!</p></div>`
+         <p>${profile.role === 'personal' ? 'Nenhum treino nesta rotina ainda.<br>Use "Adicionar Treino" para criar o primeiro!' : 'Nenhum treino nesta rotina ainda.'}</p></div>`
       : [
           ...DAY_ORDER.filter(d => byDay[d]?.length).map(d => `
             <div style="margin-bottom:1.25rem">
@@ -4099,18 +4151,18 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
     body.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.75rem">
         <div>
-          <div class="section-label" style="margin-bottom:.25rem">Rotina · ${escHtml(studentName)}</div>
+          <div class="section-label" style="margin-bottom:.25rem">${profile.role === 'student' ? 'Minha Rotina' : `Rotina · ${escHtml(studentName)}`}</div>
           <div style="font-size:1.05rem;font-weight:800;letter-spacing:-0.02em">${escHtml(routine.name)}</div>
         </div>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" onclick="openNewWorkoutForRoutine('${studentId}','${snSafe}','${routineId}','${rNameSafe}')">➕ Adicionar Treino</button>
+          ${profile.role === 'personal' ? `<button class="btn btn-primary btn-sm" onclick="openNewWorkoutForRoutine('${studentId}','${snSafe}','${routineId}','${rNameSafe}')">➕ Adicionar Treino</button>` : ''}
           <button class="btn btn-outline btn-sm" onclick="closeRoutineDetail('${studentId}','${snSafe}')">← Voltar</button>
         </div>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.25rem">
         ${period ? `<span style="font-size:.78rem;color:var(--text-muted);background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.3rem .75rem">${period}</span>` : ''}
-        <span style="font-size:.78rem;color:var(--text-muted);background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.3rem .75rem">👁 ${routine.show_to_student === 'sempre' ? 'Sempre visível ao aluno' : 'Visível só na vigência'}</span>
-        ${routine.auto_archive ? `<span style="font-size:.78rem;color:var(--text-muted);background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.3rem .75rem">📦 Arquivamento automático</span>` : ''}
+        ${profile.role === 'personal' ? `<span style="font-size:.78rem;color:var(--text-muted);background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.3rem .75rem">👁 ${routine.show_to_student === 'sempre' ? 'Sempre visível ao aluno' : 'Visível só na vigência'}</span>` : ''}
+        ${profile.role === 'personal' && routine.auto_archive ? `<span style="font-size:.78rem;color:var(--text-muted);background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.3rem .75rem">📦 Arquivamento automático</span>` : ''}
         <span class="routine-count-badge">${workouts.length} treino${workouts.length !== 1 ? 's' : ''}</span>
       </div>
       ${routine.general_instructions ? `<div style="background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.75rem 1rem;margin-bottom:1.25rem;font-size:.83rem;color:var(--text-secondary)">📝 ${escHtml(routine.general_instructions)}</div>` : ''}
