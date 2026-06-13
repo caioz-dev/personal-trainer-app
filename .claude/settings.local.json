@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git *)",
       "Bash(git diff *)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\user\\\\Desktop\\\\personal-trainer-app\\\\index.html\")"
     ]
   }
 }

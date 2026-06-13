@@ -542,6 +542,87 @@
       color: var(--text-primary);
     }
 
+    /* ---- ROTINAS ---- */
+    .routines-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(258px, 1fr));
+      gap: .875rem;
+      margin-bottom: .25rem;
+    }
+    .routine-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 1rem 1.125rem;
+      box-shadow: var(--shadow-card);
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    .routine-card:hover {
+      border-color: var(--neutral-a22);
+      box-shadow: var(--shadow-a28) 0px 4px 16px;
+    }
+    .routine-card-name {
+      font-size: .9rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+      margin-bottom: .35rem;
+    }
+    .routine-card-meta {
+      font-size: .76rem;
+      color: var(--text-muted);
+      display: flex;
+      flex-direction: column;
+      gap: .18rem;
+      margin-bottom: .875rem;
+    }
+    .routine-meta-notes {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%;
+      display: block;
+    }
+    .routine-card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: .75rem;
+      border-top: 1px solid var(--neutral-a08);
+    }
+    .routine-count-badge {
+      font-size: .72rem;
+      font-weight: 700;
+      color: var(--accent-soft);
+      background: var(--accent-a08);
+      border: 1px solid var(--accent-a15);
+      border-radius: var(--radius-pill);
+      padding: .15rem .6rem;
+    }
+    .routine-modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9000;
+      background: var(--overlay-a75);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .routine-modal-card {
+      background: var(--surface-dark-a99);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-xl);
+      padding: 2rem 1.75rem;
+      max-width: 480px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 25px 60px var(--shadow-a50);
+    }
+
     /* ---- MAIN ---- */
     .main-content { margin-left: 260px; flex: 1; min-height: 100vh; }
 
@@ -2220,6 +2301,49 @@
   </div>
 </div>
 
+<div id="routine-modal" class="routine-modal-overlay" style="display:none" onclick="if(event.target===this)closeRoutineModal()">
+  <div class="routine-modal-card">
+    <div style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em;margin-bottom:1.25rem" id="routine-modal-title">Nova Rotina</div>
+    <form id="routine-form" onsubmit="saveRoutine(event)">
+      <div class="form-group">
+        <label>Nome da rotina *</label>
+        <input id="rf-name" class="form-control" type="text" required placeholder="Ex: Hipertrofia Máxima 4">
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Data de início</label>
+          <input id="rf-start" class="form-control" type="date">
+        </div>
+        <div class="form-group">
+          <label>Data de término</label>
+          <input id="rf-end" class="form-control" type="date">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Mostrar para o aluno</label>
+        <select id="rf-show" class="form-control">
+          <option value="sempre">Sempre</option>
+          <option value="apenas_vigencia">Apenas durante a vigência</option>
+        </select>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:.6rem;padding:.25rem 0">
+        <input type="checkbox" id="rf-auto-archive" style="width:1rem;height:1rem;flex-shrink:0;accent-color:var(--accent);cursor:pointer">
+        <label for="rf-auto-archive" style="margin:0;font-size:.82rem;font-weight:500;color:var(--text-secondary);text-transform:none;letter-spacing:0;cursor:pointer">Arquivar automaticamente ao fim da vigência</label>
+      </div>
+      <div class="form-group">
+        <label>Orientações gerais</label>
+        <textarea id="rf-instructions" class="form-control" rows="3" placeholder="Instruções, observações, metas da rotina…" style="resize:vertical;min-height:72px"></textarea>
+      </div>
+      <input type="hidden" id="rf-student-id">
+      <input type="hidden" id="rf-student-name">
+      <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.5rem;flex-wrap:wrap">
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeRoutineModal()">Cancelar</button>
+        <button type="submit" id="rf-btn" class="btn btn-primary btn-sm">Salvar Rotina</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script>
 // ─────────────────────────────────────────────
 // CONFIG
@@ -2244,6 +2368,7 @@ let _pendingReviewFinalTime = null
 let _selectedFeeling        = null
 let _selectedEffort         = null
 let _selectedWorkoutIds     = new Set()
+let _editingRoutineId       = null
 let _metronomeToken         = null   // { exId, cancelled }
 let _audioCtx               = null   // reused AudioContext for metronome
 
@@ -2262,6 +2387,9 @@ function resetAppState() {
   if (compModal)    compModal.style.display    = 'none'
   if (timerModal)   timerModal.style.display   = 'none'
   if (reviewModal)  reviewModal.style.display  = 'none'
+  const routineModal = document.getElementById('routine-modal')
+  if (routineModal)  routineModal.style.display = 'none'
+  _editingRoutineId = null
   document.body.style.overflow = ''
 
   // Estado de execução de treino
@@ -3358,14 +3486,15 @@ async function renderStudentSheet(studentId, studentName, gen) {
   body.innerHTML = header + '<div class="loading"><div class="spinner"></div>Carregando…</div>'
 
   try {
-    const [workouts, execRes, spRes, reviewsRes] = await Promise.all([
+    const [workouts, execRes, spRes, reviewsRes, routinesRes] = await Promise.all([
       fetchWorkouts(studentId),
       sb.from('workout_executions')
         .select('*, workout_exercises(exercise_name, exercise_type, sets, reps, weight_kg, duration_min, distance_km, speed_kmh, hr_min, hr_max, training_method, method_description), workouts(name, date)')
         .eq('student_id', studentId)
         .order('executed_at', { ascending: false }),
       sb.from('student_profiles').select('*').eq('student_id', studentId).maybeSingle(),
-      sb.from('workout_reviews').select('*').eq('student_id', studentId).order('created_at', { ascending: false })
+      sb.from('workout_reviews').select('*').eq('student_id', studentId).order('created_at', { ascending: false }),
+      sb.from('routines').select('*').eq('student_id', studentId).order('created_at', { ascending: false })
     ])
 
     const executions = execRes.data || []
@@ -3376,7 +3505,9 @@ async function renderStudentSheet(studentId, studentName, gen) {
       if (!reviewsByWorkout[r.workout_id]) reviewsByWorkout[r.workout_id] = r
     }
 
-    if (!workouts.length && !executions.length) {
+    const routinesData = routinesRes.data || []
+
+    if (!workouts.length && !executions.length && !routinesData.length) {
       body.innerHTML = header + `<div class="empty-state"><div class="empty-icon">🏋️</div>
         <p>Nenhum treino registrado para ${studentName}.</p></div>`
       return
@@ -3635,6 +3766,39 @@ async function renderStudentSheet(studentId, studentName, gen) {
         }).join('')
       : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">📊</div><p>Nenhuma execução registrada ainda.</p></div>`
 
+    const snSafe = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    const routineCardsHTML = routinesData.length === 0
+      ? `<p style="font-size:.82rem;color:var(--text-muted);padding:.5rem 0 .25rem">Nenhuma rotina criada ainda.</p>`
+      : `<div class="routines-grid">${routinesData.map(r => {
+          const period = r.start_date || r.end_date
+            ? `📅 ${r.start_date ? fmtDate(r.start_date) : '—'} → ${r.end_date ? fmtDate(r.end_date) : '—'}`
+            : null
+          return `<div class="routine-card">
+            <div class="routine-card-name">${escHtml(r.name)}</div>
+            <div class="routine-card-meta">
+              ${period ? `<span>${period}</span>` : `<span style="font-style:italic">Sem período definido</span>`}
+              <span>👁 ${r.show_to_student === 'sempre' ? 'Sempre visível ao aluno' : 'Visível só na vigência'}</span>
+              ${r.auto_archive ? `<span>📦 Arquivamento automático</span>` : ''}
+              ${r.general_instructions ? `<span class="routine-meta-notes" title="${escHtml(r.general_instructions)}">📝 ${escHtml(r.general_instructions)}</span>` : ''}
+            </div>
+            <div class="routine-card-footer">
+              <span class="routine-count-badge">0 treinos</span>
+              <div style="display:flex;gap:.4rem">
+                <button class="btn btn-sm btn-outline" onclick="openRoutineModal('${studentId}','${snSafe}','${r.id}')">✏️</button>
+                <button class="btn btn-sm btn-ghost-danger" onclick="deleteRoutine('${r.id}','${studentId}','${snSafe}')">🗑️</button>
+              </div>
+            </div>
+          </div>`
+        }).join('')}</div>`
+    const routinesSectionHTML = `
+      <div style="margin-top:1.25rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
+          <div class="section-label" style="margin-bottom:0">Rotinas</div>
+          <button class="btn btn-primary btn-sm" onclick="openRoutineModal('${studentId}','${snSafe}')">➕ Nova Rotina</button>
+        </div>
+        ${routineCardsHTML}
+      </div>`
+
     const profileStatsHTML = studentProfileData && (studentProfileData.age || studentProfileData.height_cm || studentProfileData.weight_kg) ? `
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1.25rem">
         ${studentProfileData.age       ? `<div style="background:var(--accent-a08);border:1px solid var(--accent-a18);border-radius:var(--radius-lg);padding:.5rem 1rem;text-align:center"><div style="font-size:1.1rem;font-weight:800;color:var(--text-primary)">${studentProfileData.age}</div><div style="font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted)">anos</div></div>` : ''}
@@ -3658,6 +3822,8 @@ async function renderStudentSheet(studentId, studentName, gen) {
           <div class="stat-label">Execuções</div>
         </div>
       </div>
+      ${routinesSectionHTML}
+      <div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border-subtle)">
       <div class="section-label" style="margin-bottom:.75rem">Histórico de Treinos</div>
       <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:.875rem">Clique em um treino para ver os exercícios.</p>
       ${profile.role === 'personal' ? `<div id="bulk-select-bar" class="bulk-select-bar" style="display:none">
@@ -3682,6 +3848,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
       <div style="margin-top:1.75rem;padding-top:1.5rem;border-top:1px solid var(--border-subtle)">
         <div class="section-label" style="margin-bottom:.875rem">Execuções Realizadas</div>
         ${execSectionHTML}
+      </div>
       </div>`
     bindWorkoutRowClicks(body)
   } catch (err) {
@@ -3695,6 +3862,88 @@ async function renderStudentSheet(studentId, studentName, gen) {
 function closeStudentSheet() {
   if (sheetChart) { sheetChart.destroy(); sheetChart = null }
   navigateTo('students')
+}
+
+// ─────────────────────────────────────────────
+// ROTINAS — CRUD
+// ─────────────────────────────────────────────
+async function openRoutineModal(studentId, studentName, routineId = null) {
+  _editingRoutineId = routineId || null
+  const modal = document.getElementById('routine-modal')
+  document.getElementById('routine-form').reset()
+  document.getElementById('rf-student-id').value   = studentId
+  document.getElementById('rf-student-name').value = studentName
+
+  if (routineId) {
+    document.getElementById('routine-modal-title').textContent = 'Editar Rotina'
+    document.getElementById('rf-btn').textContent = 'Salvar Alterações'
+    const { data, error } = await sb.from('routines').select('*').eq('id', routineId).single()
+    if (error || !data) { toast('Erro ao carregar rotina.', 'error'); return }
+    document.getElementById('rf-name').value           = data.name || ''
+    document.getElementById('rf-start').value          = data.start_date || ''
+    document.getElementById('rf-end').value            = data.end_date || ''
+    document.getElementById('rf-show').value           = data.show_to_student || 'sempre'
+    document.getElementById('rf-auto-archive').checked = !!data.auto_archive
+    document.getElementById('rf-instructions').value  = data.general_instructions || ''
+  } else {
+    document.getElementById('routine-modal-title').textContent = 'Nova Rotina'
+    document.getElementById('rf-btn').textContent = 'Salvar Rotina'
+  }
+
+  modal.style.display = 'flex'
+  document.body.style.overflow = 'hidden'
+  setTimeout(() => document.getElementById('rf-name').focus(), 60)
+}
+
+function closeRoutineModal() {
+  document.getElementById('routine-modal').style.display = 'none'
+  document.body.style.overflow = ''
+  _editingRoutineId = null
+}
+
+async function saveRoutine(e) {
+  e.preventDefault()
+  const btn = document.getElementById('rf-btn')
+  btn.textContent = 'Salvando…'; btn.disabled = true
+
+  const studentId   = document.getElementById('rf-student-id').value
+  const studentName = document.getElementById('rf-student-name').value
+  const payload = {
+    name:                 document.getElementById('rf-name').value.trim(),
+    start_date:           document.getElementById('rf-start').value  || null,
+    end_date:             document.getElementById('rf-end').value    || null,
+    show_to_student:      document.getElementById('rf-show').value,
+    auto_archive:         document.getElementById('rf-auto-archive').checked,
+    general_instructions: document.getElementById('rf-instructions').value.trim() || null,
+  }
+
+  let error
+  if (_editingRoutineId) {
+    ;({ error } = await sb.from('routines').update(payload).eq('id', _editingRoutineId))
+  } else {
+    payload.personal_id = profile.id
+    payload.student_id  = studentId
+    ;({ error } = await sb.from('routines').insert(payload))
+  }
+
+  if (error) {
+    toast('Erro ao salvar rotina: ' + error.message, 'error')
+    btn.textContent = _editingRoutineId ? 'Salvar Alterações' : 'Salvar Rotina'
+    btn.disabled = false
+    return
+  }
+
+  toast(_editingRoutineId ? 'Rotina atualizada!' : 'Rotina criada!', 'success')
+  closeRoutineModal()
+  openStudentSheet(studentId, studentName)
+}
+
+async function deleteRoutine(routineId, studentId, studentName) {
+  if (!confirm('Excluir esta rotina? Treinos vinculados a ela serão desvinculados.')) return
+  const { error } = await sb.from('routines').delete().eq('id', routineId)
+  if (error) { toast('Erro ao excluir: ' + error.message, 'error'); return }
+  toast('Rotina excluída.', 'success')
+  openStudentSheet(studentId, studentName)
 }
 
 async function openNewWorkoutForStudent(studentId, studentName) {
@@ -4538,6 +4787,10 @@ async function runCalc() {
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+}
+
 function fmtDate(s) {
   if (!s) return '—'
   const [y, m, d] = s.split('-')
