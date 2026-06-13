@@ -3921,12 +3921,34 @@ async function openRoutineModal(studentId, studentName, routineId = null) {
   modal.style.display = 'flex'
   document.body.style.overflow = 'hidden'
   setTimeout(() => document.getElementById('rf-name').focus(), 60)
+
+  // ---- DEBUG DATE INPUT ----
+  function _debugDateKey(e) {
+    console.log('[DEBUG DATE] keydown:', e.key,
+      '| target tag:', e.target.tagName,
+      '| target type:', e.target.type,
+      '| target id:', e.target.id,
+      '| defaultPrevented:', e.defaultPrevented,
+      '| activeElement:', document.activeElement?.id,
+      '| activeElement type:', document.activeElement?.type)
+  }
+  // captura=true: dispara antes de qualquer listener do input
+  document.addEventListener('keydown', _debugDateKey, true)
+  modal._debugDateKey = _debugDateKey
+  // ---- FIM DEBUG ----
 }
 
 function closeRoutineModal() {
-  document.getElementById('routine-modal').style.display = 'none'
+  const modal = document.getElementById('routine-modal')
+  modal.style.display = 'none'
   document.body.style.overflow = ''
   _editingRoutineId = null
+  // ---- DEBUG DATE INPUT ----
+  if (modal._debugDateKey) {
+    document.removeEventListener('keydown', modal._debugDateKey, true)
+    modal._debugDateKey = null
+  }
+  // ---- FIM DEBUG ----
 }
 
 async function saveRoutine(e) {
