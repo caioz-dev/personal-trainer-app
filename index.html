@@ -785,7 +785,34 @@
       padding: 1.5rem;
       box-shadow: var(--shadow-card);
       cursor: pointer;
+      position: relative;
       transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+    }
+
+    .student-unlink-btn {
+      position: absolute;
+      top: .6rem;
+      right: .6rem;
+      width: 1.6rem;
+      height: 1.6rem;
+      border-radius: 50%;
+      border: 1px solid var(--border-subtle);
+      background: transparent;
+      color: var(--text-muted);
+      font-size: .75rem;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity .15s, background .15s, color .15s, border-color .15s;
+    }
+    .student-card:hover .student-unlink-btn { opacity: 1; }
+    .student-unlink-btn:hover {
+      background: rgba(239,68,68,.12);
+      border-color: rgba(239,68,68,.4);
+      color: #ef4444;
     }
 
     .student-card:hover {
@@ -2429,6 +2456,18 @@
   </div>
 </div>
 
+<!-- Modal: confirmar desvínculo de aluno -->
+<div id="unlink-modal" class="routine-modal-overlay" style="display:none" onclick="if(event.target===this)closeUnlinkModal()">
+  <div class="routine-modal-card" style="max-width:400px">
+    <div style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em;margin-bottom:.75rem" id="unlink-modal-title">Desvincular aluno?</div>
+    <p id="unlink-modal-body" style="font-size:.88rem;color:var(--text-secondary);line-height:1.6;margin:0 0 1.5rem"></p>
+    <div style="display:flex;gap:.75rem;justify-content:flex-end;flex-wrap:wrap">
+      <button type="button" class="btn btn-outline btn-sm" onclick="closeUnlinkModal()">Cancelar</button>
+      <button type="button" id="unlink-confirm-btn" class="btn btn-sm" style="background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.35)" onclick="executeUnlink()">Desvincular</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ─────────────────────────────────────────────
 // CONFIG
@@ -2869,6 +2908,7 @@ async function fetchStudents() {
     .select('student_id')
     .eq('personal_id', me.id)
     .neq('student_id', me.id)
+    .eq('active', true)
   if (lErr) throw lErr
 
   const ids = (links || []).map(l => l.student_id)
@@ -2982,7 +3022,7 @@ async function renderStudents() {
       <div class="section-label reveal">Gestão de Alunos</div>
       <div class="stats-grid reveal-stagger">
         <div class="stat-card stagger-item" style="--stagger-index:0">
-          <div class="stat-value">${students.length}</div>
+          <div class="stat-value" id="students-count-value">${students.length}</div>
           <div class="stat-label">Alunos vinculados</div>
         </div>
         <div class="stat-card stagger-item" style="--stagger-index:1;border-left-color:var(--success)">
@@ -2997,10 +3037,13 @@ async function renderStudents() {
       </div>
       <div class="students-grid reveal-stagger">
         ${withLast.map((s, i) => {
-          const ini = s.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase()
-          const vol = s.last ? getWorkoutVolume(s.last) : null
-          return `<div class="student-card stagger-item" style="--stagger-index:${i}"
-              onclick="openStudentSheet('${s.id}','${s.name.replace(/'/g,"\\'")}')">
+          const ini     = s.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase()
+          const vol     = s.last ? getWorkoutVolume(s.last) : null
+          const nameSafe = s.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")
+          return `<div class="student-card stagger-item" data-student-id="${s.id}" style="--stagger-index:${i}"
+              onclick="openStudentSheet('${s.id}','${nameSafe}')">
+            <button class="student-unlink-btn" title="Desvincular aluno"
+                onclick="event.stopPropagation();confirmUnlinkStudent('${s.id}','${nameSafe}')">✕</button>
             <div class="student-avatar">${ini}</div>
             <div class="student-name">${s.name}</div>
             <div class="student-meta">
@@ -3040,16 +3083,17 @@ async function addStudentByEmail() {
 
     const { data: existing } = await sb
       .from('personal_students')
-      .select('id')
+      .select('id, active')
       .eq('personal_id', me.id)
       .eq('student_id', found.id)
       .maybeSingle()
 
-    if (existing) { toast(`${found.name} já está vinculado à sua conta.`, 'info'); return }
+    if (existing?.active === true) { toast(`${found.name} já está vinculado à sua conta.`, 'info'); return }
 
-    const { error: lErr } = await sb
-      .from('personal_students')
-      .insert({ personal_id: me.id, student_id: found.id })
+    // Vínculo inativo (desvinculado antes): reativar em vez de inserir novo
+    const { error: lErr } = existing
+      ? await sb.from('personal_students').update({ active: true }).eq('id', existing.id)
+      : await sb.from('personal_students').insert({ personal_id: me.id, student_id: found.id })
     if (lErr) throw lErr
 
     toast(`${found.name} vinculado com sucesso!`, 'success')
@@ -4591,6 +4635,58 @@ async function saveRoutine(e) {
   closeRoutineModal()
   if (historyCtx?.view === 'my-workout') navigateTo('my-workout')
   else openStudentSheet(studentId, studentName)
+}
+
+// ─────────────────────────────────────────────
+// DESVÍNCULO DE ALUNO
+// ─────────────────────────────────────────────
+let _unlinkStudentId   = null
+let _unlinkStudentName = null
+
+function confirmUnlinkStudent(studentId, studentName) {
+  _unlinkStudentId   = studentId
+  _unlinkStudentName = studentName
+  document.getElementById('unlink-modal-title').textContent = `Desvincular ${studentName}?`
+  document.getElementById('unlink-modal-body').textContent =
+    'Ele(a) deixará de aparecer na sua lista de alunos. O histórico e dados permanecem salvos e podem ser recuperados depois.'
+  document.getElementById('unlink-modal').style.display = 'flex'
+}
+
+function closeUnlinkModal() {
+  document.getElementById('unlink-modal').style.display = 'none'
+  _unlinkStudentId   = null
+  _unlinkStudentName = null
+}
+
+async function executeUnlink() {
+  if (!_unlinkStudentId) return
+  const studentId   = _unlinkStudentId
+  const studentName = _unlinkStudentName
+  const btn = document.getElementById('unlink-confirm-btn')
+  btn.textContent = 'Desvinculando…'; btn.disabled = true
+
+  const { error } = await sb.from('personal_students')
+    .update({ active: false })
+    .eq('personal_id', me.id)
+    .eq('student_id', studentId)
+
+  btn.textContent = 'Desvincular'; btn.disabled = false
+
+  if (error) { toast('Erro ao desvincular: ' + error.message, 'error'); return }
+
+  closeUnlinkModal()
+
+  // Remove o card do DOM
+  document.querySelector(`.student-card[data-student-id="${studentId}"]`)?.remove()
+
+  // Atualiza o contador
+  const countEl = document.getElementById('students-count-value')
+  if (countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent || '0') - 1)
+
+  // Atualiza array em memória
+  students = students.filter(s => s.id !== studentId)
+
+  toast(`${studentName} foi desvinculado.`, 'success')
 }
 
 async function deleteRoutine(routineId, studentId, studentName) {
