@@ -835,6 +835,8 @@
       font-weight: 800;
       margin-bottom: .875rem;
       letter-spacing: -0.02em;
+      overflow: hidden;
+      flex-shrink: 0;
     }
 
     .student-name { font-size: .9rem; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em; }
@@ -2900,6 +2902,21 @@ function observeRevealElements() {
 }
 
 // ─────────────────────────────────────────────
+// HELPERS DE UI
+// ─────────────────────────────────────────────
+function avatarEl(name, avatarUrl, sizePx, extraStyle) {
+  sizePx    = sizePx    || 48
+  extraStyle = extraStyle || ''
+  const ini    = (name || '?').trim().split(/\s+/).map(n => n[0]).join('').substring(0, 2).toUpperCase()
+  const shared = `width:${sizePx}px;height:${sizePx}px;border-radius:50%;flex-shrink:0;overflow:hidden;${extraStyle ? extraStyle + ';' : ''}`
+  if (avatarUrl) {
+    return `<img src="${escHtml(avatarUrl)}" alt="${ini}" style="${shared}object-fit:cover;display:block" loading="lazy">`
+  }
+  const fs = Math.max(Math.round(sizePx * 0.34), 11)
+  return `<div style="${shared}background:var(--accent-a10);border:1px solid var(--accent-a20);display:flex;align-items:center;justify-content:center;color:var(--accent-soft);font-size:${fs}px;font-weight:800;letter-spacing:-0.02em">${ini}</div>`
+}
+
+// ─────────────────────────────────────────────
 // DATA
 // ─────────────────────────────────────────────
 async function fetchStudents() {
@@ -3037,14 +3054,13 @@ async function renderStudents() {
       </div>
       <div class="students-grid reveal-stagger">
         ${withLast.map((s, i) => {
-          const ini     = s.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase()
-          const vol     = s.last ? getWorkoutVolume(s.last) : null
+          const vol      = s.last ? getWorkoutVolume(s.last) : null
           const nameSafe = s.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")
           return `<div class="student-card stagger-item" data-student-id="${s.id}" style="--stagger-index:${i}"
               onclick="openStudentSheet('${s.id}','${nameSafe}')">
             <button class="student-unlink-btn" title="Desvincular aluno"
                 onclick="event.stopPropagation();confirmUnlinkStudent('${s.id}','${nameSafe}')">✕</button>
-            <div class="student-avatar">${ini}</div>
+            ${avatarEl(s.name, s.avatar_url || null, 48, 'margin-bottom:.875rem')}
             <div class="student-name">${s.name}</div>
             <div class="student-meta">
               Último treino: ${s.last ? fmtDate(s.last.date) : '—'}<br>
@@ -3707,13 +3723,13 @@ async function renderStudentSheet(studentId, studentName, gen) {
   if (sheetChart) { sheetChart.destroy(); sheetChart = null }
   const body = document.getElementById('student-sheet-body')
 
-  const ini = studentName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+  const studentAvatarUrl = (students.find(s => s.id === studentId) || {}).avatar_url || null
   const safeIdH   = studentId
   const safeNameH = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
   const header = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.75rem">
       <div style="display:flex;align-items:center;gap:.875rem">
-        <div class="student-avatar" style="margin-bottom:0">${ini}</div>
+        ${avatarEl(studentName, studentAvatarUrl, 48, 'margin-bottom:0')}
         <div>
           <div class="section-label" style="margin-bottom:.25rem">Ficha do Aluno</div>
           <div style="font-size:1.05rem;font-weight:800;letter-spacing:-0.02em">${studentName}</div>
@@ -4756,6 +4772,14 @@ async function renderProfile() {
         <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1.25rem">
           Suas informações ficam visíveis para o seu personal trainer na ficha do aluno.
         </p>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:.75rem;padding-bottom:1.25rem;margin-bottom:1.25rem;border-bottom:1px solid var(--border-subtle)">
+          <div id="prof-avatar-wrap">
+            ${avatarEl(profile.name, profile.avatar_url || null, 80, '')}
+          </div>
+          <input type="file" id="avatar-input" accept="image/*" style="display:none" onchange="uploadAvatar(this)">
+          <button type="button" id="avatar-upload-btn" class="btn btn-outline btn-sm"
+                  onclick="document.getElementById('avatar-input').click()">📷 Alterar foto</button>
+        </div>
         <form onsubmit="saveProfile(event)">
           <div class="form-grid">
             <div class="form-group">
@@ -4800,6 +4824,52 @@ async function saveProfile(e) {
     toast('Erro ao salvar perfil: ' + err.message, 'error')
   }
   btn.textContent = 'Salvar'; btn.disabled = false
+}
+
+async function uploadAvatar(input) {
+  const file = input.files?.[0]
+  if (!file) return
+
+  if (!file.type.startsWith('image/')) {
+    toast('Selecione um arquivo de imagem (JPG, PNG, WEBP…).', 'error')
+    input.value = ''; return
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    toast('A foto deve ter no máximo 2 MB.', 'error')
+    input.value = ''; return
+  }
+
+  const btn = document.getElementById('avatar-upload-btn')
+  if (btn) { btn.textContent = '⏳ Enviando…'; btn.disabled = true }
+
+  try {
+    const path = `${profile.id}/avatar`
+
+    const { error: upErr } = await sb.storage
+      .from('avatars')
+      .upload(path, file, { upsert: true, contentType: file.type })
+    if (upErr) throw upErr
+
+    const { data: { publicUrl } } = sb.storage.from('avatars').getPublicUrl(path)
+    const urlWithBust = `${publicUrl}?t=${Date.now()}`
+
+    const { error: dbErr } = await sb.from('profiles')
+      .update({ avatar_url: urlWithBust })
+      .eq('id', profile.id)
+    if (dbErr) throw dbErr
+
+    profile.avatar_url = urlWithBust
+
+    const wrap = document.getElementById('prof-avatar-wrap')
+    if (wrap) wrap.innerHTML = avatarEl(profile.name, profile.avatar_url, 80, '')
+
+    toast('Foto de perfil atualizada!', 'success')
+  } catch (err) {
+    toast('Erro ao enviar foto: ' + err.message, 'error')
+  } finally {
+    if (btn) { btn.textContent = '📷 Alterar foto'; btn.disabled = false }
+    input.value = ''
+  }
 }
 
 // ─────────────────────────────────────────────
