@@ -4572,6 +4572,22 @@ async function saveRoutine(e) {
   }
 
   toast(_editingRoutineId ? 'Rotina atualizada!' : 'Rotina criada!', 'success')
+
+  // Fire-and-forget: notifica o aluno por e-mail apenas na criação
+  if (!_editingRoutineId) {
+    fetch(`${SUPA_URL}/functions/v1/notify-new-routine`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPA_KEY },
+      body: JSON.stringify({
+        student_id:   studentId,
+        routine_name: payload.name,
+        start_date:   payload.start_date,
+        end_date:     payload.end_date,
+        personal_name: profile.name
+      })
+    }).catch(err => console.warn('[notify-new-routine] falhou silenciosamente:', err))
+  }
+
   closeRoutineModal()
   if (historyCtx?.view === 'my-workout') navigateTo('my-workout')
   else openStudentSheet(studentId, studentName)
