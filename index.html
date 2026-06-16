@@ -2975,10 +2975,13 @@ function getWorkoutAeroDistance(w) {
 }
 
 function workoutVolumeDisplay(w) {
-  if (isWorkoutAllAerobic(w)) {
-    return getWorkoutAeroDistance(w).toLocaleString('pt-BR') + ' km'
-  }
-  return getWorkoutVolume(w).toLocaleString('pt-BR') + ' kg'
+  const exes    = w?.workout_exercises || []
+  const hasMusc = exes.some(ex => ex.exercise_type !== 'aerobico')
+  const hasAero = exes.some(ex => ex.exercise_type === 'aerobico')
+  const kgPart  = hasMusc ? getWorkoutVolume(w).toLocaleString('pt-BR') + ' kg' : null
+  const kmPart  = hasAero ? getWorkoutAeroDistance(w).toLocaleString('pt-BR') + ' km' : null
+  if (kgPart && kmPart) return kgPart + ' / ' + kmPart
+  return kmPart || kgPart || '0 kg'
 }
 
 // ─────────────────────────────────────────────
@@ -5419,17 +5422,29 @@ function refreshExerciseVolume(id) {
 }
 
 function refreshTotalVolume() {
-  let total = 0
+  let totalMusc = 0, totalAeroKm = 0, hasMusc = false, hasAero = false
   document.querySelectorAll('#exercise-list .exercise-row').forEach(row => {
     const type = row.querySelector('.ex-type')?.value || 'musculacao'
-    if (type === 'aerobico') return
-    const sets   = parseInt(row.querySelector('.ex-sets')?.value)    || 0
-    const weight = parseFloat(row.querySelector('.ex-weight')?.value) || 0
-    const reps   = parseInt(row.querySelector('.ex-reps')?.value)    || 0
-    total += sets * weight * reps
+    if (type === 'aerobico') {
+      hasAero = true
+      totalAeroKm += parseFloat(row.querySelector('.ex-distance')?.value) || 0
+    } else {
+      hasMusc = true
+      const sets   = parseInt(row.querySelector('.ex-sets')?.value)    || 0
+      const weight = parseFloat(row.querySelector('.ex-weight')?.value) || 0
+      const reps   = parseInt(row.querySelector('.ex-reps')?.value)    || 0
+      totalMusc += sets * weight * reps
+    }
   })
   const el = document.getElementById('total-vol-preview')
-  if (el) el.textContent = total.toLocaleString('pt-BR') + ' kg'
+  if (!el) return
+  if (hasAero && hasMusc) {
+    el.innerHTML = totalMusc.toLocaleString('pt-BR') + ' kg<br>' + totalAeroKm.toLocaleString('pt-BR') + ' km'
+  } else if (hasAero) {
+    el.textContent = totalAeroKm.toLocaleString('pt-BR') + ' km'
+  } else {
+    el.textContent = totalMusc.toLocaleString('pt-BR') + ' kg'
+  }
 }
 
 async function saveWorkout(e) {
