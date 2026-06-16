@@ -4490,14 +4490,15 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
       const exes    = w.workout_exercises || []
       const uid     = 'rd' + w.id.replace(/-/g, '')
       const exCount = exes.length
-      const vol     = getWorkoutVolume(w)
       const exRows  = exes.length
         ? exes.map(ex => {
             const isAero  = ex.exercise_type === 'aerobico'
             const detail  = isAero
               ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—'
               : `${ex.sets}×${ex.reps} @ ${ex.weight_kg} kg`
-            const volCell = isAero ? '—' : `${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
+            const volCell = isAero
+              ? (ex.distance_km ? `${parseFloat(ex.distance_km).toLocaleString('pt-BR')} km` : '—')
+              : `${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
             return `<tr>
               <td style="font-weight:500;color:var(--text-secondary)">
                 ${escHtml(ex.exercise_name)}${ex.training_method ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">⚡ ${ex.training_method}</div>` : ''}
@@ -4514,7 +4515,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
                onclick="(function(){ const d=document.getElementById('rdd-${uid}'),i=document.getElementById('rdi-${uid}'),o=d.style.display!=='none'; d.style.display=o?'none':'block'; i.textContent=o?'▶':'▼'; })()">
             <div style="min-width:0;flex:1">
               <div style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${escHtml(w.name || 'Treino sem nome')}</div>
-              <div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem">${exCount} exercício${exCount !== 1 ? 's' : ''} · Vol: ${vol.toLocaleString('pt-BR')} kg</div>
+              <div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem">${exCount} exercício${exCount !== 1 ? 's' : ''} · Vol: ${workoutVolumeDisplay(w)}</div>
             </div>
             <div style="display:flex;align-items:center;gap:.4rem;flex-shrink:0">
               ${profile.role === 'personal'
