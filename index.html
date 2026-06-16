@@ -2964,6 +2964,23 @@ function getWorkoutVolume(w) {
   return parseFloat(v) || 0
 }
 
+function isWorkoutAllAerobic(w) {
+  const exes = w?.workout_exercises || []
+  return exes.length > 0 && exes.every(ex => ex.exercise_type === 'aerobico')
+}
+
+function getWorkoutAeroDistance(w) {
+  const exes = w?.workout_exercises || []
+  return exes.reduce((s, ex) => s + (parseFloat(ex.distance_km) || 0), 0)
+}
+
+function workoutVolumeDisplay(w) {
+  if (isWorkoutAllAerobic(w)) {
+    return getWorkoutAeroDistance(w).toLocaleString('pt-BR') + ' km'
+  }
+  return getWorkoutVolume(w).toLocaleString('pt-BR') + ' kg'
+}
+
 // ─────────────────────────────────────────────
 // VIEW: ALUNOS
 // ─────────────────────────────────────────────
@@ -3247,6 +3264,11 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '') {
   const total  = ws.reduce((s, w) => s + getWorkoutVolume(w), 0)
   const maxVol = Math.max(...ws.map(w => getWorkoutVolume(w)))
   const last   = ws[0]
+  const allAero   = ws.every(w => isWorkoutAllAerobic(w))
+  const totalDisp = allAero ? ws.reduce((s, w) => s + getWorkoutAeroDistance(w), 0) : total
+  const maxDisp   = allAero ? Math.max(...ws.map(w => getWorkoutAeroDistance(w))) : maxVol
+  const lastDisp  = allAero ? getWorkoutAeroDistance(last) : getWorkoutVolume(last)
+  const volUnit   = allAero ? 'km' : 'kg'
 
   // Alunos só veem treinos avulsos na tabela; stats e gráfico continuam usando todos os workouts
   const standAlone = profile.role === 'student' ? ws.filter(w => !w.routine_id) : ws
@@ -3345,7 +3367,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '') {
           ${profile.role === 'personal' ? '</div></div>' : ''}
         </td>
         <td style="color:var(--text-muted);font-size:.83rem">${exLabel}</td>
-        <td class="vol-cell">${vol.toLocaleString('pt-BR')} kg</td>
+        <td class="vol-cell">${workoutVolumeDisplay(w)}</td>
         <td>${badge}</td>
         <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">▶</span></td>
         <td style="text-align:center;white-space:nowrap">${profile.role === 'personal' ? `<button class="edit-btn" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar treino">✏️</button><button class="del-btn" onclick="event.stopPropagation();deleteWorkout('${w.id}')" title="Excluir treino">🗑️</button>` : ''}</td>
@@ -3380,15 +3402,15 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '') {
         <div class="stat-label">Treinos realizados</div>
       </div>
       <div class="stat-card stagger-item" style="--stagger-index:1;border-left-color:var(--success)">
-        <div class="stat-value">${getWorkoutVolume(last).toLocaleString('pt-BR')} kg</div>
+        <div class="stat-value">${lastDisp.toLocaleString('pt-BR')} ${volUnit}</div>
         <div class="stat-label">Último volume</div>
       </div>
       <div class="stat-card stagger-item" style="--stagger-index:2;border-left-color:var(--warning)">
-        <div class="stat-value">${maxVol.toLocaleString('pt-BR')} kg</div>
+        <div class="stat-value">${maxDisp.toLocaleString('pt-BR')} ${volUnit}</div>
         <div class="stat-label">Maior volume</div>
       </div>
       <div class="stat-card stagger-item" style="--stagger-index:3;border-left-color:var(--danger)">
-        <div class="stat-value">${total.toLocaleString('pt-BR')} kg</div>
+        <div class="stat-value">${totalDisp.toLocaleString('pt-BR')} ${volUnit}</div>
         <div class="stat-label">Volume acumulado</div>
       </div>
     </div>
@@ -3683,6 +3705,7 @@ async function editWorkout(workoutId) {
         if (ex.hr_min != null)                row.querySelector('.ex-hr-min').value             = ex.hr_min
         if (ex.hr_max != null)                row.querySelector('.ex-hr-max').value             = ex.hr_max
         refreshPace(exerciseCounter)
+        refreshAutoCalc(exerciseCounter)
       } else {
         row.querySelector('.ex-sets').value     = ex.sets
         row.querySelector('.ex-weight').value   = ex.weight_kg
@@ -3783,7 +3806,10 @@ async function renderStudentSheet(studentId, studentName, gen) {
 
     const routinesData = routinesRes.data || []
 
-    const total = workouts.reduce((s, w) => s + getWorkoutVolume(w), 0)
+    const total        = workouts.reduce((s, w) => s + getWorkoutVolume(w), 0)
+    const allAeroSheet = workouts.length > 0 && workouts.every(w => isWorkoutAllAerobic(w))
+    const totalDispSheet = allAeroSheet ? workouts.reduce((s, w) => s + getWorkoutAeroDistance(w), 0) : total
+    const volUnitSheet   = allAeroSheet ? 'km' : 'kg'
 
     const rows = standAloneWorkouts.map(w => {
       const exes = w.workout_exercises || []
@@ -3846,7 +3872,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
             ${checkboxClose}
           </td>
           <td style="color:var(--text-muted);font-size:.83rem">${exes.length} exercício${exes.length !== 1 ? 's' : ''}</td>
-          <td class="vol-cell">${vol.toLocaleString('pt-BR')} kg</td>
+          <td class="vol-cell">${workoutVolumeDisplay(w)}</td>
           <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">▶</span></td>
           <td style="text-align:center">${editBtn}</td>
         </tr>
@@ -4110,7 +4136,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
           <div class="stat-label">Treinos</div>
         </div>
         <div class="stat-card" style="padding:1rem 1.25rem;border-left-color:var(--success)">
-          <div class="stat-value" style="font-size:1.3rem">${total.toLocaleString('pt-BR')} kg</div>
+          <div class="stat-value" style="font-size:1.3rem">${totalDispSheet.toLocaleString('pt-BR')} ${volUnitSheet}</div>
           <div class="stat-label">Volume acumulado</div>
         </div>
         <div class="stat-card" style="padding:1rem 1.25rem;border-left-color:var(--warning)">
@@ -4190,6 +4216,9 @@ async function renderMyWorkout(gen) {
     }
     const routinesData = routinesRes.data || []
     const total        = workouts.reduce((s, w) => s + getWorkoutVolume(w), 0)
+    const allAeroMW    = workouts.length > 0 && workouts.every(w => isWorkoutAllAerobic(w))
+    const totalDispMW  = allAeroMW ? workouts.reduce((s, w) => s + getWorkoutAeroDistance(w), 0) : total
+    const volUnitMW    = allAeroMW ? 'km' : 'kg'
     const snSafe       = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
 
     // ── Routine cards ──
@@ -4329,7 +4358,7 @@ async function renderMyWorkout(gen) {
         <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
           <td><strong>${w.name || fmtDate(w.date)}</strong>${dateSub}</td>
           <td style="color:var(--text-muted);font-size:.83rem">${exes.length} exercício${exes.length !== 1 ? 's' : ''}</td>
-          <td class="vol-cell">${vol.toLocaleString('pt-BR')} kg</td>
+          <td class="vol-cell">${workoutVolumeDisplay(w)}</td>
           <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">▶</span></td>
           <td style="text-align:center;white-space:nowrap">
             <button class="btn-start-workout workout-timer-btn" style="font-size:.75rem;padding:.35rem .85rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar'}</button>
@@ -4371,7 +4400,7 @@ async function renderMyWorkout(gen) {
           <div class="stat-label">Treinos</div>
         </div>
         <div class="stat-card" style="padding:1rem 1.25rem;border-left-color:var(--success)">
-          <div class="stat-value" style="font-size:1.3rem">${total.toLocaleString('pt-BR')} kg</div>
+          <div class="stat-value" style="font-size:1.3rem">${totalDispMW.toLocaleString('pt-BR')} ${volUnitMW}</div>
           <div class="stat-label">Volume acumulado</div>
         </div>
         <div class="stat-card" style="padding:1rem 1.25rem;border-left-color:var(--warning)">
@@ -5246,12 +5275,18 @@ function addExercise() {
       <div class="form-group">
         <label>Tempo (min)</label>
         <input type="number" class="form-control ex-duration" placeholder="30" step="0.5" min="0"
-               oninput="refreshExerciseVolume(${id})">
+               oninput="refreshExerciseVolume(${id});refreshAutoCalc(${id})">
       </div>
       <div class="form-group">
         <label>Distância (km)</label>
         <input type="number" class="form-control ex-distance" placeholder="5.0" step="0.01" min="0"
-               oninput="refreshExerciseVolume(${id})">
+               oninput="refreshExerciseVolume(${id});refreshAutoCalc(${id})">
+      </div>
+      <div class="form-group form-full" id="ex-autocalc-${id}" style="display:none">
+        <div style="font-size:.78rem;color:var(--text-muted);background:var(--neutral-a06);border-radius:var(--radius);padding:.45rem .75rem;display:flex;gap:1.5rem;flex-wrap:wrap">
+          <span>⚡ Vel. calculada: <strong id="ex-autocalc-speed-${id}">—</strong> km/h</span>
+          <span>Ritmo: <strong id="ex-autocalc-pace-${id}">—</strong></span>
+        </div>
       </div>
       <div class="form-group">
         <label>Velocidade média (km/h)</label>
@@ -5338,6 +5373,30 @@ function refreshPace(id) {
   } else {
     if (paceEl)    paceEl.textContent = '—'
     if (paceInput) paceInput.value    = ''
+  }
+}
+
+function refreshAutoCalc(id) {
+  const row  = document.getElementById(`ex-${id}`)
+  if (!row) return
+  const dist = parseFloat(row.querySelector('.ex-distance')?.value) || 0
+  const dur  = parseFloat(row.querySelector('.ex-duration')?.value) || 0
+  const box      = document.getElementById(`ex-autocalc-${id}`)
+  const speedEl  = document.getElementById(`ex-autocalc-speed-${id}`)
+  const paceEl   = document.getElementById(`ex-autocalc-pace-${id}`)
+  if (dist > 0 && dur > 0) {
+    const speed   = +(dist / (dur / 60)).toFixed(1)
+    const paceMin = dur / dist
+    const mins    = Math.floor(paceMin)
+    const secs    = Math.round((paceMin - mins) * 60)
+    const paceStr = `${mins}:${String(secs).padStart(2, '0')} /km`
+    if (speedEl) speedEl.textContent = speed.toLocaleString('pt-BR')
+    if (paceEl)  paceEl.textContent  = paceStr
+    if (box)     box.style.display   = ''
+  } else {
+    if (speedEl) speedEl.textContent = '—'
+    if (paceEl)  paceEl.textContent  = '—'
+    if (box)     box.style.display   = 'none'
   }
 }
 
