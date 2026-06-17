@@ -5936,11 +5936,18 @@ function playBeep() {
 function parseCadencia(str) {
   if (!str || typeof str !== 'string') return null
   const parts = str.trim().split('-').map(Number)
-  if (parts.length !== 2 || parts.some(isNaN) || parts.every(v => v === 0)) return null
-  return [
+  if (parts.some(isNaN) || parts.every(v => v === 0)) return null
+  if (parts.length === 2) return [
     { nome: 'Concêntrica', duracao: parts[0], tipo: 'rep-start' },
     { nome: 'Excêntrica',  duracao: parts[1], tipo: 'normal'    }
   ]
+  if (parts.length === 4) return [
+    { nome: 'Concêntrica',  duracao: parts[0], tipo: 'rep-start' },
+    { nome: 'Pausa (topo)', duracao: parts[1], tipo: 'pause'     },
+    { nome: 'Excêntrica',   duracao: parts[2], tipo: 'normal'    },
+    { nome: 'Pausa (base)', duracao: parts[3], tipo: 'pause'     }
+  ]
+  return null
 }
 
 function stopMetronome() {
@@ -6004,7 +6011,7 @@ async function _runMetronome(exId, phases, token) {
   while (!token.cancelled) {
     const phase = phases[phaseIdx]
     if (phase.duracao > 0) {
-      const phaseFreq = phase.tipo === 'rep-start' ? 880 : 330
+      const phaseFreq = phase.tipo === 'rep-start' ? 880 : phase.tipo === 'pause' ? 220 : 330
       const ind = document.getElementById(`metronome-ind-${exId}`)
       if (ind) {
         ind.querySelectorAll('.metronome-phase').forEach((el, i) => {
@@ -6068,11 +6075,10 @@ function renderExecutionScreen(workout) {
              </div>`
           : ''
         const _cadPhases = !isAero ? parseCadencia(ex.cadencia) : null
-        const _ML = ['Subida', 'Descida']
         const metronomBtn = _cadPhases
           ? `<div class="metronome-wrap">
                <button class="btn-metronome" id="metronome-btn-${ex.id}" onclick="toggleMetronome('${ex.id}','${ex.cadencia}')">▶ Metrônomo</button>
-               <div class="metronome-indicator" id="metronome-ind-${ex.id}" style="display:none">${_cadPhases.map((phase, i) => `<div class="metronome-phase${phase.duracao === 0 ? ' metronome-phase-skip' : ''}" id="mphase-${ex.id}-${i}"><span class="mphase-label">${_ML[i]}</span><span class="mphase-dur">${phase.duracao > 0 ? phase.duracao + 's' : '—'}</span></div>${i < _cadPhases.length - 1 ? '<span class="metronome-sep">›</span>' : ''}`).join('')}</div>
+               <div class="metronome-indicator" id="metronome-ind-${ex.id}" style="display:none">${_cadPhases.map((phase, i) => `<div class="metronome-phase${phase.duracao === 0 ? ' metronome-phase-skip' : ''}" id="mphase-${ex.id}-${i}"><span class="mphase-label">${phase.nome}</span><span class="mphase-dur">${phase.duracao > 0 ? phase.duracao + 's' : '—'}</span></div>${i < _cadPhases.length - 1 ? '<span class="metronome-sep">›</span>' : ''}`).join('')}</div>
              </div>`
           : ''
         return `
