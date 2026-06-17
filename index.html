@@ -5535,7 +5535,7 @@ async function saveWorkout(e) {
       const sets   = parseInt(row.querySelector('.ex-sets').value)
       const weight = parseFloat(row.querySelector('.ex-weight').value)
       const reps   = parseInt(row.querySelector('.ex-reps').value)
-      if (!exName || !sets || !weight || !reps || sets < 1 || reps < 1 || weight <= 0) {
+      if (!exName || !sets || isNaN(weight) || weight < 0 || !reps || sets < 1 || reps < 1) {
         allValid = false; return
       }
       const volume   = parseFloat((sets * weight * reps).toFixed(2))
@@ -6116,7 +6116,7 @@ function openExerciseCompletionModal(exerciseId) {
     document.getElementById('exec-modal-speed').value    = ex.speed_kmh    || ''
   } else {
     const sets          = Math.max(1, parseInt(ex.sets) || 1)
-    const defaultWeight = ex.weight_kg || ''
+    const defaultWeight = ex.weight_kg ?? ''
     const defaultReps   = ex.reps      || ''
     document.getElementById('exec-modal-musculacao').innerHTML =
       `<div style="font-size:.7rem;color:var(--text-muted);font-weight:600;margin-bottom:.625rem;text-transform:uppercase;letter-spacing:.06em">Carga (kg) &nbsp;×&nbsp; Reps por série</div>` +
