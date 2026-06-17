@@ -2847,6 +2847,25 @@ const VIEW_TITLES = {
 
 async function navigateTo(view, opts = {}) {
   if (view === 'workout' && profile?.role !== 'personal') return
+
+  // Ao navegar fora durante execução ativa, descarta o estado sem abrir modal de review
+  if (timerInterval) {
+    stopMetronome()
+    for (const id in restTimers) { if (restTimers[id]?.intervalId) clearInterval(restTimers[id].intervalId) }
+    restTimers            = {}
+    clearInterval(timerInterval)
+    timerInterval         = null
+    timerSeconds          = 0
+    currentWorkoutData    = null
+    exerciseExecutions    = {}
+    _completingExerciseId = null
+    _selectedFeeling      = null
+    _selectedEffort       = null
+    document.getElementById('execution-overlay').style.display = 'none'
+    document.body.style.overflow = ''
+    syncTimerButtons()
+  }
+
   currentView = view; currentViewOpts = opts
   const gen = ++navGen   // any in-flight render with a smaller gen will abort
 
@@ -4860,9 +4879,9 @@ async function saveProfile(e) {
   const btn      = document.getElementById('prof-btn')
   btn.textContent = 'Salvando…'; btn.disabled = true
   const username = (document.getElementById('prof-username')?.value || '').trim() || null
-  const age      = parseInt(document.getElementById('prof-age').value)      ?? null
-  const height   = parseFloat(document.getElementById('prof-height').value) ?? null
-  const weight   = parseFloat(document.getElementById('prof-weight').value) ?? null
+  const age      = parseInt(document.getElementById('prof-age')?.value)      ?? null
+  const height   = parseFloat(document.getElementById('prof-height')?.value) ?? null
+  const weight   = parseFloat(document.getElementById('prof-weight')?.value) ?? null
   try {
     const [spRes, profRes] = await Promise.all([
       sb.from('student_profiles').upsert(
