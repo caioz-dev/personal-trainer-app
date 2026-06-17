@@ -2608,7 +2608,7 @@ async function boot() {
   document.getElementById('auth-section').style.display = 'none'
   document.getElementById('app-section').style.display  = 'block'
   navigateTo(profile.role === 'personal' ? 'students' : 'history')
-  if (profile.role === 'student') checkNewWorkout()
+  if (profile.role === 'student') await checkNewWorkout()
 }
 
 // ─────────────────────────────────────────────
@@ -4860,9 +4860,9 @@ async function saveProfile(e) {
   const btn      = document.getElementById('prof-btn')
   btn.textContent = 'Salvando…'; btn.disabled = true
   const username = (document.getElementById('prof-username')?.value || '').trim() || null
-  const age      = parseInt(document.getElementById('prof-age').value)      || null
-  const height   = parseFloat(document.getElementById('prof-height').value) || null
-  const weight   = parseFloat(document.getElementById('prof-weight').value) || null
+  const age      = parseInt(document.getElementById('prof-age').value)      ?? null
+  const height   = parseFloat(document.getElementById('prof-height').value) ?? null
+  const weight   = parseFloat(document.getElementById('prof-weight').value) ?? null
   try {
     const [spRes, profRes] = await Promise.all([
       sb.from('student_profiles').upsert(
@@ -5516,7 +5516,7 @@ async function saveWorkout(e) {
 
     if (exType === 'aerobico') {
       const duration = parseFloat(row.querySelector('.ex-duration')?.value)
-      if (!exName || !duration || duration <= 0) { allValid = false; return }
+      if (!exName || duration == null || isNaN(duration) || duration < 0) { allValid = false; return }
       exercises.push({
         exercise_name: exName, exercise_type: 'aerobico',
         sets: 1, weight_kg: 0, reps: 0, volume: 0,
@@ -5532,9 +5532,9 @@ async function saveWorkout(e) {
         training_method: null, method_description: null
       })
     } else {
-      const sets   = parseInt(row.querySelector('.ex-sets').value)
-      const weight = parseFloat(row.querySelector('.ex-weight').value)
-      const reps   = parseInt(row.querySelector('.ex-reps').value)
+      const sets   = parseInt(row.querySelector('.ex-sets')?.value)
+      const weight = parseFloat(row.querySelector('.ex-weight')?.value)
+      const reps   = parseInt(row.querySelector('.ex-reps')?.value)
       if (!exName || !sets || isNaN(weight) || weight < 0 || !reps || sets < 1 || reps < 1) {
         allValid = false; return
       }
@@ -5692,7 +5692,7 @@ async function runCalc() {
 
   if (profile.role === 'personal' && !sid) { toast('Selecione um aluno.', 'error'); return }
   if (!exerciseName)                        { toast('Informe o nome do exercício.', 'error'); return }
-  if (!weight || weight <= 0)               { toast('Informe o peso de hoje.', 'error'); return }
+  if (weight == null || isNaN(weight) || weight <= 0) { toast('Informe o peso de hoje.', 'error'); return }
 
   const out = document.getElementById('calc-out')
   out.innerHTML = '<div class="loading"><div class="spinner"></div>Buscando…</div>'
@@ -6111,13 +6111,13 @@ function openExerciseCompletionModal(exerciseId) {
   document.getElementById('exec-modal-aerobico').style.display   = isAero ? 'block' : 'none'
 
   if (isAero) {
-    document.getElementById('exec-modal-duration').value = ex.duration_min || ''
-    document.getElementById('exec-modal-distance').value = ex.distance_km  || ''
-    document.getElementById('exec-modal-speed').value    = ex.speed_kmh    || ''
+    document.getElementById('exec-modal-duration').value = ex.duration_min ?? ''
+    document.getElementById('exec-modal-distance').value = ex.distance_km  ?? ''
+    document.getElementById('exec-modal-speed').value    = ex.speed_kmh    ?? ''
   } else {
     const sets          = Math.max(1, parseInt(ex.sets) || 1)
     const defaultWeight = ex.weight_kg ?? ''
-    const defaultReps   = ex.reps      || ''
+    const defaultReps   = ex.reps      ?? ''
     document.getElementById('exec-modal-musculacao').innerHTML =
       `<div style="font-size:.7rem;color:var(--text-muted);font-weight:600;margin-bottom:.625rem;text-transform:uppercase;letter-spacing:.06em">Carga (kg) &nbsp;×&nbsp; Reps por série</div>` +
       Array.from({length: sets}, (_, i) => `
@@ -6167,7 +6167,7 @@ function confirmExerciseCompletion() {
     for (let i = 0; i < weightInputs.length; i++) {
       const weight = parseFloat(weightInputs[i].value)
       const reps   = parseInt(repsInputs[i].value)
-      if (!weight || weight <= 0) { toast(`Informe a carga da série ${i + 1}.`, 'error'); return }
+      if (weight == null || isNaN(weight) || weight < 0) { toast(`Informe a carga da série ${i + 1}.`, 'error'); return }
       if (!reps   || reps   < 1) { toast(`Informe as reps da série ${i + 1}.`, 'error'); return }
       setsData.push({ set_number: i + 1, weight_executed: weight, reps_executed: reps })
     }
