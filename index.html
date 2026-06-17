@@ -5648,6 +5648,7 @@ async function setupCalc() {
       if (!students.length) await fetchStudents()
       grp.style.display = 'block'
       sel.innerHTML = '<option value="">Selecione o aluno…</option>' +
+        `<option value="${profile.id}">${profile.name} (Eu)</option>` +
         students.map(s => `<option value="${s.id}">${s.name}</option>`).join('')
     } else {
       grp.style.display = 'none'
