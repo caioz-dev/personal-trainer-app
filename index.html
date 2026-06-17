@@ -6405,7 +6405,6 @@ async function saveWorkoutExecutions(workoutId) {
   const records = []
   for (const ex of exes) {
     const exec   = exerciseExecutions[ex.id]
-    if (!exec) continue
     const isAero = ex.exercise_type === 'aerobico'
     if (isAero) {
       records.push({
@@ -6415,23 +6414,42 @@ async function saveWorkoutExecutions(workoutId) {
         set_number:            1,
         weight_executed:       null,
         reps_executed:         null,
-        duration_executed_min: exec.duration_executed_min ?? null,
-        distance_executed_km:  exec.distance_executed_km  ?? null,
-        speed_executed_kmh:    exec.speed_executed_kmh    ?? null
+        duration_executed_min: exec?.duration_executed_min ?? ex.duration_min ?? null,
+        distance_executed_km:  exec?.distance_executed_km  ?? ex.distance_km  ?? null,
+        speed_executed_kmh:    exec?.speed_executed_kmh    ?? ex.speed_kmh    ?? null
       })
     } else {
-      for (const s of (exec.sets || [])) {
-        records.push({
-          workout_id:            workoutId,
-          exercise_id:           ex.id,
-          student_id:            profile.id,
-          set_number:            s.set_number,
-          weight_executed:       s.weight_executed,
-          reps_executed:         s.reps_executed,
-          duration_executed_min: null,
-          distance_executed_km:  null,
-          speed_executed_kmh:    null
-        })
+      const recordedSets = exec?.sets?.length > 0 ? exec.sets : null
+      if (recordedSets) {
+        for (const s of recordedSets) {
+          records.push({
+            workout_id:            workoutId,
+            exercise_id:           ex.id,
+            student_id:            profile.id,
+            set_number:            s.set_number,
+            weight_executed:       s.weight_executed,
+            reps_executed:         s.reps_executed,
+            duration_executed_min: null,
+            distance_executed_km:  null,
+            speed_executed_kmh:    null
+          })
+        }
+      } else {
+        // Aluno não marcou séries: assume valores prescritos
+        const prescribedSets = parseInt(ex.sets) || 1
+        for (let i = 0; i < prescribedSets; i++) {
+          records.push({
+            workout_id:            workoutId,
+            exercise_id:           ex.id,
+            student_id:            profile.id,
+            set_number:            i + 1,
+            weight_executed:       ex.weight_kg ?? null,
+            reps_executed:         ex.reps      ?? null,
+            duration_executed_min: null,
+            distance_executed_km:  null,
+            speed_executed_kmh:    null
+          })
+        }
       }
     }
   }
