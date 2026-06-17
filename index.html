@@ -5949,7 +5949,7 @@ function stopMetronome() {
   _metronomeToken = null
 }
 
-function _metronomeClick(isRepStart) {
+function _metronomeClick(freq) {
   try {
     if (!_audioCtx || _audioCtx.state === 'closed') {
       _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
@@ -5959,7 +5959,7 @@ function _metronomeClick(isRepStart) {
     const gain = _audioCtx.createGain()
     osc.connect(gain); gain.connect(_audioCtx.destination)
     osc.type = 'sine'
-    osc.frequency.setValueAtTime(isRepStart ? 880 : 330, _audioCtx.currentTime)
+    osc.frequency.setValueAtTime(freq, _audioCtx.currentTime)
     gain.gain.setValueAtTime(0.4, _audioCtx.currentTime)
     gain.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + 0.07)
     osc.start(_audioCtx.currentTime)
@@ -6004,16 +6004,17 @@ async function _runMetronome(exId, phases, token) {
   while (!token.cancelled) {
     const phase = phases[phaseIdx]
     if (phase.duracao > 0) {
-      _metronomeClick(phase.tipo === 'rep-start')
+      const phaseFreq = phase.tipo === 'rep-start' ? 880 : 330
       const ind = document.getElementById(`metronome-ind-${exId}`)
       if (ind) {
         ind.querySelectorAll('.metronome-phase').forEach((el, i) => {
           el.classList.toggle('active', i === phaseIdx)
         })
       }
-      const end = Date.now() + phase.duracao * 1000
-      while (!token.cancelled && Date.now() < end) {
-        await new Promise(r => setTimeout(r, 50))
+      for (let tick = 0; tick < phase.duracao; tick++) {
+        if (token.cancelled) break
+        _metronomeClick(tick === 0 ? phaseFreq : 550)
+        await new Promise(r => setTimeout(r, 1000))
       }
     }
     if (!token.cancelled) phaseIdx = (phaseIdx + 1) % phases.length
