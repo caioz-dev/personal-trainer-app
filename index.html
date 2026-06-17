@@ -2916,6 +2916,8 @@ function avatarEl(name, avatarUrl, sizePx, extraStyle) {
   return `<div style="${shared}background:var(--accent-a10);border:1px solid var(--accent-a20);display:flex;align-items:center;justify-content:center;color:var(--accent-soft);font-size:${fs}px;font-weight:800;letter-spacing:-0.02em">${ini}</div>`
 }
 
+function displayName(p) { return (p?.username || '').trim() || p?.name || '' }
+
 // ─────────────────────────────────────────────
 // DATA
 // ─────────────────────────────────────────────
@@ -3042,7 +3044,8 @@ async function renderStudents() {
       if (le) {
         const diffHours = (Date.now() - new Date(le.executed_at).getTime()) / 36e5
         if (diffHours < 24) {
-          const sName    = students.find(s => s.id === le.student_id)?.name || 'Aluno'
+          const sFound   = students.find(s => s.id === le.student_id)
+          const sName    = sFound ? displayName(sFound) : 'Aluno'
           const wName    = le.workouts?.name || 'Treino'
           const execDate = fmtDate(le.executed_at.slice(0, 10))
           execBanner = `<div class="new-workout-alert">
@@ -3075,13 +3078,14 @@ async function renderStudents() {
       <div class="students-grid reveal-stagger">
         ${withLast.map((s, i) => {
           const vol      = s.last ? getWorkoutVolume(s.last) : null
-          const nameSafe = s.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")
+          const dName    = displayName(s)
+          const nameSafe = dName.replace(/\\/g,'\\\\').replace(/'/g,"\\'")
           return `<div class="student-card stagger-item" data-student-id="${s.id}" style="--stagger-index:${i}"
               onclick="openStudentSheet('${s.id}','${nameSafe}')">
             <button class="student-unlink-btn" title="Desvincular aluno"
                 onclick="event.stopPropagation();confirmUnlinkStudent('${s.id}','${nameSafe}')">✕</button>
-            ${avatarEl(s.name, s.avatar_url || null, 48, 'margin-bottom:.875rem')}
-            <div class="student-name">${s.name}</div>
+            ${avatarEl(dName, s.avatar_url || null, 48, 'margin-bottom:.875rem')}
+            <div class="student-name">${dName}</div>
             <div class="student-meta">
               Último treino: ${s.last ? fmtDate(s.last.date) : '—'}<br>
               Volume: ${vol !== null ? vol.toLocaleString('pt-BR') + ' kg' : '—'}
@@ -4821,6 +4825,11 @@ async function renderProfile() {
                   onclick="document.getElementById('avatar-input').click()">📷 Alterar foto</button>
         </div>
         <form onsubmit="saveProfile(event)">
+          <div class="form-group" style="margin-bottom:1rem">
+            <label>Nome de usuário</label>
+            <input id="prof-username" type="text" class="form-control" placeholder="Ex: caio_fit, João Musculação…" value="${escHtml(profile.username || '')}">
+            <div style="font-size:.75rem;color:var(--text-muted);margin-top:.3rem">Aparece para o seu personal no lugar do nome completo. Deixe em branco para usar o nome completo.</div>
+          </div>
           <div class="form-grid">
             <div class="form-group">
               <label>Idade (anos)</label>
@@ -4848,17 +4857,23 @@ async function renderProfile() {
 
 async function saveProfile(e) {
   e.preventDefault()
-  const btn = document.getElementById('prof-btn')
+  const btn      = document.getElementById('prof-btn')
   btn.textContent = 'Salvando…'; btn.disabled = true
-  const age    = parseInt(document.getElementById('prof-age').value)      || null
-  const height = parseFloat(document.getElementById('prof-height').value) || null
-  const weight = parseFloat(document.getElementById('prof-weight').value) || null
+  const username = (document.getElementById('prof-username')?.value || '').trim() || null
+  const age      = parseInt(document.getElementById('prof-age').value)      || null
+  const height   = parseFloat(document.getElementById('prof-height').value) || null
+  const weight   = parseFloat(document.getElementById('prof-weight').value) || null
   try {
-    const { error } = await sb.from('student_profiles').upsert(
-      { student_id: profile.id, age, height_cm: height, weight_kg: weight, updated_at: new Date().toISOString() },
-      { onConflict: 'student_id' }
-    )
-    if (error) throw error
+    const [spRes, profRes] = await Promise.all([
+      sb.from('student_profiles').upsert(
+        { student_id: profile.id, age, height_cm: height, weight_kg: weight, updated_at: new Date().toISOString() },
+        { onConflict: 'student_id' }
+      ),
+      sb.from('profiles').update({ username }).eq('id', profile.id)
+    ])
+    if (spRes.error) throw spRes.error
+    if (profRes.error) throw profRes.error
+    profile.username = username
     toast('Perfil salvo com sucesso!', 'success')
   } catch (err) {
     toast('Erro ao salvar perfil: ' + err.message, 'error')
@@ -4975,7 +4990,7 @@ async function renderProgress(studentIdOverride) {
         <div class="form-group" style="max-width:300px;margin-bottom:1.5rem">
           <label>Aluno</label>
           <select class="form-control" id="prog-student" onchange="renderProgress(this.value)">
-            ${students.map(s => `<option value="${s.id}"${s.id === studentId ? ' selected' : ''}>${s.name}</option>`).join('')}
+            ${students.map(s => `<option value="${s.id}"${s.id === studentId ? ' selected' : ''}>${displayName(s)}</option>`).join('')}
           </select>
         </div>`
     } else {
@@ -5179,7 +5194,7 @@ async function setupWorkoutForm(opts = {}) {
     } else {
       grp.style.display = 'block'
       sel.innerHTML = '<option value="">Selecione o aluno…</option>' +
-        students.map(s => `<option value="${s.id}">${s.name}</option>`).join('')
+        students.map(s => `<option value="${s.id}">${displayName(s)}</option>`).join('')
       sel.required = true
     }
   } else {
@@ -5649,7 +5664,7 @@ async function setupCalc() {
       grp.style.display = 'block'
       sel.innerHTML = '<option value="">Selecione o aluno…</option>' +
         `<option value="${profile.id}">${profile.name} (Eu)</option>` +
-        students.map(s => `<option value="${s.id}">${s.name}</option>`).join('')
+        students.map(s => `<option value="${s.id}">${displayName(s)}</option>`).join('')
     } else {
       grp.style.display = 'none'
       sel.innerHTML = `<option value="${profile.id}" selected></option>`
