@@ -2163,15 +2163,19 @@
             </p>
             <div id="calc-student-group" class="form-group">
               <label>Aluno</label>
-              <select id="calc-student" class="form-control" onchange="clearCalcResult()"></select>
+              <select id="calc-student" class="form-control" onchange="clearCalcResult();updateCalcPrescribed()"></select>
             </div>
             <div class="form-group">
               <label>Exercício</label>
-              <input id="calc-exercise" type="text" class="form-control" placeholder="Ex: Supino Reto" oninput="clearCalcResult()">
+              <input id="calc-exercise" type="text" class="form-control" placeholder="Ex: Supino Reto"
+                     list="calc-exercise-list" autocomplete="off"
+                     oninput="clearCalcResult();updateCalcPrescribed()">
+              <datalist id="calc-exercise-list"></datalist>
             </div>
             <div class="form-group">
               <label>Carga de hoje (kg)</label>
               <input id="calc-weight" type="number" class="form-control" placeholder="Ex: 85" step="0.5" min="0.5">
+              <div id="calc-prescribed" style="display:none;font-size:.8rem;color:var(--text-muted);font-weight:500;margin-top:.35rem"></div>
             </div>
             <button class="btn btn-primary" onclick="runCalc()">Calcular</button>
             <div id="calc-out"></div>
@@ -5692,6 +5696,7 @@ async function setupCalc() {
     document.getElementById('calc-exercise').value = ''
     document.getElementById('calc-weight').value   = ''
     clearCalcResult()
+    loadCalcExerciseNames()
   } catch (err) {
     toast('Erro ao carregar calculadora.', 'error')
   }
@@ -5699,6 +5704,78 @@ async function setupCalc() {
 
 function clearCalcResult() {
   document.getElementById('calc-out').innerHTML = ''
+}
+
+async function loadCalcExerciseNames() {
+  try {
+    const studentIds = profile.role === 'personal'
+      ? [profile.id, ...students.map(s => s.id)]
+      : [profile.id]
+
+    const { data: wData } = await sb
+      .from('workouts').select('id')
+      .in('student_id', studentIds).limit(500)
+    if (!wData?.length) return
+
+    const { data: exData } = await sb
+      .from('workout_exercises').select('exercise_name')
+      .in('workout_id', wData.map(w => w.id))
+    if (!exData?.length) return
+
+    const names = [...new Set(exData.map(e => e.exercise_name).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }))
+
+    const dl = document.getElementById('calc-exercise-list')
+    if (dl) dl.innerHTML = names.map(n => `<option value="${escHtml(n)}">`).join('')
+  } catch {}
+}
+
+let _calcPrescribedTimer = null
+function updateCalcPrescribed() {
+  clearTimeout(_calcPrescribedTimer)
+  _calcPrescribedTimer = setTimeout(_doUpdateCalcPrescribed, 350)
+}
+
+async function _doUpdateCalcPrescribed() {
+  const exerciseName = document.getElementById('calc-exercise').value.trim()
+  const el = document.getElementById('calc-prescribed')
+  if (!el) return
+
+  if (!exerciseName) { el.style.display = 'none'; return }
+
+  try {
+    let studentIds
+    if (profile.role === 'personal') {
+      const sid = document.getElementById('calc-student').value
+      studentIds = sid ? [sid] : [profile.id, ...students.map(s => s.id)]
+    } else {
+      studentIds = [profile.id]
+    }
+
+    const { data: wData } = await sb
+      .from('workouts').select('id')
+      .in('student_id', studentIds)
+      .order('date', { ascending: false }).limit(200)
+    if (!wData?.length) { el.style.display = 'none'; return }
+
+    const { data: exData } = await sb
+      .from('workout_exercises').select('weight_kg, workout_id')
+      .in('workout_id', wData.map(w => w.id))
+      .ilike('exercise_name', exerciseName).limit(50)
+    if (!exData?.length) { el.style.display = 'none'; return }
+
+    for (const w of wData) {
+      const ex = exData.find(e => e.workout_id === w.id)
+      if (ex && ex.weight_kg != null) {
+        el.textContent = `Carga prescrita: ${ex.weight_kg} kg`
+        el.style.display = 'block'
+        return
+      }
+    }
+    el.style.display = 'none'
+  } catch {
+    el.style.display = 'none'
+  }
 }
 
 async function runCalc() {
