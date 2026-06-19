@@ -5957,13 +5957,13 @@ function parseCadencia(str) {
   const parts = str.trim().split('-').map(Number)
   if (parts.some(isNaN) || parts.every(v => v === 0)) return null
   if (parts.length === 2) return [
-    { nome: 'Concêntrica', duracao: parts[0], tipo: 'rep-start' },
-    { nome: 'Excêntrica',  duracao: parts[1], tipo: 'normal'    }
+    { nome: 'Excêntrica',  duracao: parts[0], tipo: 'rep-start' },
+    { nome: 'Concêntrica', duracao: parts[1], tipo: 'normal'    }
   ]
   if (parts.length === 4) return [
-    { nome: 'Concêntrica',  duracao: parts[0], tipo: 'rep-start' },
+    { nome: 'Excêntrica',   duracao: parts[0], tipo: 'rep-start' },
     { nome: 'Pausa (topo)', duracao: parts[1], tipo: 'pause'     },
-    { nome: 'Excêntrica',   duracao: parts[2], tipo: 'normal'    },
+    { nome: 'Concêntrica',  duracao: parts[2], tipo: 'normal'    },
     { nome: 'Pausa (base)', duracao: parts[3], tipo: 'pause'     }
   ]
   return null
