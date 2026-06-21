@@ -946,6 +946,40 @@
       text-overflow: ellipsis;
     }
 
+    /* ---- DUPLICATE MODAL ---- */
+    .dup-modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9400;
+      background: rgba(0,0,0,.65);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .dup-modal-card {
+      background: var(--surface-dark-a99);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-xl);
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 20px 50px rgba(0,0,0,.55);
+      padding: 1.75rem;
+    }
+    .dup-modal-title {
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--text-primary);
+      margin-bottom: .35rem;
+      letter-spacing: -0.02em;
+    }
+    .dup-modal-subtitle {
+      font-size: .78rem;
+      color: var(--text-muted);
+      margin-bottom: 1.4rem;
+    }
+
     .exercise-row-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: .875rem; cursor: pointer; user-select: none; }
 
     .ex-header-right { display: flex; align-items: center; gap: .5rem; }
@@ -1201,8 +1235,8 @@
 
     @keyframes slideIn { from { transform: translateX(110%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
-    /* ---- ACTION BTNS (edit / delete) ---- */
-    .del-btn, .edit-btn {
+    /* ---- ACTION BTNS (edit / delete / duplicate) ---- */
+    .del-btn, .edit-btn, .dup-btn {
       background: none;
       border: none;
       cursor: pointer;
@@ -1215,9 +1249,11 @@
     }
 
     .history-main-row:hover .del-btn,
-    .history-main-row:hover .edit-btn { opacity: 1; }
+    .history-main-row:hover .edit-btn,
+    .history-main-row:hover .dup-btn { opacity: 1; }
     .del-btn:hover  { background: var(--danger-a10); }
     .edit-btn:hover { background: var(--accent-a12); }
+    .dup-btn:hover  { background: var(--neutral-a08); }
 
     /* ---- NEW WORKOUT BADGE / ALERT ---- */
     .new-badge {
@@ -1291,7 +1327,7 @@
       .section-grid { grid-template-columns: 1fr; }
       .form-grid { grid-template-columns: 1fr; }
       .hamburger { display: flex; }
-      .del-btn, .edit-btn { opacity: 1; }
+      .del-btn, .edit-btn, .dup-btn { opacity: 1; }
     }
 
     /* ---- WORKOUT TIMER ---- */
@@ -2588,6 +2624,7 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 
 let sb, me, profile, students = [], chart = null, sheetChart = null, progressChart = null
 let exerciseCounter = 0
+let _dupWorkoutId = null
 let historyCtx = null
 let navGen = 0        // incremented on every navigation; render fns bail if stale
 let currentView = null, currentViewOpts = {}
@@ -3507,7 +3544,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '') {
         <td class="vol-cell">${workoutVolumeDisplay(w)}</td>
         <td>${badge}</td>
         <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">▶</span></td>
-        <td style="text-align:center;white-space:nowrap">${profile.role === 'personal' ? `<button class="edit-btn" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar treino">✏️</button><button class="del-btn" onclick="event.stopPropagation();deleteWorkout('${w.id}')" title="Excluir treino">🗑️</button>` : ''}</td>
+        <td style="text-align:center;white-space:nowrap">${profile.role === 'personal' ? `<button class="edit-btn" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar treino">✏️</button><button class="dup-btn" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar treino">📋</button><button class="del-btn" onclick="event.stopPropagation();deleteWorkout('${w.id}')" title="Excluir treino">🗑️</button>` : ''}</td>
       </tr>
       <tr id="wd-${uid}" style="display:none" class="history-detail-row">
         <td colspan="6">
@@ -3601,7 +3638,7 @@ function bindWorkoutRowClicks(container) {
   const tbody = container.querySelector('tbody')
   if (!tbody) return
   tbody.addEventListener('click', function(e) {
-    if (e.target.closest('.edit-btn, .del-btn, .btn-start-workout, .exec-complete-btn, .workout-checkbox')) return
+    if (e.target.closest('.edit-btn, .del-btn, .dup-btn, .btn-start-workout, .exec-complete-btn, .workout-checkbox')) return
     const row = e.target.closest('tr[data-uid]')
     if (!row) return
     toggleWorkoutDetail(row.dataset.uid)
@@ -3995,7 +4032,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
       const exRows  = exPairs.map(p => p.row).join('')
       const exCards = exPairs.map(p => p.card).join('')
       const editBtn = profile.role === 'personal'
-        ? `<button class="edit-btn" style="opacity:1" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar">✏️</button>`
+        ? `<button class="edit-btn" style="opacity:1" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar">✏️</button><button class="dup-btn" style="opacity:1" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar">📋</button>`
         : ''
       const safeStudentName = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
       const deleteBtn = profile.role === 'personal'
@@ -5514,6 +5551,143 @@ function updateRemoveButtons() {
   })
 }
 
+// ── Duplicar treino ──────────────────────────
+function openDupModal(workoutId) {
+  const workout = (window._workoutsCache || {})[workoutId]
+  if (!workout) { toast('Dados do treino não encontrados. Recarregue a página.', 'error'); return }
+  _dupWorkoutId = workoutId
+
+  const label = workout.name || fmtDate(workout.date)
+  document.getElementById('dup-modal-subtitle').textContent =
+    `"${label}" — copia todos os exercícios para um novo treino.`
+
+  // Preenche o select de alunos (aluno original como padrão)
+  const sel = document.getElementById('dup-student-sel')
+  const currentStudentId = workout.student_id
+  const currentStudent   = students.find(s => s.id === currentStudentId)
+  const currentName      = currentStudent
+    ? displayName(currentStudent)
+    : (currentStudentId === me?.id ? profile.name + ' (Eu)' : 'Aluno atual')
+
+  sel.innerHTML =
+    `<option value="${currentStudentId}" selected>${currentName}</option>` +
+    (currentStudentId !== me?.id
+      ? `<option value="${me.id}">${profile.name} (Eu)</option>`
+      : '') +
+    students
+      .filter(s => s.id !== currentStudentId)
+      .map(s => `<option value="${s.id}">${displayName(s)}</option>`)
+      .join('')
+
+  // Data padrão = hoje
+  document.getElementById('dup-date').value = new Date().toISOString().slice(0, 10)
+
+  const btn = document.getElementById('dup-confirm-btn')
+  if (btn) { btn.disabled = false; btn.textContent = 'Duplicar' }
+
+  document.getElementById('dup-modal-overlay').style.display = 'flex'
+}
+
+function closeDupModal() {
+  document.getElementById('dup-modal-overlay').style.display = 'none'
+  _dupWorkoutId = null
+}
+
+async function confirmDupWorkout() {
+  const workout = (window._workoutsCache || {})[_dupWorkoutId]
+  if (!workout) { toast('Dados do treino não encontrados.', 'error'); return }
+
+  const targetStudentId = document.getElementById('dup-student-sel').value
+  const newDate         = document.getElementById('dup-date').value
+  if (!targetStudentId || !newDate) { toast('Selecione o aluno e a data.', 'error'); return }
+
+  // Mantém a duração original em dias (se houver end_date)
+  let newEndDate = null
+  if (workout.end_date && workout.date) {
+    const durDays = Math.round(
+      (new Date(workout.end_date) - new Date(workout.date)) / 864e5
+    )
+    if (durDays > 0) {
+      const d = new Date(newDate)
+      d.setDate(d.getDate() + durDays)
+      newEndDate = d.toISOString().slice(0, 10)
+    }
+  }
+
+  const btn = document.getElementById('dup-confirm-btn')
+  if (btn) { btn.disabled = true; btn.textContent = 'Duplicando…' }
+
+  try {
+    // 1. Cria o novo workout
+    const { data: newWorkout, error: wErr } = await sb.from('workouts').insert({
+      student_id:   targetStudentId,
+      name:         workout.name   || null,
+      date:         newDate,
+      end_date:     newEndDate,
+      total_volume: workout.total_volume ?? 0,
+      notes:        workout.notes  || null,
+      routine_id:   null,
+      day_of_week:  null,
+      created_by:   me.id
+    }).select().maybeSingle()
+    if (wErr) throw wErr
+    if (!newWorkout) throw new Error('Não foi possível criar o treino duplicado.')
+
+    // 2. Duplica exercícios
+    const exes = workout.workout_exercises || []
+    if (exes.length) {
+      const { error: exErr } = await sb.from('workout_exercises').insert(
+        exes.map(ex => ({
+          workout_id:            newWorkout.id,
+          exercise_name:         ex.exercise_name,
+          exercise_type:         ex.exercise_type,
+          sets:                  ex.sets,
+          reps:                  ex.reps,
+          weight_kg:             ex.weight_kg,
+          volume:                ex.volume,
+          cadencia:              ex.cadencia,
+          tempo_descanso:        ex.tempo_descanso,
+          training_method:       ex.training_method,
+          method_description:    ex.method_description,
+          duration_min:          ex.duration_min,
+          distance_km:           ex.distance_km,
+          speed_kmh:             ex.speed_kmh,
+          pace:                  ex.pace,
+          hr_min:                ex.hr_min,
+          hr_max:                ex.hr_max,
+          recovery_interval_min: ex.recovery_interval_min,
+          recovery_speed_kmh:    ex.recovery_speed_kmh,
+          position:              ex.position
+        }))
+      )
+      if (exErr) throw exErr
+    }
+
+    // 3. Notifica o aluno (fire-and-forget)
+    const targetStudent = students.find(s => s.id === targetStudentId)
+    const targetName    = targetStudent
+      ? displayName(targetStudent)
+      : (targetStudentId === me?.id ? profile.name : 'Aluno')
+    fetch(`${SUPA_URL}/functions/v1/notify-new-workout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPA_KEY },
+      body: JSON.stringify({
+        student_id:    targetStudentId,
+        workout_name:  newWorkout.name || 'Treino sem nome',
+        workout_date:  newDate,
+        personal_name: profile.name
+      })
+    }).catch(err => console.warn('[notify-new-workout] falhou silenciosamente:', err))
+
+    toast(`Treino duplicado para ${targetName}!`, 'success')
+    closeDupModal()
+  } catch (err) {
+    toast('Erro ao duplicar treino: ' + err.message, 'error')
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Duplicar' }
+  }
+}
+
 function updateReorderButton() {
   const btn = document.getElementById('reorder-ex-btn')
   if (!btn) return
@@ -6802,6 +6976,26 @@ async function saveWorkoutExecutions(workoutId) {
   if (error) console.error('[saveWorkoutExecutions] erro:', error.code, error.message)
 }
 </script>
+
+<!-- MODAL: Duplicar treino -->
+<div id="dup-modal-overlay" class="dup-modal-overlay" style="display:none" onclick="if(event.target===this)closeDupModal()">
+  <div class="dup-modal-card">
+    <div class="dup-modal-title">📋 Duplicar Treino</div>
+    <div class="dup-modal-subtitle" id="dup-modal-subtitle">Copia todos os exercícios para um novo treino.</div>
+    <div class="form-group" style="margin-bottom:1rem">
+      <label style="font-size:.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Para qual aluno</label>
+      <select id="dup-student-sel" class="form-control"></select>
+    </div>
+    <div class="form-group" style="margin-bottom:1.5rem">
+      <label style="font-size:.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Data de início</label>
+      <input id="dup-date" type="date" class="form-control">
+    </div>
+    <div style="display:flex;gap:.625rem;justify-content:flex-end">
+      <button class="btn btn-outline btn-sm" onclick="closeDupModal()">Cancelar</button>
+      <button class="btn btn-primary btn-sm" id="dup-confirm-btn" onclick="confirmDupWorkout()">Duplicar</button>
+    </div>
+  </div>
+</div>
 
 <!-- MODAL: Reordenar exercícios -->
 <div id="reorder-modal-overlay" class="reorder-modal-overlay" style="display:none" onclick="if(event.target===this)closeReorderModal()">
