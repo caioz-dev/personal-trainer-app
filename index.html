@@ -4704,6 +4704,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
               <div style="display:flex;align-items:center;gap:.4rem;flex-shrink:0">
                 ${profile.role === 'personal'
                   ? `<button class="btn btn-sm btn-outline" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar">✏️</button>
+                     <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar">📋</button>
                      <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromRoutine('${w.id}','${studentId}','${snSafe}','${routineId}','${rNameSafe}')" title="Excluir">🗑️</button>`
                   : ''}
                 <span id="rdi-${uid}" style="color:var(--text-muted);font-size:.85rem;margin-left:.25rem;pointer-events:none">▶</span>
