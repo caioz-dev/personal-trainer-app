@@ -859,20 +859,92 @@
 
     .exercise-row:hover { border-color: rgba(144,158,186,0.2); }
 
-    .ex-drag-handle {
+    /* ---- REORDER MODAL ---- */
+    .reorder-modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9350;
+      background: rgba(0,0,0,.65);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .reorder-modal-card {
+      background: var(--surface-dark-a99);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-xl);
+      width: 100%;
+      max-width: 420px;
+      max-height: 82vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 50px rgba(0,0,0,.55);
+    }
+    .reorder-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 1.4rem;
+      border-bottom: 1px solid var(--border-subtle);
+      flex-shrink: 0;
+    }
+    .reorder-modal-body {
+      overflow-y: auto;
+      flex: 1;
+      padding: .625rem;
+      display: flex;
+      flex-direction: column;
+      gap: .3rem;
+    }
+    .reorder-modal-footer {
+      padding: .875rem 1.4rem;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      gap: .5rem;
+      justify-content: flex-end;
+      flex-shrink: 0;
+    }
+    .reorder-item {
+      display: flex;
+      align-items: center;
+      gap: .625rem;
+      padding: .6rem .875rem;
+      background: var(--bg-dark-a50);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      user-select: none;
+      cursor: default;
+      transition: border-color .15s;
+    }
+    .reorder-item.dragging { opacity: 0.35; }
+    .reorder-item.drag-over { border-color: var(--accent) !important; border-style: dashed !important; }
+    .reorder-item-handle {
       cursor: grab;
       color: var(--text-muted);
       font-size: .9rem;
-      opacity: 0.4;
-      transition: opacity .15s;
-      user-select: none;
+      opacity: 0.5;
       flex-shrink: 0;
-      padding: 0 .2rem;
+      transition: opacity .15s;
       line-height: 1;
     }
-    .ex-drag-handle:hover { opacity: 0.85; }
-    .exercise-row.dragging { opacity: 0.35; }
-    .exercise-row.drag-over { border-color: var(--accent) !important; border-style: dashed !important; }
+    .reorder-item-handle:hover { opacity: 1; }
+    .reorder-item-num {
+      font-size: .7rem;
+      font-weight: 700;
+      color: var(--accent);
+      min-width: 1.4rem;
+      flex-shrink: 0;
+    }
+    .reorder-item-name {
+      font-size: .88rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
 
     .exercise-row-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: .875rem; cursor: pointer; user-select: none; }
 
@@ -2164,7 +2236,10 @@
 
               <div class="add-ex-bar">
                 <span class="add-ex-title">🏋️ Exercícios</span>
-                <button type="button" class="btn btn-outline btn-sm" onclick="addExercise()">+ Adicionar exercício</button>
+                <div style="display:flex;gap:.5rem;align-items:center">
+                  <button type="button" id="reorder-ex-btn" class="btn btn-outline btn-sm" onclick="openReorderModal()" style="display:none">☰ Reordenar</button>
+                  <button type="button" class="btn btn-outline btn-sm" onclick="addExercise()">+ Adicionar exercício</button>
+                </div>
               </div>
 
               <div id="exercise-list" class="exercise-list"></div>
@@ -2513,7 +2588,6 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 
 let sb, me, profile, students = [], chart = null, sheetChart = null, progressChart = null
 let exerciseCounter = 0
-let _dndDragSrc = null
 let historyCtx = null
 let navGen = 0        // incremented on every navigation; render fns bail if stale
 let currentView = null, currentViewOpts = {}
@@ -3752,6 +3826,7 @@ async function editWorkout(workoutId) {
     exes.forEach(ex => {
       addExercise()
       const row    = document.getElementById(`ex-${exerciseCounter}`)
+      row.dataset.dbId = ex.id
       const exType = ex.exercise_type || 'musculacao'
       row.querySelector('.ex-name').value = ex.exercise_name
       row.querySelector('.ex-type').value = exType
@@ -5303,13 +5378,9 @@ function addExercise() {
   const div = document.createElement('div')
   div.className = 'exercise-row'
   div.id = `ex-${id}`
-  div.draggable = true
   div.innerHTML = `
     <div class="exercise-row-header" onclick="toggleExerciseBody(${id})">
-      <div style="display:flex;align-items:center;gap:.5rem">
-        <span class="ex-drag-handle" title="Arraste para reordenar" onclick="event.stopPropagation()">⠿</span>
-        <span class="exercise-num-label" id="ex-num-${id}">Exercício ${num}</span>
-      </div>
+      <span class="exercise-num-label" id="ex-num-${id}">Exercício ${num}</span>
       <div class="ex-header-right">
         <button type="button" class="btn btn-sm btn-ghost-danger remove-ex-btn"
                 onclick="event.stopPropagation();removeExercise(${id})" style="display:none">✕ Remover</button>
@@ -5414,8 +5485,8 @@ function addExercise() {
     </div>`
 
   list.appendChild(div)
-  _dndInit()
   updateRemoveButtons()
+  updateReorderButton()
   div.querySelector('.ex-name').focus()
 }
 
@@ -5424,6 +5495,7 @@ function removeExercise(id) {
   if (el) el.remove()
   updateExerciseNumbers()
   updateRemoveButtons()
+  updateReorderButton()
   refreshTotalVolume()
 }
 
@@ -5442,55 +5514,119 @@ function updateRemoveButtons() {
   })
 }
 
-function _dndInit() {
-  const list = document.getElementById('exercise-list')
-  if (!list || list._dndReady) return
-  list._dndReady = true
+function updateReorderButton() {
+  const btn = document.getElementById('reorder-ex-btn')
+  if (!btn) return
+  const count = document.querySelectorAll('#exercise-list .exercise-row').length
+  btn.style.display = count >= 2 ? 'inline-flex' : 'none'
+}
 
-  list.addEventListener('dragstart', e => {
-    const row = e.target.closest('.exercise-row')
-    if (!row) return
-    _dndDragSrc = row
-    row.classList.add('dragging')
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', row.id)
+function openReorderModal() {
+  const body = document.getElementById('reorder-modal-body')
+  body.innerHTML = ''
+
+  document.querySelectorAll('#exercise-list .exercise-row').forEach((row, i) => {
+    const name = row.querySelector('.ex-name')?.value.trim() || `Exercício ${i + 1}`
+    const item = document.createElement('div')
+    item.className = 'reorder-item'
+    item.draggable = true
+    item.dataset.rowId = row.id
+    item.innerHTML = `
+      <span class="reorder-item-num">${i + 1}</span>
+      <span class="reorder-item-handle">⠿</span>
+      <span class="reorder-item-name">${escHtml(name)}</span>`
+    body.appendChild(item)
   })
 
-  list.addEventListener('dragover', e => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    const row = e.target.closest('.exercise-row')
-    if (!row || row === _dndDragSrc) return
-    list.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'))
-    row.classList.add('drag-over')
-  })
+  if (!body._dndReady) {
+    body._dndReady = true
 
-  list.addEventListener('dragleave', e => {
-    if (!list.contains(e.relatedTarget)) {
-      list.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'))
+    body.addEventListener('dragstart', e => {
+      const item = e.target.closest('.reorder-item')
+      if (!item) return
+      body._dragSrc = item
+      item.classList.add('dragging')
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', item.dataset.rowId)
+    })
+
+    body.addEventListener('dragover', e => {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      const item = e.target.closest('.reorder-item')
+      if (!item || item === body._dragSrc) return
+      body.querySelectorAll('.drag-over').forEach(i => i.classList.remove('drag-over'))
+      item.classList.add('drag-over')
+    })
+
+    body.addEventListener('dragleave', e => {
+      if (!body.contains(e.relatedTarget))
+        body.querySelectorAll('.drag-over').forEach(i => i.classList.remove('drag-over'))
+    })
+
+    body.addEventListener('drop', e => {
+      e.preventDefault()
+      const target = e.target.closest('.reorder-item')
+      body.querySelectorAll('.drag-over').forEach(i => i.classList.remove('drag-over'))
+      if (!target || target === body._dragSrc || !body._dragSrc) return
+      const rect = target.getBoundingClientRect()
+      if (e.clientY < rect.top + rect.height / 2) {
+        body.insertBefore(body._dragSrc, target)
+      } else {
+        body.insertBefore(body._dragSrc, target.nextSibling)
+      }
+      body.querySelectorAll('.reorder-item').forEach((item, i) => {
+        const numEl = item.querySelector('.reorder-item-num')
+        if (numEl) numEl.textContent = i + 1
+      })
+    })
+
+    body.addEventListener('dragend', () => {
+      if (body._dragSrc) body._dragSrc.classList.remove('dragging')
+      body.querySelectorAll('.drag-over').forEach(i => i.classList.remove('drag-over'))
+      body._dragSrc = null
+    })
+  }
+
+  document.getElementById('reorder-modal-overlay').style.display = 'flex'
+}
+
+function closeReorderModal() {
+  document.getElementById('reorder-modal-overlay').style.display = 'none'
+}
+
+async function saveReorderModal() {
+  const body     = document.getElementById('reorder-modal-body')
+  const mainList = document.getElementById('exercise-list')
+  const items    = [...body.querySelectorAll('.reorder-item')]
+  const btn      = document.getElementById('reorder-save-btn')
+
+  // Reorder main DOM list to match modal order
+  items.forEach(item => {
+    const row = document.getElementById(item.dataset.rowId)
+    if (row) mainList.appendChild(row)
+  })
+  updateExerciseNumbers()
+  refreshTotalVolume()
+
+  // Persist to DB when editing an existing workout
+  if (editingWorkoutId) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando…' }
+    try {
+      await Promise.all(items.map((item, idx) => {
+        const row  = document.getElementById(item.dataset.rowId)
+        const dbId = row?.dataset.dbId
+        if (!dbId) return Promise.resolve()
+        return sb.from('workout_exercises').update({ position: idx }).eq('id', dbId)
+      }))
+    } catch {
+      toast('Erro ao salvar ordem.', 'error')
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '✓ Salvar ordem' }
     }
-  })
+  }
 
-  list.addEventListener('drop', e => {
-    e.preventDefault()
-    const target = e.target.closest('.exercise-row')
-    list.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'))
-    if (!target || target === _dndDragSrc || !_dndDragSrc) return
-    const rect = target.getBoundingClientRect()
-    if (e.clientY < rect.top + rect.height / 2) {
-      list.insertBefore(_dndDragSrc, target)
-    } else {
-      list.insertBefore(_dndDragSrc, target.nextSibling)
-    }
-    updateExerciseNumbers()
-    refreshTotalVolume()
-  })
-
-  list.addEventListener('dragend', () => {
-    if (_dndDragSrc) _dndDragSrc.classList.remove('dragging')
-    list.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'))
-    _dndDragSrc = null
-  })
+  closeReorderModal()
 }
 
 function toggleExerciseBody(id) {
@@ -6666,5 +6802,21 @@ async function saveWorkoutExecutions(workoutId) {
   if (error) console.error('[saveWorkoutExecutions] erro:', error.code, error.message)
 }
 </script>
+
+<!-- MODAL: Reordenar exercícios -->
+<div id="reorder-modal-overlay" class="reorder-modal-overlay" style="display:none" onclick="if(event.target===this)closeReorderModal()">
+  <div class="reorder-modal-card">
+    <div class="reorder-modal-header">
+      <span style="font-weight:700;font-size:.95rem;color:var(--text-primary)">☰ Reordenar Exercícios</span>
+      <button class="btn btn-outline btn-sm" onclick="closeReorderModal()" style="padding:.2rem .6rem">✕</button>
+    </div>
+    <div id="reorder-modal-body" class="reorder-modal-body"></div>
+    <div class="reorder-modal-footer">
+      <button class="btn btn-outline btn-sm" onclick="closeReorderModal()">Cancelar</button>
+      <button class="btn btn-primary btn-sm" id="reorder-save-btn" onclick="saveReorderModal()">✓ Salvar ordem</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
