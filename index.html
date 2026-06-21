@@ -859,6 +859,21 @@
 
     .exercise-row:hover { border-color: rgba(144,158,186,0.2); }
 
+    .ex-drag-handle {
+      cursor: grab;
+      color: var(--text-muted);
+      font-size: .9rem;
+      opacity: 0.4;
+      transition: opacity .15s;
+      user-select: none;
+      flex-shrink: 0;
+      padding: 0 .2rem;
+      line-height: 1;
+    }
+    .ex-drag-handle:hover { opacity: 0.85; }
+    .exercise-row.dragging { opacity: 0.35; }
+    .exercise-row.drag-over { border-color: var(--accent) !important; border-style: dashed !important; }
+
     .exercise-row-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: .875rem; cursor: pointer; user-select: none; }
 
     .ex-header-right { display: flex; align-items: center; gap: .5rem; }
@@ -2498,6 +2513,7 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 
 let sb, me, profile, students = [], chart = null, sheetChart = null, progressChart = null
 let exerciseCounter = 0
+let _dndDragSrc = null
 let historyCtx = null
 let navGen = 0        // incremented on every navigation; render fns bail if stale
 let currentView = null, currentViewOpts = {}
@@ -2982,6 +2998,7 @@ async function fetchWorkouts(studentId) {
     .eq('student_id', studentId)
     .order('date', { ascending: false })
     .order('created_at', { ascending: false })
+    .order('position', { ascending: true, foreignTable: 'workout_exercises' })
   if (error) throw error
   return data || []
 }
@@ -2992,6 +3009,7 @@ async function fetchLastWorkout(studentId) {
     .eq('student_id', studentId)
     .order('date', { ascending: false })
     .order('created_at', { ascending: false })
+    .order('position', { ascending: true, foreignTable: 'workout_exercises' })
     .limit(1).maybeSingle()
   if (error) throw error
   return data || null
@@ -3695,6 +3713,7 @@ async function editWorkout(workoutId) {
     .from('workouts')
     .select('*, workout_exercises(*)')
     .eq('id', workoutId)
+    .order('position', { ascending: true, foreignTable: 'workout_exercises' })
     .maybeSingle()
   if (error || !workout) { toast('Erro ao carregar treino para edição.', 'error'); return }
 
@@ -3724,7 +3743,9 @@ async function editWorkout(workoutId) {
   list.innerHTML = ''
   exerciseCounter = 0
 
-  const exes = (workout.workout_exercises || []).slice().sort((a, b) => (a.id > b.id ? 1 : -1))
+  const exes = (workout.workout_exercises || []).slice().sort((a, b) =>
+    (a.position ?? 9999) - (b.position ?? 9999) || (a.id > b.id ? 1 : -1)
+  )
   if (!exes.length) {
     addExercise()
   } else {
@@ -3818,6 +3839,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
       .eq('student_id', studentId)
       .order('date', { ascending: false })
       .order('created_at', { ascending: false })
+      .order('position', { ascending: true, foreignTable: 'workout_exercises' })
     if (_wErr) throw _wErr
     const workouts = _wData || []
 
@@ -4229,6 +4251,7 @@ async function renderMyWorkout(gen) {
       .eq('student_id', studentId)
       .order('date', { ascending: false })
       .order('created_at', { ascending: false })
+      .order('position', { ascending: true, foreignTable: 'workout_exercises' })
     if (_wErr) throw _wErr
     const workouts = _wData || []
     window._workoutsCache = window._workoutsCache || {}
@@ -4501,6 +4524,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
         .select('*, workout_exercises(*)')
         .eq('routine_id', routineId)
         .order('created_at', { ascending: true })
+        .order('position', { ascending: true, foreignTable: 'workout_exercises' })
     ])
     if (routineRes.error) throw routineRes.error
     if (navGen !== gen) return
@@ -5279,9 +5303,13 @@ function addExercise() {
   const div = document.createElement('div')
   div.className = 'exercise-row'
   div.id = `ex-${id}`
+  div.draggable = true
   div.innerHTML = `
     <div class="exercise-row-header" onclick="toggleExerciseBody(${id})">
-      <span class="exercise-num-label" id="ex-num-${id}">Exercício ${num}</span>
+      <div style="display:flex;align-items:center;gap:.5rem">
+        <span class="ex-drag-handle" title="Arraste para reordenar" onclick="event.stopPropagation()">⠿</span>
+        <span class="exercise-num-label" id="ex-num-${id}">Exercício ${num}</span>
+      </div>
       <div class="ex-header-right">
         <button type="button" class="btn btn-sm btn-ghost-danger remove-ex-btn"
                 onclick="event.stopPropagation();removeExercise(${id})" style="display:none">✕ Remover</button>
@@ -5386,6 +5414,7 @@ function addExercise() {
     </div>`
 
   list.appendChild(div)
+  _dndInit()
   updateRemoveButtons()
   div.querySelector('.ex-name').focus()
 }
@@ -5410,6 +5439,57 @@ function updateRemoveButtons() {
   rows.forEach(row => {
     const btn = row.querySelector('.remove-ex-btn')
     if (btn) btn.style.display = rows.length > 1 ? 'inline-flex' : 'none'
+  })
+}
+
+function _dndInit() {
+  const list = document.getElementById('exercise-list')
+  if (!list || list._dndReady) return
+  list._dndReady = true
+
+  list.addEventListener('dragstart', e => {
+    const row = e.target.closest('.exercise-row')
+    if (!row) return
+    _dndDragSrc = row
+    row.classList.add('dragging')
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', row.id)
+  })
+
+  list.addEventListener('dragover', e => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const row = e.target.closest('.exercise-row')
+    if (!row || row === _dndDragSrc) return
+    list.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'))
+    row.classList.add('drag-over')
+  })
+
+  list.addEventListener('dragleave', e => {
+    if (!list.contains(e.relatedTarget)) {
+      list.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'))
+    }
+  })
+
+  list.addEventListener('drop', e => {
+    e.preventDefault()
+    const target = e.target.closest('.exercise-row')
+    list.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'))
+    if (!target || target === _dndDragSrc || !_dndDragSrc) return
+    const rect = target.getBoundingClientRect()
+    if (e.clientY < rect.top + rect.height / 2) {
+      list.insertBefore(_dndDragSrc, target)
+    } else {
+      list.insertBefore(_dndDragSrc, target.nextSibling)
+    }
+    updateExerciseNumbers()
+    refreshTotalVolume()
+  })
+
+  list.addEventListener('dragend', () => {
+    if (_dndDragSrc) _dndDragSrc.classList.remove('dragging')
+    list.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'))
+    _dndDragSrc = null
   })
 }
 
@@ -5562,7 +5642,7 @@ async function saveWorkout(e) {
   let totalVolume = 0
   let allValid    = true
 
-  rows.forEach(row => {
+  rows.forEach((row, idx) => {
     const exName = row.querySelector('.ex-name').value.trim()
     const exType = row.querySelector('.ex-type')?.value || 'musculacao'
 
@@ -5581,7 +5661,8 @@ async function saveWorkout(e) {
         recovery_speed_kmh:    parseFloat(row.querySelector('.ex-recovery-speed')?.value)    || null,
         hr_min:                parseInt(row.querySelector('.ex-hr-min')?.value)              || null,
         hr_max:                parseInt(row.querySelector('.ex-hr-max')?.value)              || null,
-        training_method: null, method_description: null
+        training_method: null, method_description: null,
+        position: idx
       })
     } else {
       const sets   = parseInt(row.querySelector('.ex-sets')?.value)
@@ -5603,7 +5684,8 @@ async function saveWorkout(e) {
         duration_min: null, distance_km: null, speed_kmh: null, pace: null,
         recovery_interval_min: null, recovery_speed_kmh: null,
         hr_min: null, hr_max: null,
-        training_method: method, method_description: methodDesc
+        training_method: method, method_description: methodDesc,
+        position: idx
       })
     }
   })
