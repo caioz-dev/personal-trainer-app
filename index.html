@@ -3866,6 +3866,7 @@ async function editWorkout(workoutId) {
       row.dataset.dbId = ex.id
       const exType = ex.exercise_type || 'musculacao'
       row.querySelector('.ex-name').value = ex.exercise_name
+      updateExerciseHeader(exerciseCounter)
       row.querySelector('.ex-type').value = exType
       toggleExerciseType(exerciseCounter)
       if (exType === 'aerobico') {
@@ -5418,7 +5419,7 @@ function addExercise() {
   div.id = `ex-${id}`
   div.innerHTML = `
     <div class="exercise-row-header" onclick="toggleExerciseBody(${id})">
-      <span class="exercise-num-label" id="ex-num-${id}">Exercício ${num}</span>
+      <span class="exercise-num-label" id="ex-num-${id}" data-default="Exercício ${num}">Exercício ${num}</span>
       <div class="ex-header-right">
         <button type="button" class="btn btn-sm btn-ghost-danger remove-ex-btn"
                 onclick="event.stopPropagation();removeExercise(${id})" style="display:none">✕ Remover</button>
@@ -5429,7 +5430,7 @@ function addExercise() {
       <div class="form-grid">
         <div class="form-group form-full">
           <label>Nome do exercício</label>
-          <input type="text" class="form-control ex-name" placeholder="Ex: Supino Reto" required>
+          <input type="text" class="form-control ex-name" placeholder="Ex: Supino Reto" required oninput="updateExerciseHeader(${id})">
         </div>
         <div class="form-group">
           <label>Tipo de exercício</label>
@@ -5540,8 +5541,21 @@ function removeExercise(id) {
 function updateExerciseNumbers() {
   document.querySelectorAll('#exercise-list .exercise-row').forEach((row, i) => {
     const lbl = row.querySelector('.exercise-num-label')
-    if (lbl) lbl.textContent = `Exercício ${i + 1}`
+    const inp = row.querySelector('.ex-name')
+    if (!lbl) return
+    const fallback = `Exercício ${i + 1}`
+    lbl.dataset.default = fallback
+    const name = inp?.value?.trim()
+    lbl.textContent = name || fallback
   })
+}
+
+function updateExerciseHeader(id) {
+  const row = document.getElementById(`ex-${id}`)
+  const name = row?.querySelector('.ex-name')?.value?.trim()
+  const label = document.getElementById(`ex-num-${id}`)
+  if (!label) return
+  label.textContent = name || label.dataset.default || `Exercício ${id}`
 }
 
 function updateRemoveButtons() {
