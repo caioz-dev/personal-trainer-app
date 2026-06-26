@@ -1361,6 +1361,15 @@
     .btn-start-workout:hover:not(:disabled) { background: var(--success-a20); border-color: rgba(74,222,128,0.45); }
     .btn-start-workout:disabled { opacity: .5; cursor: not-allowed; }
 
+    .routine-expand-icon {
+      display: inline-block;
+      transition: transform .25s ease;
+      color: var(--text-muted);
+      font-size: .85rem;
+      pointer-events: none;
+    }
+    .routine-expand-icon.expanded { transform: rotate(90deg); }
+
     .workout-timer-widget {
       position: fixed;
       bottom: 5.5rem;
@@ -2673,6 +2682,7 @@ let _selectedWorkoutIds     = new Set()
 let _editingRoutineId       = null
 let _metronomeToken         = null   // { exId, cancelled }
 let _audioCtx               = null   // reused AudioContext for metronome
+let _routineExCache         = {}     // workout_id → workout_exercises[], populated on accordion expand
 
 // Limpa TODO o estado da sessão anterior — chamado no logout e antes de boot de novo usuário
 function resetAppState() {
@@ -4710,7 +4720,10 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
     const routine  = routineRes.data
     const workouts = workoutsRes.data || []
     window._workoutsCache = window._workoutsCache || {}
-    workouts.forEach(w => { window._workoutsCache[w.id] = w })
+    workouts.forEach(w => {
+      window._workoutsCache[w.id] = w
+      if (w.workout_exercises?.length) _routineExCache[w.id] = w.workout_exercises
+    })
 
     // Sync page title with actual routine name (opts.routineName may be stale after edit)
     const titleEl = document.getElementById('page-title')
@@ -4734,34 +4747,16 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
       const exes    = w.workout_exercises || []
       const uid     = 'rd' + w.id.replace(/-/g, '')
       const exCount = exes.length
-      const exRows  = exes.length
-        ? exes.map(ex => {
-            const isAero  = ex.exercise_type === 'aerobico'
-            const detail  = isAero
-              ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—'
-              : `${ex.sets}×${ex.reps} @ ${ex.weight_kg} kg`
-            const volCell = isAero
-              ? (ex.distance_km ? `${parseFloat(ex.distance_km).toLocaleString('pt-BR')} km` : '—')
-              : `${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
-            return `<tr>
-              <td style="font-weight:500;color:var(--text-secondary)">
-                ${escHtml(ex.exercise_name)}${ex.training_method ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">⚡ ${ex.training_method}</div>` : ''}
-              </td>
-              <td>${detail}</td>
-              <td class="vol-cell">${volCell}</td>
-            </tr>`
-          }).join('')
-        : `<tr><td colspan="3" style="padding:.75rem 1rem;font-style:italic;color:var(--text-muted)">Sem detalhes disponíveis</td></tr>`
 
       const showStartBtn = profile.role === 'student' || opts.fromView === 'my-workout'
       const startBtnHTML = showStartBtn
-        ? `<button class="btn-start-workout workout-timer-btn" style="position:absolute;bottom:.75rem;right:1rem;font-size:.78rem;padding:.4rem 1rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar Treino'}</button>`
+        ? `<button class="btn-start-workout workout-timer-btn" style="position:absolute;bottom:.5rem;right:1rem;font-size:.7rem;padding:.25rem .65rem;background:transparent;border-color:var(--success-a22)" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar Treino'}</button>`
         : ''
 
       return `
         <div style="background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);margin-bottom:.625rem">
-          <div style="position:relative;padding:.75rem 1rem;cursor:pointer${showStartBtn ? ';padding-bottom:2.75rem' : ''}"
-               onclick="(function(){ const d=document.getElementById('rdd-${uid}'),i=document.getElementById('rdi-${uid}'),o=d.style.display!=='none'; d.style.display=o?'none':'block'; i.textContent=o?'▶':'▼'; })()">
+          <div style="position:relative;padding:.75rem 1rem${showStartBtn ? ';padding-bottom:2.1rem' : ''};cursor:pointer"
+               onclick="toggleRoutineWorkoutAccordion('${uid}','${w.id}')">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem">
               <div style="min-width:0;flex:1">
                 <div style="font-weight:700;font-size:.9rem;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(w.name || 'Treino sem nome')}</div>
@@ -4773,19 +4768,12 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
                      <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar">📋</button>
                      <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromRoutine('${w.id}','${studentId}','${snSafe}','${routineId}','${rNameSafe}')" title="Excluir">🗑️</button>`
                   : ''}
-                <span id="rdi-${uid}" style="color:var(--text-muted);font-size:.85rem;margin-left:.25rem;pointer-events:none">▶</span>
+                <span id="rdi-${uid}" class="routine-expand-icon" style="margin-left:.25rem">▶</span>
               </div>
             </div>
             ${startBtnHTML}
           </div>
-          <div id="rdd-${uid}" style="display:none;border-top:1px solid var(--border-subtle);padding:.75rem 1rem">
-            <div class="table-wrap">
-              <table class="ex-detail-table">
-                <thead><tr><th>Exercício</th><th>Série × Reps @ Carga</th><th>Volume</th></tr></thead>
-                <tbody>${exRows}</tbody>
-              </table>
-            </div>
-          </div>
+          <div id="rdd-${uid}" style="display:none;border-top:1px solid var(--border-subtle)"></div>
         </div>`
     }
 
@@ -4836,6 +4824,52 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
               onclick="openRoutineDetail('${opts.studentId || ''}','${errSnSafe}','${opts.routineId || ''}','')">Tentar novamente</button></div>`
   }
+}
+
+function _routineExercisesHTML(exes) {
+  if (!exes?.length) return '<div style="padding:.75rem 1rem;font-style:italic;color:var(--text-muted);font-size:.82rem">Sem exercícios cadastrados.</div>'
+  const rows = exes.map(ex => {
+    const isAero = ex.exercise_type === 'aerobico'
+    const detail = isAero
+      ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—'
+      : `${ex.sets}×${ex.reps} @ ${ex.weight_kg} kg`
+    return `<div style="display:flex;align-items:baseline;gap:.5rem;padding:.35rem 1rem;border-bottom:1px solid var(--border-subtle)">
+      <span style="flex:1;min-width:0;font-size:.82rem;font-weight:600;color:var(--text-secondary)">${escHtml(ex.exercise_name)}${ex.training_method ? `<span style="font-size:.68rem;color:var(--accent-soft);margin-left:.35rem">⚡ ${escHtml(ex.training_method)}</span>` : ''}</span>
+      <span style="font-size:.77rem;color:var(--text-muted);white-space:nowrap">${detail}</span>
+    </div>`
+  }).join('')
+  return `<div style="padding:.25rem 0">${rows}</div>`
+}
+
+async function toggleRoutineWorkoutAccordion(uid, workoutId) {
+  const content = document.getElementById('rdd-' + uid)
+  const icon    = document.getElementById('rdi-' + uid)
+  if (!content || !icon) return
+
+  const isOpen = content.style.display !== 'none'
+  if (isOpen) {
+    content.style.display = 'none'
+    icon.classList.remove('expanded')
+    return
+  }
+
+  content.style.display = 'block'
+  icon.classList.add('expanded')
+
+  if (_routineExCache[workoutId] !== undefined) {
+    content.innerHTML = _routineExercisesHTML(_routineExCache[workoutId])
+    return
+  }
+
+  content.innerHTML = '<div style="padding:.75rem 1rem;color:var(--text-muted);font-size:.82rem">Carregando…</div>'
+  const { data, error } = await sb.from('workout_exercises')
+    .select('*').eq('workout_id', workoutId).order('position', { ascending: true })
+  if (error) {
+    content.innerHTML = '<div style="padding:.75rem 1rem;color:var(--danger);font-size:.82rem">Erro ao carregar exercícios.</div>'
+    return
+  }
+  _routineExCache[workoutId] = data
+  content.innerHTML = _routineExercisesHTML(data)
 }
 
 async function deleteWorkoutFromRoutine(workoutId, studentId, studentName, routineId, routineName) {
