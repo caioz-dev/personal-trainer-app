@@ -2338,6 +2338,11 @@
           <div id="profile-body"></div>
         </div>
 
+        <!-- VIEW: Meu Perfil (personal) -->
+        <div id="view-personal-profile" class="view" style="display:none">
+          <div id="personal-profile-body"></div>
+        </div>
+
         <!-- VIEW: Ficha do Aluno (personal) -->
         <div id="view-student-sheet" class="view" style="display:none">
           <div id="student-sheet-body"></div>
@@ -2959,7 +2964,7 @@ function buildSidebar() {
   badge.className   = `role-badge ${isP ? 'role-personal' : 'role-student'}`
 
   const items = isP
-    ? [['students','👥','Alunos'],['my-workout','🏋️','Meu Treino'],['calculator','🧮','Calculadora'],['progress','📈','Progresso']]
+    ? [['students','👥','Alunos'],['my-workout','🏋️','Meu Treino'],['calculator','🧮','Calculadora'],['progress','📈','Progresso'],['personal-profile','👤','Meu Perfil']]
     : [['history','📊','Meu Histórico'],['profile','👤','Meu Perfil'],['calculator','🧮','Calculadora'],['progress','📈','Progresso']]
 
   document.getElementById('nav-list').innerHTML = items.map(([id, icon, label]) => `
@@ -2987,7 +2992,7 @@ function closeSidebar() {
 const VIEW_TITLES = {
   students: 'Alunos', 'my-workout': 'Meu Treino', workout: 'Novo Treino',
   calculator: 'Calculadora', history: 'Meu Histórico',
-  progress: 'Dashboard de Progresso', profile: 'Meu Perfil',
+  progress: 'Dashboard de Progresso', profile: 'Meu Perfil', 'personal-profile': 'Meu Perfil',
   'student-sheet': 'Ficha do Aluno', 'routine-detail': 'Rotina'
 }
 
@@ -3040,6 +3045,7 @@ async function navigateTo(view, opts = {}) {
     else if (view === 'history')        await renderHistory(profile.id, gen)
     else if (view === 'progress')       await renderProgress()
     else if (view === 'profile')        await renderProfile()
+    else if (view === 'personal-profile') await renderPersonalProfile()
   } catch { /* each render fn already handles its own errors */ }
 
   // Activate reveal animations on newly rendered content
@@ -3101,6 +3107,22 @@ async function fetchStudents() {
   const { data, error } = await sb.from('profiles').select('*').in('id', ids).order('name')
   if (error) throw error
   students = data || []
+}
+
+async function fetchStudentPersonal(studentId) {
+  const { data: link } = await sb
+    .from('personal_students')
+    .select('personal_id')
+    .eq('student_id', studentId)
+    .eq('active', true)
+    .maybeSingle()
+  if (!link?.personal_id) return null
+  const { data } = await sb
+    .from('profiles')
+    .select('id, name, username, avatar_url')
+    .eq('id', link.personal_id)
+    .maybeSingle()
+  return data || null
 }
 
 async function fetchWorkouts(studentId) {
@@ -3358,11 +3380,14 @@ async function renderHistory(studentId, gen = 0) {
   body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando histórico…</div>'
 
   try {
-    const [workouts, routinesRes] = await Promise.all([
+    const [workouts, routinesRes, personalProfile] = await Promise.all([
       fetchWorkouts(studentId),
       profile.role === 'student'
         ? sb.from('routines').select('*').eq('student_id', studentId).order('created_at', { ascending: false })
-        : Promise.resolve({ data: [], error: null })
+        : Promise.resolve({ data: [], error: null }),
+      profile.role === 'student'
+        ? fetchStudentPersonal(studentId)
+        : Promise.resolve(null)
     ])
     window._workoutsCache = window._workoutsCache || {}
     workouts.forEach(w => { window._workoutsCache[w.id] = w })
@@ -3407,6 +3432,21 @@ async function renderHistory(studentId, gen = 0) {
       }
     }
 
+    let personalCardHTML = ''
+    if (profile.role === 'student' && personalProfile) {
+      const pName = displayName(personalProfile)
+      personalCardHTML = `
+        <div class="card reveal" style="max-width:480px;margin-bottom:1.25rem">
+          <div style="display:flex;align-items:center;gap:1rem">
+            ${avatarEl(personalProfile.name, personalProfile.avatar_url || null, 56, 'flex-shrink:0')}
+            <div>
+              <div style="font-weight:700;font-size:1rem;color:var(--text-primary)">${escHtml(pName)}</div>
+              <div style="font-size:.8rem;color:var(--text-muted);margin-top:.2rem">Seu personal trainer</div>
+            </div>
+          </div>
+        </div>`
+    }
+
     let bannerHTML = ''
     if (workouts.length) {
       const diffHours = (Date.now() - new Date(workouts[0].created_at).getTime()) / 36e5
@@ -3417,7 +3457,7 @@ async function renderHistory(studentId, gen = 0) {
         </div>`
       }
     }
-    body.innerHTML = bannerHTML + historyHTML(workouts, profile.name, 'evo-chart', routinesCardsHTML)
+    body.innerHTML = personalCardHTML + bannerHTML + historyHTML(workouts, profile.name, 'evo-chart', routinesCardsHTML)
     if (workouts.length) initChart('evo-chart', [...workouts].reverse())
     bindWorkoutRowClicks(body)
   } catch (err) {
@@ -5092,6 +5132,116 @@ async function uploadAvatar(input) {
     profile.avatar_url = urlWithBust
 
     const wrap = document.getElementById('prof-avatar-wrap')
+    if (wrap) wrap.innerHTML = avatarEl(profile.name, profile.avatar_url, 80, '')
+
+    toast('Foto de perfil atualizada!', 'success')
+  } catch (err) {
+    toast('Erro ao enviar foto: ' + err.message, 'error')
+  } finally {
+    if (btn) { btn.textContent = '📷 Alterar foto'; btn.disabled = false }
+    input.value = ''
+  }
+}
+
+// ─────────────────────────────────────────────
+// VIEW: MEU PERFIL (personal)
+// ─────────────────────────────────────────────
+async function renderPersonalProfile() {
+  const body = document.getElementById('personal-profile-body')
+  body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando perfil…</div>'
+  try {
+    body.innerHTML = `
+      <div class="card reveal" style="max-width:480px">
+        <div class="card-header">
+          <div>
+            <div class="section-label">Dados do Perfil</div>
+            <div class="card-title">👤 Meu Perfil</div>
+          </div>
+        </div>
+        <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1.25rem">
+          Seus alunos verão sua foto e nome de usuário na tela inicial deles.
+        </p>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:.75rem;padding-bottom:1.25rem;margin-bottom:1.25rem;border-bottom:1px solid var(--border-subtle)">
+          <div id="personal-prof-avatar-wrap">
+            ${avatarEl(profile.name, profile.avatar_url || null, 80, '')}
+          </div>
+          <input type="file" id="personal-avatar-input" accept="image/*" style="display:none" onchange="uploadPersonalAvatar(this)">
+          <button type="button" id="personal-avatar-upload-btn" class="btn btn-outline btn-sm"
+                  onclick="document.getElementById('personal-avatar-input').click()">📷 Alterar foto</button>
+        </div>
+        <div class="form-group" style="margin-bottom:1rem">
+          <label>Nome completo</label>
+          <div class="form-control" style="cursor:default;opacity:.7;pointer-events:none">${escHtml(profile.name)}</div>
+          <div style="font-size:.75rem;color:var(--text-muted);margin-top:.3rem">Nome completo não pode ser alterado aqui.</div>
+        </div>
+        <form onsubmit="savePersonalProfile(event)">
+          <div class="form-group" style="margin-bottom:1rem">
+            <label>Nome de usuário</label>
+            <input id="personal-prof-username" type="text" class="form-control" placeholder="Ex: prof_joao, Mestre Fitness…" value="${escHtml(profile.username || '')}">
+            <div style="font-size:.75rem;color:var(--text-muted);margin-top:.3rem">Aparece para seus alunos no lugar do nome completo. Deixe em branco para usar o nome completo.</div>
+          </div>
+          <button type="submit" id="personal-prof-btn" class="btn btn-primary" style="margin-top:.5rem">Salvar</button>
+        </form>
+      </div>`
+    observeRevealElements()
+  } catch (err) {
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <p>Erro ao carregar perfil.</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:.75rem" onclick="renderPersonalProfile()">Tentar novamente</button></div>`
+  }
+}
+
+async function savePersonalProfile(e) {
+  e.preventDefault()
+  const btn = document.getElementById('personal-prof-btn')
+  btn.textContent = 'Salvando…'; btn.disabled = true
+  const username = (document.getElementById('personal-prof-username')?.value || '').trim() || null
+  try {
+    const { error } = await sb.from('profiles').update({ username }).eq('id', profile.id)
+    if (error) throw error
+    profile.username = username
+    toast('Perfil salvo com sucesso!', 'success')
+  } catch (err) {
+    toast('Erro ao salvar perfil: ' + err.message, 'error')
+  }
+  btn.textContent = 'Salvar'; btn.disabled = false
+}
+
+async function uploadPersonalAvatar(input) {
+  const file = input.files?.[0]
+  if (!file) return
+
+  if (!file.type.startsWith('image/')) {
+    toast('Selecione um arquivo de imagem (JPG, PNG, WEBP…).', 'error')
+    input.value = ''; return
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    toast('A foto deve ter no máximo 2 MB.', 'error')
+    input.value = ''; return
+  }
+
+  const btn = document.getElementById('personal-avatar-upload-btn')
+  if (btn) { btn.textContent = '⏳ Enviando…'; btn.disabled = true }
+
+  try {
+    const path = `personal-${profile.id}/avatar`
+
+    const { error: upErr } = await sb.storage
+      .from('avatars')
+      .upload(path, file, { upsert: true, contentType: file.type })
+    if (upErr) throw upErr
+
+    const { data: { publicUrl } } = sb.storage.from('avatars').getPublicUrl(path)
+    const urlWithBust = `${publicUrl}?t=${Date.now()}`
+
+    const { error: dbErr } = await sb.from('profiles')
+      .update({ avatar_url: urlWithBust })
+      .eq('id', profile.id)
+    if (dbErr) throw dbErr
+
+    profile.avatar_url = urlWithBust
+
+    const wrap = document.getElementById('personal-prof-avatar-wrap')
     if (wrap) wrap.innerHTML = avatarEl(profile.name, profile.avatar_url, 80, '')
 
     toast('Foto de perfil atualizada!', 'success')
