@@ -2084,6 +2084,27 @@
 
     .review-effort-btn:hover { background: var(--accent-a10); border-color: var(--accent-a40); color: var(--accent-soft); }
     .review-effort-btn.selected { background: var(--accent-a20); border-color: var(--accent); color: var(--accent-soft); }
+
+    /* ---- BANNER OFFLINE ---- */
+    .offline-banner {
+      display: none;
+      position: sticky;
+      top: 58px;
+      z-index: 9;
+      background: var(--warning-a10);
+      border-bottom: 1px solid var(--warning-a20);
+      color: var(--warning);
+      padding: .45rem 1.5rem;
+      font-size: .8rem;
+      font-weight: 500;
+      text-align: center;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+    .offline-banner.show { display: block; }
+    @media (max-width: 768px) { .offline-banner { top: 54px; } }
+    @media (max-width: 480px) { .offline-banner { top: 44px; } }
+    @media (max-width: 400px) { .offline-banner { top: 38px; } }
   </style>
 </head>
 <body>
@@ -2208,6 +2229,10 @@
           <h1 id="page-title">—</h1>
         </div>
         <div id="header-btn"></div>
+      </div>
+
+      <div id="offline-banner" class="offline-banner">
+        📵 Você está offline. Algumas funcionalidades podem estar indisponíveis.
       </div>
 
       <div class="content-body">
@@ -7176,6 +7201,32 @@ async function saveWorkoutExecutions(workoutId) {
     </div>
   </div>
 </div>
+
+<script>
+  // ── Service Worker ──────────────────────────────────────────
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js')
+        .then(reg => console.log('[SW] Registrado, escopo:', reg.scope))
+        .catch(err => console.warn('[SW] Falha no registro:', err))
+    })
+  }
+
+  // ── Banner offline ──────────────────────────────────────────
+  function syncOfflineBanner() {
+    const banner = document.getElementById('offline-banner')
+    if (!banner) return
+    if (navigator.onLine) {
+      banner.classList.remove('show')
+    } else {
+      banner.classList.add('show')
+    }
+  }
+  window.addEventListener('online',  syncOfflineBanner)
+  window.addEventListener('offline', syncOfflineBanner)
+  // verifica estado inicial após DOM pronto
+  document.addEventListener('DOMContentLoaded', syncOfflineBanner)
+</script>
 
 </body>
 </html>

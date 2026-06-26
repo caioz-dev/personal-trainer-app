@@ -1,0 +1,21 @@
+{
+  "name": "PersonalPro – Gestão de Treinos",
+  "short_name": "PersonalPro",
+  "description": "Gestão de treinos para personal trainers e alunos",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#01040C",
+  "theme_color": "#567FFF",
+  "icons": [
+    {
+      "src": "/logo.png.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo.png.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
