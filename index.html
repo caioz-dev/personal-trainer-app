@@ -1139,6 +1139,31 @@
       white-space: nowrap;
     }
 
+    /* ---- COMPARISON CARDS (previsto/executado/diferença — mobile) ---- */
+    .comp-cards { display: none; }
+    .comp-card {
+      background: var(--bg-dark-a50);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: .75rem .875rem;
+      margin-bottom: .625rem;
+    }
+    .comp-card:last-child { margin-bottom: 0; }
+    .comp-card-name { font-weight: 700; font-size: .88rem; color: var(--text-primary); margin-bottom: .5rem; }
+    .comp-card-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: .5rem;
+      font-size: .82rem;
+      padding: .15rem 0;
+    }
+    .comp-card-row .label { color: var(--text-muted); font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+    .comp-summary { margin-top: .625rem; padding-top: .75rem; border-top: 1px solid var(--neutral-a15); }
+    .comp-summary-block { margin-bottom: .625rem; }
+    .comp-summary-block:last-child { margin-bottom: 0; }
+    .comp-summary-title { font-weight: 700; font-size: .82rem; color: var(--text-primary); margin-bottom: .3rem; }
+
     /* ---- CALCULATOR ---- */
     .calc-wrap { max-width: 520px; }
 
@@ -1839,6 +1864,10 @@
 
       /* Comparison modal */
       .comparison-modal-overlay { padding: .5rem; }
+
+      /* Previsto vs Executado: table → stacked cards */
+      .comp-table { display: none; }
+      .comp-cards { display: block; }
 
       /* Table headers: allow wrap instead of causing horizontal scroll */
       th { white-space: normal; }
@@ -4193,7 +4222,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
           let totalPlannedMusc = 0, totalExecutedMusc = 0
           let totalPlannedAero = 0, totalExecutedAero = 0
 
-          const exRows = group.items.map(ex => {
+          const exItems = group.items.map(ex => {
             const we     = ex.workout_exercises
             const isAero = we?.exercise_type === 'aerobico'
               || we?.duration_min != null
@@ -4218,13 +4247,21 @@ async function renderStudentSheet(studentId, studentName, gen) {
               const diffCell    = diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>`
                 : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} ${unit}</span>`
                 :             `<span style="color:var(--text-muted)">= 0 ${unit}</span>`
+              const exName = `🏃 ${we?.exercise_name || '—'}`
 
-              return `<tr>
-                <td style="font-weight:500;color:var(--text-secondary)">🏃 ${we?.exercise_name || '—'}</td>
+              const row = `<tr>
+                <td style="font-weight:500;color:var(--text-secondary)">${exName}</td>
                 <td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td>
                 <td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td>
                 <td style="font-size:.82rem">${diffCell}</td>
               </tr>`
+              const card = `<div class="comp-card">
+                <div class="comp-card-name">${exName}</div>
+                <div class="comp-card-row"><span class="label">Previsto</span><span>${plannedTxt}</span></div>
+                <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--success);font-weight:600">${executedTxt}</span></div>
+                <div class="comp-card-row"><span class="label">Diferença</span><span>${diffCell}</span></div>
+              </div>`
+              return { row, card }
             } else {
               const planSets   = we?.sets || 0
               const planWeight = parseFloat(we?.weight_kg) || 0
@@ -4245,37 +4282,62 @@ async function renderStudentSheet(studentId, studentName, gen) {
               const diffCell    = diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>`
                 : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>`
                 :             `<span style="color:var(--text-muted)">= 0 kg</span>`
+              const methodTag = we?.training_method ? `⚡ ${we.training_method}` : ''
 
-              return `<tr>
+              const row = `<tr>
                 <td style="font-weight:500;color:var(--text-secondary)">
                   ${we?.exercise_name || '—'}
-                  ${we?.training_method ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">⚡ ${we.training_method}</div>` : ''}
+                  ${methodTag ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">${methodTag}</div>` : ''}
                 </td>
                 <td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td>
                 <td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td>
                 <td style="font-size:.82rem">${diffCell}</td>
               </tr>`
+              const card = `<div class="comp-card">
+                <div class="comp-card-name">${we?.exercise_name || '—'}${methodTag ? ` <span style="font-size:.72rem;color:var(--accent-soft);font-weight:400">${methodTag}</span>` : ''}</div>
+                <div class="comp-card-row"><span class="label">Previsto</span><span>${plannedTxt}</span></div>
+                <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--success);font-weight:600">${executedTxt}</span></div>
+                <div class="comp-card-row"><span class="label">Diferença</span><span>${diffCell}</span></div>
+              </div>`
+              return { row, card }
             }
-          }).join('')
+          })
+          const exRows  = exItems.map(i => i.row).join('')
+          const exCards = exItems.map(i => i.card).join('')
 
           const footerRows = []
+          const footerCards = []
           if (totalPlannedMusc > 0 || totalExecutedMusc > 0) {
             const d = totalExecutedMusc - totalPlannedMusc
+            const dCell = d > 0 ? `<span style="color:var(--success)">+${d.toLocaleString('pt-BR')} kg</span>` : d < 0 ? `<span style="color:var(--danger)">${d.toLocaleString('pt-BR')} kg</span>` : `<span style="color:var(--text-muted)">= 0 kg</span>`
             footerRows.push(`<tr style="border-top:1px solid var(--neutral-a15)">
               <td style="font-weight:700;color:var(--text-primary);font-size:.82rem">Total musculação</td>
               <td style="color:var(--text-muted);font-size:.82rem">${totalPlannedMusc.toLocaleString('pt-BR')} kg</td>
               <td class="vol-cell" style="font-size:.82rem">${totalExecutedMusc.toLocaleString('pt-BR')} kg</td>
-              <td style="font-size:.82rem">${d > 0 ? `<span style="color:var(--success)">+${d.toLocaleString('pt-BR')} kg</span>` : d < 0 ? `<span style="color:var(--danger)">${d.toLocaleString('pt-BR')} kg</span>` : `<span style="color:var(--text-muted)">= 0 kg</span>`}</td>
+              <td style="font-size:.82rem">${dCell}</td>
             </tr>`)
+            footerCards.push(`<div class="comp-summary-block">
+              <div class="comp-summary-title">Total musculação</div>
+              <div class="comp-card-row"><span class="label">Previsto</span><span>${totalPlannedMusc.toLocaleString('pt-BR')} kg</span></div>
+              <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--accent-soft);font-weight:700">${totalExecutedMusc.toLocaleString('pt-BR')} kg</span></div>
+              <div class="comp-card-row"><span class="label">Diferença</span><span>${dCell}</span></div>
+            </div>`)
           }
           if (totalPlannedAero > 0 || totalExecutedAero > 0) {
             const d = totalExecutedAero - totalPlannedAero
+            const dCell = d > 0 ? `<span style="color:var(--success)">+${d.toLocaleString('pt-BR')}</span>` : d < 0 ? `<span style="color:var(--danger)">${d.toLocaleString('pt-BR')}</span>` : `<span style="color:var(--text-muted)">= 0</span>`
             footerRows.push(`<tr style="border-top:1px solid var(--neutral-a15)">
               <td style="font-weight:700;color:var(--text-primary);font-size:.82rem">Total aeróbico</td>
               <td style="color:var(--text-muted);font-size:.82rem">${totalPlannedAero.toLocaleString('pt-BR')}</td>
               <td class="vol-cell" style="font-size:.82rem">${totalExecutedAero.toLocaleString('pt-BR')}</td>
-              <td style="font-size:.82rem">${d > 0 ? `<span style="color:var(--success)">+${d.toLocaleString('pt-BR')}</span>` : d < 0 ? `<span style="color:var(--danger)">${d.toLocaleString('pt-BR')}</span>` : `<span style="color:var(--text-muted)">= 0</span>`}</td>
+              <td style="font-size:.82rem">${dCell}</td>
             </tr>`)
+            footerCards.push(`<div class="comp-summary-block">
+              <div class="comp-summary-title">Total aeróbico</div>
+              <div class="comp-card-row"><span class="label">Previsto</span><span>${totalPlannedAero.toLocaleString('pt-BR')}</span></div>
+              <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--accent-soft);font-weight:700">${totalExecutedAero.toLocaleString('pt-BR')}</span></div>
+              <div class="comp-card-row"><span class="label">Diferença</span><span>${dCell}</span></div>
+            </div>`)
           }
 
           const deleteExecBtn = profile.role === 'personal'
@@ -4303,7 +4365,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
                 ${deleteExecBtn}
               </div>
             </div>
-            <div class="table-wrap">
+            <div class="table-wrap comp-table">
               <table>
                 <thead><tr>
                   <th>Exercício</th><th>Previsto</th><th>Executado</th><th>Diferença</th>
@@ -4311,6 +4373,10 @@ async function renderStudentSheet(studentId, studentName, gen) {
                 <tbody>${exRows}</tbody>
                 <tfoot>${footerRows.join('')}</tfoot>
               </table>
+            </div>
+            <div class="comp-cards">
+              ${exCards}
+              ${footerCards.length ? `<div class="comp-summary">${footerCards.join('')}</div>` : ''}
             </div>
             ${reviewHTML}
           </div>`
@@ -4528,7 +4594,7 @@ async function renderMyWorkout(gen) {
     const execSectionHTML = execGroups.length
       ? execGroups.map(group => {
           let totalPlannedMusc = 0, totalExecutedMusc = 0, totalPlannedAero = 0, totalExecutedAero = 0
-          const exRows = group.items.map(ex => {
+          const exItems = group.items.map(ex => {
             const we = ex.workout_exercises
             const isAero = we?.exercise_type === 'aerobico' || we?.duration_min != null || ex.duration_executed_min != null
             if (isAero) {
@@ -4540,7 +4606,15 @@ async function renderMyWorkout(gen) {
               const plannedTxt  = [planDur > 0 ? planDur + ' min' : null, planDist > 0 ? planDist + ' km' : null, planSpd > 0 ? planSpd + ' km/h' : null, (we?.hr_min || we?.hr_max) ? `❤️ FC: ${we.hr_min || '?'}–${we.hr_max || '?'} bpm` : null].filter(Boolean).join(' · ') || '—'
               const executedTxt = [execDur > 0 ? execDur.toLocaleString('pt-BR') + ' min' : null, execDist > 0 ? execDist.toLocaleString('pt-BR') + ' km' : null, execSpd > 0 ? execSpd.toLocaleString('pt-BR') + ' km/h' : null].filter(Boolean).join(' · ') || '—'
               const diffCell    = diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>` : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} ${unit}</span>` : `<span style="color:var(--text-muted)">= 0 ${unit}</span>`
-              return `<tr><td style="font-weight:500;color:var(--text-secondary)">🏃 ${we?.exercise_name || '—'}</td><td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td><td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td><td style="font-size:.82rem">${diffCell}</td></tr>`
+              const exName = `🏃 ${we?.exercise_name || '—'}`
+              const row = `<tr><td style="font-weight:500;color:var(--text-secondary)">${exName}</td><td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td><td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td><td style="font-size:.82rem">${diffCell}</td></tr>`
+              const card = `<div class="comp-card">
+                <div class="comp-card-name">${exName}</div>
+                <div class="comp-card-row"><span class="label">Previsto</span><span>${plannedTxt}</span></div>
+                <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--success);font-weight:600">${executedTxt}</span></div>
+                <div class="comp-card-row"><span class="label">Diferença</span><span>${diffCell}</span></div>
+              </div>`
+              return { row, card }
             } else {
               const planSets = we?.sets || 0, planWeight = parseFloat(we?.weight_kg) || 0, planReps = we?.reps || 0, planned = planSets * planReps * planWeight
               totalPlannedMusc += planned
@@ -4550,17 +4624,42 @@ async function renderMyWorkout(gen) {
               const plannedTxt  = planned > 0 ? `${planWeight} kg × ${planReps} reps × ${planSets} séries = ${planned.toLocaleString('pt-BR')} kg` : '—'
               const executedTxt = sortedSets.length > 0 ? sortedSets.map(s => `S${s.set_number}: ${s.weight_executed}×${s.reps_executed}`).join(' · ') + ` = ${executed.toLocaleString('pt-BR')} kg` : '—'
               const diffCell    = diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>` : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>` : `<span style="color:var(--text-muted)">= 0 kg</span>`
-              return `<tr><td style="font-weight:500;color:var(--text-secondary)">${we?.exercise_name || '—'}${we?.training_method ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">⚡ ${we.training_method}</div>` : ''}</td><td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td><td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td><td style="font-size:.82rem">${diffCell}</td></tr>`
+              const methodTag = we?.training_method ? `⚡ ${we.training_method}` : ''
+              const row = `<tr><td style="font-weight:500;color:var(--text-secondary)">${we?.exercise_name || '—'}${methodTag ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">${methodTag}</div>` : ''}</td><td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td><td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td><td style="font-size:.82rem">${diffCell}</td></tr>`
+              const card = `<div class="comp-card">
+                <div class="comp-card-name">${we?.exercise_name || '—'}${methodTag ? ` <span style="font-size:.72rem;color:var(--accent-soft);font-weight:400">${methodTag}</span>` : ''}</div>
+                <div class="comp-card-row"><span class="label">Previsto</span><span>${plannedTxt}</span></div>
+                <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--success);font-weight:600">${executedTxt}</span></div>
+                <div class="comp-card-row"><span class="label">Diferença</span><span>${diffCell}</span></div>
+              </div>`
+              return { row, card }
             }
-          }).join('')
+          })
+          const exRows  = exItems.map(i => i.row).join('')
+          const exCards = exItems.map(i => i.card).join('')
           const footerRows = []
+          const footerCards = []
           if (totalPlannedMusc > 0 || totalExecutedMusc > 0) {
             const d = totalExecutedMusc - totalPlannedMusc
-            footerRows.push(`<tr style="border-top:1px solid var(--neutral-a15)"><td style="font-weight:700;color:var(--text-primary);font-size:.82rem">Total musculação</td><td style="color:var(--text-muted);font-size:.82rem">${totalPlannedMusc.toLocaleString('pt-BR')} kg</td><td class="vol-cell" style="font-size:.82rem">${totalExecutedMusc.toLocaleString('pt-BR')} kg</td><td style="font-size:.82rem">${d > 0 ? `<span style="color:var(--success)">+${d.toLocaleString('pt-BR')} kg</span>` : d < 0 ? `<span style="color:var(--danger)">${d.toLocaleString('pt-BR')} kg</span>` : `<span style="color:var(--text-muted)">= 0 kg</span>`}</td></tr>`)
+            const dCell = d > 0 ? `<span style="color:var(--success)">+${d.toLocaleString('pt-BR')} kg</span>` : d < 0 ? `<span style="color:var(--danger)">${d.toLocaleString('pt-BR')} kg</span>` : `<span style="color:var(--text-muted)">= 0 kg</span>`
+            footerRows.push(`<tr style="border-top:1px solid var(--neutral-a15)"><td style="font-weight:700;color:var(--text-primary);font-size:.82rem">Total musculação</td><td style="color:var(--text-muted);font-size:.82rem">${totalPlannedMusc.toLocaleString('pt-BR')} kg</td><td class="vol-cell" style="font-size:.82rem">${totalExecutedMusc.toLocaleString('pt-BR')} kg</td><td style="font-size:.82rem">${dCell}</td></tr>`)
+            footerCards.push(`<div class="comp-summary-block">
+              <div class="comp-summary-title">Total musculação</div>
+              <div class="comp-card-row"><span class="label">Previsto</span><span>${totalPlannedMusc.toLocaleString('pt-BR')} kg</span></div>
+              <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--accent-soft);font-weight:700">${totalExecutedMusc.toLocaleString('pt-BR')} kg</span></div>
+              <div class="comp-card-row"><span class="label">Diferença</span><span>${dCell}</span></div>
+            </div>`)
           }
           if (totalPlannedAero > 0 || totalExecutedAero > 0) {
             const d = totalExecutedAero - totalPlannedAero
-            footerRows.push(`<tr style="border-top:1px solid var(--neutral-a15)"><td style="font-weight:700;color:var(--text-primary);font-size:.82rem">Total aeróbico</td><td style="color:var(--text-muted);font-size:.82rem">${totalPlannedAero.toLocaleString('pt-BR')}</td><td class="vol-cell" style="font-size:.82rem">${totalExecutedAero.toLocaleString('pt-BR')}</td><td style="font-size:.82rem">${d > 0 ? `<span style="color:var(--success)">+${d.toLocaleString('pt-BR')}</span>` : d < 0 ? `<span style="color:var(--danger)">${d.toLocaleString('pt-BR')}</span>` : `<span style="color:var(--text-muted)">= 0</span>`}</td></tr>`)
+            const dCell = d > 0 ? `<span style="color:var(--success)">+${d.toLocaleString('pt-BR')}</span>` : d < 0 ? `<span style="color:var(--danger)">${d.toLocaleString('pt-BR')}</span>` : `<span style="color:var(--text-muted)">= 0</span>`
+            footerRows.push(`<tr style="border-top:1px solid var(--neutral-a15)"><td style="font-weight:700;color:var(--text-primary);font-size:.82rem">Total aeróbico</td><td style="color:var(--text-muted);font-size:.82rem">${totalPlannedAero.toLocaleString('pt-BR')}</td><td class="vol-cell" style="font-size:.82rem">${totalExecutedAero.toLocaleString('pt-BR')}</td><td style="font-size:.82rem">${dCell}</td></tr>`)
+            footerCards.push(`<div class="comp-summary-block">
+              <div class="comp-summary-title">Total aeróbico</div>
+              <div class="comp-card-row"><span class="label">Previsto</span><span>${totalPlannedAero.toLocaleString('pt-BR')}</span></div>
+              <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--accent-soft);font-weight:700">${totalExecutedAero.toLocaleString('pt-BR')}</span></div>
+              <div class="comp-card-row"><span class="label">Diferença</span><span>${dCell}</span></div>
+            </div>`)
           }
           const review        = reviewsByWorkout[group.workoutId]
           const feelingEmojis = ['😩','😕','😐','🙂','😄']
@@ -4582,9 +4681,13 @@ async function renderMyWorkout(gen) {
                 <button class="btn btn-sm btn-ghost-danger" onclick="deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}','${snSafe}')">🗑️ Apagar execução</button>
               </div>
             </div>
-            <div class="table-wrap">
+            <div class="table-wrap comp-table">
               <table><thead><tr><th>Exercício</th><th>Previsto</th><th>Executado</th><th>Diferença</th></tr></thead>
               <tbody>${exRows}</tbody><tfoot>${footerRows.join('')}</tfoot></table>
+            </div>
+            <div class="comp-cards">
+              ${exCards}
+              ${footerCards.length ? `<div class="comp-summary">${footerCards.join('')}</div>` : ''}
             </div>
             ${reviewHTML}
           </div>`
