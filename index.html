@@ -5856,36 +5856,39 @@ async function confirmDupWorkout() {
     }).select().maybeSingle()
     if (wErr) throw wErr
     if (!newWorkout) throw new Error('Não foi possível criar o treino duplicado.')
+    console.log('Novo workout criado:', newWorkout)
+    if (!newWorkout?.id) throw new Error('Workout criado sem ID')
 
     // 2. Duplica exercícios
     const exes = workout.workout_exercises || []
-    if (exes.length) {
-      const { error: exErr } = await sb.from('workout_exercises').insert(
-        exes.map(ex => ({
-          workout_id:            newWorkout.id,
-          exercise_name:         ex.exercise_name,
-          exercise_type:         ex.exercise_type,
-          sets:                  ex.sets,
-          reps:                  ex.reps,
-          weight_kg:             ex.weight_kg,
-          volume:                ex.volume,
-          cadencia:              ex.cadencia,
-          tempo_descanso:        ex.tempo_descanso,
-          training_method:       ex.training_method,
-          method_description:    ex.method_description,
-          duration_min:          ex.duration_min,
-          distance_km:           ex.distance_km,
-          speed_kmh:             ex.speed_kmh,
-          pace:                  ex.pace,
-          hr_min:                ex.hr_min,
-          hr_max:                ex.hr_max,
-          recovery_interval_min: ex.recovery_interval_min,
-          recovery_speed_kmh:    ex.recovery_speed_kmh,
-          position:              ex.position
-        }))
-      )
-      if (exErr) throw exErr
-    }
+    console.log('Exercícios a duplicar:', exes)
+    if (!exes || exes.length === 0) throw new Error('Nenhum exercício encontrado para duplicar')
+    const { data: exData, error: exError } = await sb.from('workout_exercises').insert(
+      exes.map(ex => ({
+        workout_id:            newWorkout.id,
+        exercise_name:         ex.exercise_name,
+        exercise_type:         ex.exercise_type,
+        sets:                  ex.sets,
+        reps:                  ex.reps,
+        weight_kg:             ex.weight_kg,
+        volume:                ex.volume,
+        cadencia:              ex.cadencia,
+        tempo_descanso:        ex.tempo_descanso,
+        training_method:       ex.training_method,
+        method_description:    ex.method_description,
+        duration_min:          ex.duration_min,
+        distance_km:           ex.distance_km,
+        speed_kmh:             ex.speed_kmh,
+        pace:                  ex.pace,
+        hr_min:                ex.hr_min,
+        hr_max:                ex.hr_max,
+        recovery_interval_min: ex.recovery_interval_min,
+        recovery_speed_kmh:    ex.recovery_speed_kmh,
+        position:              ex.position
+      }))
+    )
+    console.log('Exercícios duplicados:', exData, exError)
+    if (exError) throw new Error('Erro ao duplicar exercícios: ' + exError.message)
 
     // 3. Notifica o aluno (fire-and-forget)
     const targetStudent = students.find(s => s.id === targetStudentId)
@@ -5903,7 +5906,7 @@ async function confirmDupWorkout() {
       })
     }).catch(err => console.warn('[notify-new-workout] falhou silenciosamente:', err))
 
-    toast(`Treino duplicado para ${targetName}!`, 'success')
+    toast(`Treino duplicado para ${targetName} com ${exes.length} exercício(s)!`, 'success')
     closeDupModal()
   } catch (err) {
     toast('Erro ao duplicar treino: ' + err.message, 'error')
