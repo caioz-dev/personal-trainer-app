@@ -1,4 +1,4 @@
-const CACHE_NAME = 'personalpro-v3'
+const CACHE_NAME = 'personalpro-v4'
 const SUPABASE_HOST = 'kdmcaksypdjsnwufkxng.supabase.co'
 
 const STATIC_ASSETS = [
