@@ -5918,6 +5918,9 @@ function openDupModal(workoutId) {
       .map(s => `<option value="${s.id}">${displayName(s)}</option>`)
       .join('')
 
+  // Dia da semana padrão = o do treino original (ou "sem dia definido" se avulso)
+  document.getElementById('dup-day-of-week').value = workout.day_of_week || ''
+
   // Data padrão = hoje
   document.getElementById('dup-date').value = new Date().toISOString().slice(0, 10)
 
@@ -5938,6 +5941,7 @@ async function confirmDupWorkout() {
 
   const targetStudentId = document.getElementById('dup-student-sel').value
   const newDate         = document.getElementById('dup-date').value
+  const newDayOfWeek    = document.getElementById('dup-day-of-week').value || null
   if (!targetStudentId || !newDate) { toast('Selecione o aluno e a data.', 'error'); return }
 
   // Mantém a duração original em dias (se houver end_date)
@@ -5966,7 +5970,7 @@ async function confirmDupWorkout() {
       total_volume: workout.total_volume ?? 0,
       notes:        workout.notes  || null,
       routine_id:   workout.routine_id ?? null,
-      day_of_week:  workout.routine_id ? (workout.day_of_week ?? null) : null,
+      day_of_week:  workout.routine_id ? newDayOfWeek : null,
       created_by:   me.id
     }).select().maybeSingle()
     if (wErr) throw wErr
@@ -7327,6 +7331,19 @@ async function saveWorkoutExecutions(workoutId) {
     <div class="form-group" style="margin-bottom:1rem">
       <label style="font-size:.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Para qual aluno</label>
       <select id="dup-student-sel" class="form-control"></select>
+    </div>
+    <div class="form-group" style="margin-bottom:1rem">
+      <label style="font-size:.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Dia da semana</label>
+      <select id="dup-day-of-week" class="form-control">
+        <option value="">Sem dia definido</option>
+        <option value="segunda">Segunda-feira</option>
+        <option value="terca">Terça-feira</option>
+        <option value="quarta">Quarta-feira</option>
+        <option value="quinta">Quinta-feira</option>
+        <option value="sexta">Sexta-feira</option>
+        <option value="sabado">Sábado</option>
+        <option value="domingo">Domingo</option>
+      </select>
     </div>
     <div class="form-group" style="margin-bottom:1.5rem">
       <label style="font-size:.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Data de início</label>
