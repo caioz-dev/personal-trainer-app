@@ -5524,6 +5524,10 @@ async function renderProgress(studentIdOverride) {
 
     body.innerHTML = `
       ${studentSelectorHTML}
+      <div class="card reveal" style="margin-bottom:1.5rem">
+        <div class="card-header"><div class="card-title">📈 Evolução do Volume</div></div>
+        <div class="chart-container" style="height:320px"><canvas id="progress-volume-chart"></canvas></div>
+      </div>
       <div class="card reveal">
         <div class="card-header" style="flex-wrap:wrap;gap:.75rem">
           <div>
@@ -5550,6 +5554,7 @@ async function renderProgress(studentIdOverride) {
         </p>
       </div>`
 
+    initChart('progress-volume-chart', [...workouts].reverse())
     observeRevealElements()
     updateProgressMetrics()
   } catch (err) {
