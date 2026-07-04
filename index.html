@@ -5490,6 +5490,14 @@ async function renderProgress(studentIdOverride) {
     const workouts = await fetchWorkouts(studentId)
     window._progressWorkouts = workouts
 
+    const { data: execData, error: execErr } = await sb
+      .from('workout_executions')
+      .select('executed_at, weight_executed, reps_executed, duration_executed_min, distance_executed_km, speed_executed_kmh, workout_exercises(exercise_name)')
+      .eq('student_id', studentId)
+      .order('executed_at', { ascending: true })
+    if (execErr) throw execErr
+    window._progressExecutions = execData || []
+
     if (!workouts.length) {
       body.innerHTML = studentSelectorHTML + `<div class="empty-state"><div class="empty-icon">🏋️</div>
         <p>Nenhum treino registrado ainda para gerar o gráfico.</p></div>`
@@ -5582,23 +5590,31 @@ function updateProgressMetrics() {
 function updateProgressChart() {
   const exerciseName = document.getElementById('prog-exercise')?.value
   const metric       = document.getElementById('prog-metric')?.value || 'weight'
-  const workouts     = window._progressWorkouts || []
+  const executions   = window._progressExecutions || []
 
-  const sorted = [...workouts].sort((a, b) => a.date.localeCompare(b.date))
+  const byDate = {}
+  for (const ex of executions) {
+    if ((ex.workout_exercises?.exercise_name) !== exerciseName) continue
+    const day = (ex.executed_at || '').slice(0, 10)
+    if (!day) continue
+    if (!byDate[day]) byDate[day] = []
+    byDate[day].push(ex)
+  }
+
+  const sortedDates = Object.keys(byDate).sort()
   const points  = []
 
-  for (const w of sorted) {
-    const exes = (w.workout_exercises || []).filter(ex => ex.exercise_name === exerciseName)
-    if (!exes.length) continue
+  for (const day of sortedDates) {
+    const exes = byDate[day]
 
     let value
-    if      (metric === 'weight')   value = Math.max(0, ...exes.map(ex => parseFloat(ex.weight_kg)    || 0))
-    else if (metric === 'volume')   value = exes.reduce((s, ex) => s + (parseFloat(ex.volume)      || 0), 0)
-    else if (metric === 'distance') value = Math.max(0, ...exes.map(ex => parseFloat(ex.distance_km)  || 0))
-    else if (metric === 'speed')    value = Math.max(0, ...exes.map(ex => parseFloat(ex.speed_kmh)    || 0))
-    else if (metric === 'duration') value = Math.max(0, ...exes.map(ex => parseFloat(ex.duration_min) || 0))
+    if      (metric === 'weight')   value = Math.max(0, ...exes.map(ex => parseFloat(ex.weight_executed)    || 0))
+    else if (metric === 'volume')   value = exes.reduce((s, ex) => s + (parseFloat(ex.weight_executed) || 0) * (parseFloat(ex.reps_executed) || 0), 0)
+    else if (metric === 'distance') value = Math.max(0, ...exes.map(ex => parseFloat(ex.distance_executed_km)  || 0))
+    else if (metric === 'speed')    value = Math.max(0, ...exes.map(ex => parseFloat(ex.speed_executed_kmh)    || 0))
+    else if (metric === 'duration') value = Math.max(0, ...exes.map(ex => parseFloat(ex.duration_executed_min) || 0))
 
-    if (value > 0) points.push({ date: w.date, value })
+    if (value > 0) points.push({ date: day, value })
   }
 
   const noData = document.getElementById('prog-no-data')
