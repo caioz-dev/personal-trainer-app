@@ -2269,10 +2269,6 @@
         <div id="header-btn"></div>
       </div>
 
-      <div id="offline-banner" class="offline-banner">
-        📵 Você está offline. Algumas funcionalidades podem estar indisponíveis.
-      </div>
-
       <div class="content-body">
 
         <!-- VIEW: Alunos (personal) -->
@@ -7341,32 +7337,6 @@ async function saveWorkoutExecutions(workoutId) {
     </div>
   </div>
 </div>
-
-<script>
-  // ── Service Worker ──────────────────────────────────────────
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js')
-        .then(reg => console.log('[SW] Registrado, escopo:', reg.scope))
-        .catch(err => console.warn('[SW] Falha no registro:', err))
-    })
-  }
-
-  // ── Banner offline ──────────────────────────────────────────
-  function syncOfflineBanner() {
-    const banner = document.getElementById('offline-banner')
-    if (!banner) return
-    if (navigator.onLine) {
-      banner.classList.remove('show')
-    } else {
-      banner.classList.add('show')
-    }
-  }
-  window.addEventListener('online',  syncOfflineBanner)
-  window.addEventListener('offline', syncOfflineBanner)
-  // verifica estado inicial após DOM pronto
-  document.addEventListener('DOMContentLoaded', syncOfflineBanner)
-</script>
 
 </body>
 </html>
