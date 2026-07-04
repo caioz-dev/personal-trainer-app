@@ -5382,7 +5382,7 @@ async function uploadPersonalAvatar(input) {
   if (btn) { btn.textContent = '⏳ Enviando…'; btn.disabled = true }
 
   try {
-    const path = `personal-${profile.id}/avatar`
+    const path = `${profile.id}/avatar`
 
     const { error: upErr } = await sb.storage
       .from('avatars')
