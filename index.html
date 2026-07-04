@@ -5949,8 +5949,8 @@ async function confirmDupWorkout() {
       end_date:     newEndDate,
       total_volume: workout.total_volume ?? 0,
       notes:        workout.notes  || null,
-      routine_id:   null,
-      day_of_week:  null,
+      routine_id:   workout.routine_id ?? null,
+      day_of_week:  workout.routine_id ? (workout.day_of_week ?? null) : null,
       created_by:   me.id
     }).select().maybeSingle()
     if (wErr) throw wErr
