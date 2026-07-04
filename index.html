@@ -2150,8 +2150,13 @@
 <div class="toast-wrap" id="toasts"></div>
 <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
 
+<!-- ===================== BOOT LOADING ===================== -->
+<div id="boot-loading" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);z-index:10000">
+  <div class="spinner" style="width:36px;height:36px;border-width:3px"></div>
+</div>
+
 <!-- ===================== AUTH ===================== -->
-<div id="auth-section">
+<div id="auth-section" style="display:none">
   <div class="auth-wrapper">
     <div class="auth-card">
       <div class="auth-logo">
@@ -2766,6 +2771,18 @@ function resetAppState() {
 window.addEventListener('DOMContentLoaded', async () => {
   sb = window.supabase.createClient(SUPA_URL, SUPA_KEY)
 
+  // Verifica sessão existente ANTES de qualquer outra coisa, para restaurar
+  // direto na tela principal sem piscar a tela de login (#boot-loading cobre a espera)
+  const { data: { session } } = await sb.auth.getSession()
+  if (session) { me = session.user; await boot() }
+  else showAuthSection()
+
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN'  && session) { me = session.user; await boot() }
+    if (event === 'SIGNED_OUT')            { booted = false; me = null; profile = null; resetAppState(); showAuthSection() }
+    if (event === 'PASSWORD_RECOVERY')     { showResetPasswordForm() }
+  })
+
   // Check for new columns; log migration SQL if missing
   const { error: colCheck } = await sb.from('workout_exercises').select('cadencia, tempo_descanso').limit(0)
   if (colCheck) {
@@ -2791,17 +2808,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (setNumCheck) console.warn('⚠️ Execute no Supabase SQL Editor:\nALTER TABLE workout_executions ADD COLUMN IF NOT EXISTS set_number integer DEFAULT 1;')
   const { error: reviewsCheck } = await sb.from('workout_reviews').select('id').limit(0)
   if (reviewsCheck) console.warn('⚠️ AÇÃO NECESSÁRIA: Tabela workout_reviews ausente. Execute o SQL de criação no Supabase.')
-
-  const { data: { session } } = await sb.auth.getSession()
-  if (session) { me = session.user; await boot() }
-  else showAuthSection()
-
-  sb.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'SIGNED_IN'  && session) { me = session.user; await boot() }
-    if (event === 'SIGNED_OUT')            { booted = false; me = null; profile = null; resetAppState(); showAuthSection() }
-    if (event === 'PASSWORD_RECOVERY')     { showResetPasswordForm() }
-  })
-
 })
 
 async function boot() {
@@ -2816,6 +2822,7 @@ async function boot() {
   if (error || !data) { showAuthSection(); return }
   profile = data
   buildSidebar()
+  document.getElementById('boot-loading').style.display = 'none'
   document.getElementById('auth-section').style.display = 'none'
   document.getElementById('app-section').style.display  = 'block'
   navigateTo(profile.role === 'personal' ? 'students' : 'history')
@@ -2826,6 +2833,7 @@ async function boot() {
 // AUTH UI
 // ─────────────────────────────────────────────
 function showAuthSection() {
+  document.getElementById('boot-loading').style.display = 'none'
   document.getElementById('auth-section').style.display = 'block'
   document.getElementById('app-section').style.display  = 'none'
 }
