@@ -6,7 +6,8 @@
       "Bash(python *)",
       "PowerShell(Start-Process \"C:\\\\Users\\\\user\\\\Desktop\\\\personal-trainer-app\\\\index.html\")",
       "Bash(curl *)",
-      "Bash(taskkill //IM python.exe //F)"
+      "Bash(taskkill //IM python.exe //F)",
+      "Bash(node -e ' *)"
     ]
   }
 }

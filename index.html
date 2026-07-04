@@ -4345,8 +4345,9 @@ async function renderStudentSheet(studentId, studentName, gen) {
           }
 
           const deleteExecBtn = profile.role === 'personal'
-            ? `<button class="btn btn-sm btn-ghost-danger" onclick="deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}','${safeStudentNameExec}')">🗑️ Apagar execução</button>`
+            ? `<button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}','${safeStudentNameExec}')">🗑️ Apagar execução</button>`
             : ''
+          const execUid = 'exg' + group.workoutId.replace(/-/g, '')
 
           const review = reviewsByWorkout[group.workoutId]
           const feelingEmojis = ['😩','😕','😐','🙂','😄']
@@ -4362,27 +4363,32 @@ async function renderStudentSheet(studentId, studentName, gen) {
 
           return `
           <div style="background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:1rem 1.1rem;margin-bottom:.875rem">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
-              <div style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${group.workoutName}</div>
+            <div class="exercise-row-header" style="margin-bottom:0" onclick="toggleExerciseBody('${execUid}')">
+              <div style="display:flex;align-items:center;gap:.625rem;min-width:0">
+                <span class="ex-chevron" id="ex-chevron-${execUid}">›</span>
+                <div style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${group.workoutName}</div>
+              </div>
               <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
                 <div style="font-size:.75rem;color:var(--text-muted)">${fmtDateTime(group.executedAt)}</div>
                 ${deleteExecBtn}
               </div>
             </div>
-            <div class="table-wrap comp-table">
-              <table>
-                <thead><tr>
-                  <th>Exercício</th><th>Previsto</th><th>Executado</th><th>Diferença</th>
-                </tr></thead>
-                <tbody>${exRows}</tbody>
-                <tfoot>${footerRows.join('')}</tfoot>
-              </table>
+            <div class="ex-body" id="ex-body-${execUid}">
+              <div class="table-wrap comp-table" style="margin-top:.75rem">
+                <table>
+                  <thead><tr>
+                    <th>Exercício</th><th>Previsto</th><th>Executado</th><th>Diferença</th>
+                  </tr></thead>
+                  <tbody>${exRows}</tbody>
+                  <tfoot>${footerRows.join('')}</tfoot>
+                </table>
+              </div>
+              <div class="comp-cards">
+                ${exCards}
+                ${footerCards.length ? `<div class="comp-summary">${footerCards.join('')}</div>` : ''}
+              </div>
+              ${reviewHTML}
             </div>
-            <div class="comp-cards">
-              ${exCards}
-              ${footerCards.length ? `<div class="comp-summary">${footerCards.join('')}</div>` : ''}
-            </div>
-            ${reviewHTML}
           </div>`
         }).join('')
       : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">📊</div><p>Nenhuma execução registrada ainda.</p></div>`
@@ -4676,16 +4682,21 @@ async function renderMyWorkout(gen) {
                 ${review.notes ? `<div style="flex:1;min-width:120px;font-size:.78rem;color:var(--text-muted);font-style:italic;padding-top:.1rem">"${review.notes}"</div>` : ''}
               </div>
             </div>` : ''
+          const execUid = 'exg' + group.workoutId.replace(/-/g, '')
           return `
           <div style="background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:1rem 1.1rem;margin-bottom:.875rem">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
-              <div style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${group.workoutName}</div>
+            <div class="exercise-row-header" style="margin-bottom:0" onclick="toggleExerciseBody('${execUid}')">
+              <div style="display:flex;align-items:center;gap:.625rem;min-width:0">
+                <span class="ex-chevron" id="ex-chevron-${execUid}">›</span>
+                <div style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${group.workoutName}</div>
+              </div>
               <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
                 <div style="font-size:.75rem;color:var(--text-muted)">${fmtDateTime(group.executedAt)}</div>
-                <button class="btn btn-sm btn-ghost-danger" onclick="deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}','${snSafe}')">🗑️ Apagar execução</button>
+                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}','${snSafe}')">🗑️ Apagar execução</button>
               </div>
             </div>
-            <div class="table-wrap comp-table">
+            <div class="ex-body" id="ex-body-${execUid}">
+            <div class="table-wrap comp-table" style="margin-top:.75rem">
               <table><thead><tr><th>Exercício</th><th>Previsto</th><th>Executado</th><th>Diferença</th></tr></thead>
               <tbody>${exRows}</tbody><tfoot>${footerRows.join('')}</tfoot></table>
             </div>
@@ -4694,6 +4705,7 @@ async function renderMyWorkout(gen) {
               ${footerCards.length ? `<div class="comp-summary">${footerCards.join('')}</div>` : ''}
             </div>
             ${reviewHTML}
+            </div>
           </div>`
         }).join('')
       : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">📊</div><p>Nenhuma execução registrada ainda.</p></div>`
