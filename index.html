@@ -2300,6 +2300,9 @@
                 <div class="form-group form-full" id="wf-student-group">
                   <label>Aluno</label>
                   <select id="wf-student" class="form-control"></select>
+                  <div id="wf-student-inactive-warning" style="display:none;color:var(--danger);font-size:.78rem;margin-top:.4rem">
+                    ⚠️ Este aluno foi desvinculado da sua conta. Reative o vínculo ou selecione outro aluno antes de salvar.
+                  </div>
                 </div>
                 <div class="form-group form-full">
                   <label>Nome do treino</label>
@@ -3975,14 +3978,44 @@ async function editWorkout(workoutId) {
   document.getElementById('wf-btn').textContent = 'Atualizar Treino'
 
   if (profile.role === 'personal') {
-    const grp = document.getElementById('wf-student-group')
+    const grp  = document.getElementById('wf-student-group')
     const sel  = document.getElementById('wf-student')
+    const warn = document.getElementById('wf-student-inactive-warning')
+    const saveBtn = document.getElementById('wf-btn')
     if (workout.student_id === me.id) {
       grp.style.display = 'none'
       sel.innerHTML = `<option value="${me.id}" selected>${profile.name}</option>`
-    } else {
+      if (warn) warn.style.display = 'none'
+      if (saveBtn) saveBtn.disabled = false
+    } else if (students.find(s => s.id === workout.student_id)) {
       sel.value = workout.student_id
+      if (warn) warn.style.display = 'none'
+      if (saveBtn) saveBtn.disabled = false
+    } else {
+      // workout.student_id não está entre os vínculos ativos (personal_students.active = true) —
+      // o aluno pode ter sido desvinculado depois que o treino foi criado. O <select>, populado só
+      // com alunos ativos, não teria nenhuma <option> correspondente e ficaria sem seleção (value=""),
+      // arriscando reatribuir o treino ao aluno errado ao salvar. A checagem de acesso no topo desta
+      // função já garante que este treino pertence a este personal, então buscar o nome direto em
+      // profiles (mesmo sem vínculo ativo) é legítimo aqui. Injeta uma option extra e trava o botão
+      // de salvar até o personal escolher conscientemente (reativar vínculo ou trocar aluno).
+      const { data: inactiveProfile } = await sb
+        .from('profiles')
+        .select('id, name, username')
+        .eq('id', workout.student_id)
+        .maybeSingle()
+      const inactiveName = inactiveProfile ? displayName(inactiveProfile) : 'Aluno desconhecido'
+      const opt = document.createElement('option')
+      opt.value = workout.student_id
+      opt.textContent = `${inactiveName} (desvinculado)`
+      opt.dataset.inactive = 'true'
+      opt.selected = true
+      sel.insertBefore(opt, sel.firstChild)
+      sel.value = workout.student_id
+      if (warn) warn.style.display = 'block'
+      if (saveBtn) saveBtn.disabled = true
     }
+    sel.onchange = syncWfStudentInactiveWarning
   }
   document.getElementById('wf-name').value     = workout.name || ''
   document.getElementById('wf-date').value     = workout.date || ''
@@ -5755,9 +5788,12 @@ async function setupWorkoutForm(opts = {}) {
   document.querySelector('#view-workout .card-title').textContent    = 'Novo Treino'
   document.querySelector('#view-workout .section-label').textContent = 'Registrar Atividade'
   document.getElementById('wf-btn').textContent = 'Salvar Treino'
+  document.getElementById('wf-btn').disabled    = false
 
-  const grp = document.getElementById('wf-student-group')
-  const sel = document.getElementById('wf-student')
+  const grp  = document.getElementById('wf-student-group')
+  const sel  = document.getElementById('wf-student')
+  const warn = document.getElementById('wf-student-inactive-warning')
+  if (warn) warn.style.display = 'none'
 
   if (profile.role === 'personal') {
     if (!students.length) {
@@ -5780,6 +5816,7 @@ async function setupWorkoutForm(opts = {}) {
     sel.innerHTML = `<option value="${profile.id}" selected>${profile.name}</option>`
     sel.required = false
   }
+  sel.onchange = syncWfStudentInactiveWarning
 
   document.getElementById('wf-name').value     = ''
   document.getElementById('wf-date').value     = today()
@@ -6336,10 +6373,28 @@ function refreshTotalVolume() {
   }
 }
 
+// Habilita/trava o botão de salvar de acordo com a option selecionada em #wf-student:
+// a option injetada para um aluno desvinculado carrega data-inactive="true".
+function syncWfStudentInactiveWarning() {
+  const sel  = document.getElementById('wf-student')
+  const warn = document.getElementById('wf-student-inactive-warning')
+  const btn  = document.getElementById('wf-btn')
+  const isInactive = sel?.options[sel.selectedIndex]?.dataset.inactive === 'true'
+  if (warn) warn.style.display = isInactive ? 'block' : 'none'
+  if (btn)  btn.disabled       = isInactive
+}
+
 async function saveWorkout(e) {
   e.preventDefault()
   const btn = document.getElementById('wf-btn')
-  btn.textContent = 'Salvando…'; btn.disabled = true
+  const studentSel = document.getElementById('wf-student')
+
+  // Defesa baseada no estado já carregado da tela: pega o caso do aluno já
+  // estar marcado como desvinculado no momento em que o formulário abriu.
+  if (studentSel?.options[studentSel.selectedIndex]?.dataset.inactive === 'true') {
+    toast('Este aluno foi desvinculado da sua conta. Reative o vínculo ou selecione outro aluno antes de salvar.', 'error')
+    return
+  }
 
   const studentId = profile.role === 'personal'
     ? document.getElementById('wf-student').value
@@ -6347,9 +6402,25 @@ async function saveWorkout(e) {
 
   if (!studentId) {
     toast('Selecione um aluno.', 'error')
-    btn.textContent = 'Salvar Treino'; btn.disabled = false
     return
   }
+
+  // Consulta real ao banco no momento do submit: cobre o caso do vínculo ter
+  // sido desativado DEPOIS que a tela já estava aberta (o <select> carregado
+  // não tem como saber disso sozinho — data-inactive só reflete o que existia
+  // quando o formulário foi montado).
+  if (profile.role === 'personal' && studentId !== me.id) {
+    btn.textContent = 'Verificando vínculo…'; btn.disabled = true
+    const linked = await isStudentLinkedToMe(studentId)
+    if (!linked) {
+      toast('O vínculo com este aluno não está mais ativo. Recarregue a lista de alunos e tente novamente.', 'error')
+      btn.textContent = editingWorkoutId ? 'Atualizar Treino' : 'Salvar Treino'
+      btn.disabled = false
+      return
+    }
+  }
+
+  btn.textContent = 'Salvando…'; btn.disabled = true
 
   const routineId = document.getElementById('wf-routine-id')?.value || null
   const dayOfWeek = document.getElementById('wf-day-of-week')?.value || null
