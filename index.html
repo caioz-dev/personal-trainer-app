@@ -124,7 +124,7 @@
     }
     html.light select.form-control           { color-scheme: light; }
     html.light input[type="date"] { color-scheme: light; }
-    html.light .workout-checkbox { color-scheme: light; }
+    html.light .workout-checkbox, html.light .replicate-target-cb { color-scheme: light; }
     /* mensagens de feedback: cor de texto ajustada para contraste em fundo claro */
     html.light .msg.error   { color: var(--danger); }
     html.light .msg.success { color: var(--success); }
@@ -1677,7 +1677,7 @@
       align-items: center;
       flex-shrink: 0;
     }
-    .workout-checkbox {
+    .workout-checkbox, .replicate-target-cb {
       width: 1.05rem;
       height: 1.05rem;
       cursor: pointer;
@@ -2341,6 +2341,7 @@
                 <span class="add-ex-title">🏋️ Exercícios</span>
                 <div style="display:flex;gap:.5rem;align-items:center">
                   <button type="button" id="reorder-ex-btn" class="btn btn-outline btn-sm" onclick="openReorderModal()" style="display:none">☰ Reordenar</button>
+                  <button type="button" id="replicate-ex-btn" class="btn btn-outline btn-sm" onclick="openReplicateModal()" style="display:none">📐 Replicar configuração</button>
                   <button type="button" class="btn btn-outline btn-sm" onclick="addExercise()">+ Adicionar exercício</button>
                 </div>
               </div>
@@ -6008,6 +6009,7 @@ function addExercise() {
   list.appendChild(div)
   updateRemoveButtons()
   updateReorderButton()
+  updateReplicateButton()
   div.querySelector('.ex-name').focus()
 }
 
@@ -6017,6 +6019,7 @@ function removeExercise(id) {
   updateExerciseNumbers()
   updateRemoveButtons()
   updateReorderButton()
+  updateReplicateButton()
   refreshTotalVolume()
 }
 
@@ -6212,6 +6215,13 @@ function updateReorderButton() {
   btn.style.display = count >= 2 ? 'inline-flex' : 'none'
 }
 
+function updateReplicateButton() {
+  const btn = document.getElementById('replicate-ex-btn')
+  if (!btn) return
+  const count = document.querySelectorAll('#exercise-list .exercise-row').length
+  btn.style.display = count >= 2 ? 'inline-flex' : 'none'
+}
+
 function openReorderModal() {
   const body = document.getElementById('reorder-modal-body')
   body.innerHTML = ''
@@ -6318,6 +6328,88 @@ async function saveReorderModal() {
   }
 
   closeReorderModal()
+}
+
+// ── Replicar configuração de exercício ───────
+function openReplicateModal() {
+  const rows = [...document.querySelectorAll('#exercise-list .exercise-row')]
+  if (rows.length < 2) { toast('Adicione pelo menos 2 exercícios para replicar configuração.', 'error'); return }
+
+  const modelSel = document.getElementById('replicate-model-sel')
+  modelSel.innerHTML = rows.map(row => {
+    const name = row.querySelector('.ex-name')?.value.trim() || 'Exercício sem nome'
+    const icon = (row.querySelector('.ex-type')?.value || 'musculacao') === 'aerobico' ? '🏃' : '🏋️'
+    return `<option value="${row.id}">${icon} ${escHtml(name)}</option>`
+  }).join('')
+  modelSel.value = rows[0].id
+
+  renderReplicateTargets()
+  document.getElementById('replicate-modal-overlay').style.display = 'flex'
+}
+
+function closeReplicateModal() {
+  document.getElementById('replicate-modal-overlay').style.display = 'none'
+}
+
+function renderReplicateTargets() {
+  const modelSel = document.getElementById('replicate-model-sel')
+  const modelRow = document.getElementById(modelSel.value)
+  const list     = document.getElementById('replicate-targets-list')
+  if (!modelRow) { list.innerHTML = ''; return }
+
+  // Só mostra exercícios do mesmo exercise_type do modelo — musculação e aeróbico
+  // têm campos praticamente disjuntos, então misturar não faz sentido.
+  const modelType = modelRow.querySelector('.ex-type')?.value || 'musculacao'
+  const others = [...document.querySelectorAll('#exercise-list .exercise-row')]
+    .filter(row => row.id !== modelRow.id && (row.querySelector('.ex-type')?.value || 'musculacao') === modelType)
+
+  if (!others.length) {
+    list.innerHTML = `<p style="font-size:.8rem;color:var(--text-muted);padding:.25rem">Nenhum outro exercício do tipo ${modelType === 'aerobico' ? 'Aeróbico' : 'Musculação'} para receber a configuração.</p>`
+    return
+  }
+
+  list.innerHTML = others.map(row => {
+    const name = row.querySelector('.ex-name')?.value.trim() || 'Exercício sem nome'
+    return `<label class="reorder-item" style="cursor:pointer">
+      <input type="checkbox" class="replicate-target-cb" data-row-id="${row.id}" style="margin:0">
+      <span class="reorder-item-name" style="flex:1">${escHtml(name)}</span>
+    </label>`
+  }).join('')
+}
+
+function _replicateCopyField(fromRow, toRow, selector) {
+  const fromEl = fromRow.querySelector(selector)
+  const toEl   = toRow.querySelector(selector)
+  if (fromEl && toEl) toEl.value = fromEl.value
+}
+
+function confirmReplicate() {
+  const modelSel = document.getElementById('replicate-model-sel')
+  const modelRow = document.getElementById(modelSel.value)
+  if (!modelRow) { closeReplicateModal(); return }
+
+  const targets = [...document.querySelectorAll('.replicate-target-cb:checked')]
+    .map(cb => document.getElementById(cb.dataset.rowId))
+    .filter(Boolean)
+
+  if (!targets.length) { toast('Selecione pelo menos um exercício para aplicar a configuração.', 'error'); return }
+
+  // Aplica apenas nos inputs do formulário em memória — o UPDATE real acontece
+  // no fluxo normal de saveWorkout (delete+reinsert) quando o personal salvar o treino.
+  const isAero = (modelRow.querySelector('.ex-type')?.value || 'musculacao') === 'aerobico'
+  const fields = isAero
+    ? ['.ex-duration', '.ex-distance', '.ex-speed', '.ex-recovery-interval', '.ex-recovery-speed', '.ex-hr-min', '.ex-hr-max']
+    : ['.ex-sets', '.ex-weight', '.ex-reps', '.ex-cadencia', '.ex-descanso', '.ex-method', '.ex-method-desc']
+
+  targets.forEach(row => {
+    fields.forEach(sel => _replicateCopyField(modelRow, row, sel))
+    const id = row.id.replace(/^ex-/, '')
+    if (isAero) { refreshPace(id); refreshAutoCalc(id) }
+    refreshExerciseVolume(id)
+  })
+
+  toast(`Configuração aplicada a ${targets.length} exercício${targets.length === 1 ? '' : 's'}.`, 'success')
+  closeReplicateModal()
 }
 
 function toggleExerciseBody(id) {
@@ -7645,6 +7737,28 @@ function insertWorkoutExecutions(records) {
     <div class="reorder-modal-footer">
       <button class="btn btn-outline btn-sm" onclick="closeReorderModal()">Cancelar</button>
       <button class="btn btn-primary btn-sm" id="reorder-save-btn" onclick="saveReorderModal()">✓ Salvar ordem</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Replicar configuração de exercício -->
+<div id="replicate-modal-overlay" class="reorder-modal-overlay" style="display:none" onclick="if(event.target===this)closeReplicateModal()">
+  <div class="reorder-modal-card">
+    <div class="reorder-modal-header">
+      <span style="font-weight:700;font-size:.95rem;color:var(--text-primary)">📐 Replicar Configuração</span>
+      <button class="btn btn-outline btn-sm" onclick="closeReplicateModal()" style="padding:.2rem .6rem">✕</button>
+    </div>
+    <div class="reorder-modal-body">
+      <p style="font-size:.78rem;color:var(--text-muted);margin:0 0 .625rem">Escolha o exercício modelo e marque para quais outros exercícios (do mesmo tipo) aplicar a mesma configuração. Nada é salvo até você clicar em "Salvar/Atualizar Treino".</p>
+      <div class="form-group form-full" style="margin-bottom:.5rem">
+        <label>Exercício modelo</label>
+        <select class="form-control" id="replicate-model-sel" onchange="renderReplicateTargets()"></select>
+      </div>
+      <div id="replicate-targets-list" style="display:flex;flex-direction:column;gap:.3rem"></div>
+    </div>
+    <div class="reorder-modal-footer">
+      <button class="btn btn-outline btn-sm" onclick="closeReplicateModal()">Cancelar</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmReplicate()">✓ Aplicar</button>
     </div>
   </div>
 </div>
