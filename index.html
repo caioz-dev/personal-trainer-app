@@ -2707,6 +2707,8 @@ let timerInterval = null
 let timerSeconds  = 0
 let currentWorkoutData    = null
 let exerciseExecutions    = {}
+let _execStartTimestamp   = null   // Date.now() de quando a execução guiada começou — usado para recalcular timerSeconds mesmo após reload
+const EXEC_STATE_KEY      = 'personalpro-exec-state'   // localStorage: snapshot do treino guiado em andamento, para retomar após F5/fechamento
 let _completingExerciseId = null
 let restTimers            = {}
 let _pendingReviewFinalTime = null
@@ -2742,6 +2744,7 @@ function resetAppState() {
   // Estado de execução de treino
   currentWorkoutData      = null
   exerciseExecutions      = {}
+  _execStartTimestamp     = null
   _completingExerciseId   = null
   editingWorkoutId        = null
   _pendingReviewFinalTime = null
@@ -2831,6 +2834,9 @@ async function boot() {
   document.getElementById('auth-section').style.display = 'none'
   document.getElementById('app-section').style.display  = 'block'
   navigateTo(profile.role === 'personal' ? 'students' : 'history')
+  // Se havia uma execução guiada de treino em andamento (salva antes de um F5/fechamento),
+  // retoma direto na tela de execução por cima da navegação acima — sem pedir confirmação.
+  restoreExecutionState()
   if (profile.role === 'student') await checkNewWorkout()
 }
 
@@ -3072,23 +3078,11 @@ const VIEW_TITLES = {
 async function navigateTo(view, opts = {}) {
   if (view === 'workout' && profile?.role !== 'personal') return
 
-  // Ao navegar fora durante execução ativa, descarta o estado sem abrir modal de review
-  if (timerInterval) {
-    stopMetronome()
-    for (const id in restTimers) { if (restTimers[id]?.intervalId) clearInterval(restTimers[id].intervalId) }
-    restTimers            = {}
-    clearInterval(timerInterval)
-    timerInterval         = null
-    timerSeconds          = 0
-    currentWorkoutData    = null
-    exerciseExecutions    = {}
-    _completingExerciseId = null
-    _selectedFeeling      = null
-    _selectedEffort       = null
-    document.getElementById('execution-overlay').style.display = 'none'
-    document.body.style.overflow = ''
-    syncTimerButtons()
-  }
+  // Execução guiada ativa (timerInterval) não é mais descartada ao navegar para outra
+  // tela — o progresso fica preservado (em memória e no localStorage) até o aluno
+  // finalizar o treino de verdade (finishWorkout) ou sair explicitamente da execução.
+  // Como #execution-overlay cobre a tela inteira, a navegação por trás dele fica
+  // apenas "estacionada" e invisível enquanto ele estiver aberto.
 
   currentView = view; currentViewOpts = opts
   const gen = ++navGen   // any in-flight render with a smaller gen will abort
@@ -7043,20 +7037,24 @@ function toggleRestTimer(exerciseId, totalSeconds) {
     clearInterval(restTimers[exerciseId].intervalId)
     delete restTimers[exerciseId]
     resetRestTimerBtn(exerciseId, totalSeconds)
+    saveExecutionState()
   } else {
     startRestTimer(exerciseId, totalSeconds)
   }
 }
 
-function startRestTimer(exerciseId, totalSeconds) {
-  restTimers[exerciseId] = { intervalId: null, remaining: totalSeconds, totalSeconds }
+// startedAt (opcional) permite retomar um descanso já em andamento após reload —
+// por padrão começa agora. remaining é sempre recalculado a partir de startedAt,
+// nunca decrementado por tick, para sobreviver a fechamentos/recargas da página.
+function startRestTimer(exerciseId, totalSeconds, startedAt = Date.now()) {
+  restTimers[exerciseId] = { intervalId: null, totalSeconds, startedAt }
   const btn = document.getElementById(`rest-btn-${exerciseId}`)
-  if (btn) { btn.textContent = `⏱ ${totalSeconds}s`; btn.classList.add('running') }
+  const initialRemaining = Math.max(0, totalSeconds - Math.floor((Date.now() - startedAt) / 1000))
+  if (btn) { btn.textContent = `⏱ ${initialRemaining}s`; btn.classList.add('running') }
 
   restTimers[exerciseId].intervalId = setInterval(() => {
     if (!restTimers[exerciseId]) return
-    restTimers[exerciseId].remaining--
-    const remaining = restTimers[exerciseId].remaining
+    const remaining = restTimers[exerciseId].totalSeconds - Math.floor((Date.now() - restTimers[exerciseId].startedAt) / 1000)
     const btn2 = document.getElementById(`rest-btn-${exerciseId}`)
 
     if (remaining > 0 && remaining <= 5) playCountdownBeep()
@@ -7080,10 +7078,12 @@ function startRestTimer(exerciseId, totalSeconds) {
           btn3.style.cssText = ''
         }
       }, 2000)
+      saveExecutionState()
       return
     }
     if (btn2) btn2.textContent = `⏱ ${remaining}s`
   }, 1000)
+  saveExecutionState()
 }
 
 function resetRestTimerBtn(exerciseId, totalSeconds) {
@@ -7228,19 +7228,119 @@ async function _runMetronome(exId, phases, token) {
 // ─────────────────────────────────────────────
 // WORKOUT EXECUTION FLOW
 // ─────────────────────────────────────────────
+
+// ── Persistência da execução em andamento (retomar após F5/fechamento) ──
+// Guarda só o essencial para reconstruir a tela: o treino (já em memória), o progresso
+// por exercício, e timestamps (não contadores brutos) para recalcular tempo decorrido
+// real mesmo com o app fechado. Nada disso é enviado a lugar nenhum — fica só no
+// localStorage do próprio dispositivo do aluno.
+function saveExecutionState() {
+  if (!currentWorkoutData || !_execStartTimestamp) return
+  try {
+    const restSnapshot = {}
+    for (const exId in restTimers) {
+      if (restTimers[exId]?.intervalId) {
+        restSnapshot[exId] = { totalSeconds: restTimers[exId].totalSeconds, startedAt: restTimers[exId].startedAt }
+      }
+    }
+    const state = {
+      studentId:          me?.id || null,
+      workoutId:          currentWorkoutData.id,
+      currentWorkoutData,
+      exerciseExecutions,
+      startTimestamp:     _execStartTimestamp,
+      restTimers:         restSnapshot
+    }
+    localStorage.setItem(EXEC_STATE_KEY, JSON.stringify(state))
+  } catch {}
+}
+
+function clearExecutionState() {
+  try { localStorage.removeItem(EXEC_STATE_KEY) } catch {}
+}
+
+// Chamada no boot, depois que `me`/`profile` já estão resolvidos. Retorna true se
+// restaurou uma execução salva (e já deixou a tela pronta), false caso contrário —
+// nesse caso o chamador segue o fluxo normal de navegação.
+function restoreExecutionState() {
+  if (timerInterval) return false   // já existe uma execução ativa em memória
+
+  let raw
+  try { raw = localStorage.getItem(EXEC_STATE_KEY) } catch { return false }
+  if (!raw) return false
+
+  let state
+  try { state = JSON.parse(raw) } catch { clearExecutionState(); return false }
+
+  if (!state || typeof state !== 'object' || !state.workoutId || !state.currentWorkoutData || !state.startTimestamp) {
+    clearExecutionState()
+    return false
+  }
+  // Estado de outro aluno/conta no mesmo navegador — não retoma silenciosamente no lugar errado.
+  if (state.studentId && me?.id && state.studentId !== me.id) {
+    clearExecutionState()
+    return false
+  }
+
+  try {
+    currentWorkoutData  = state.currentWorkoutData
+    exerciseExecutions  = state.exerciseExecutions || {}
+    _execStartTimestamp = state.startTimestamp
+
+    window._workoutsCache = window._workoutsCache || {}
+    window._workoutsCache[state.workoutId] = currentWorkoutData
+
+    renderExecutionScreen(currentWorkoutData)
+    Object.entries(exerciseExecutions).forEach(([exId, execData]) => {
+      _markExerciseDoneUI(exId, _resultTextFromExecData(execData))
+    })
+
+    document.getElementById('execution-overlay').style.display = 'flex'
+    document.body.style.overflow = 'hidden'
+
+    timerSeconds = Math.max(0, Math.floor((Date.now() - _execStartTimestamp) / 1000))
+    updateTimerDisplay()
+    timerInterval = setInterval(() => {
+      timerSeconds = Math.floor((Date.now() - _execStartTimestamp) / 1000)
+      updateTimerDisplay()
+    }, 1000)
+    syncTimerButtons()
+
+    if (state.restTimers) {
+      Object.entries(state.restTimers).forEach(([exId, rt]) => {
+        const remaining = rt.totalSeconds - Math.floor((Date.now() - rt.startedAt) / 1000)
+        if (remaining > 0) startRestTimer(exId, rt.totalSeconds, rt.startedAt)
+      })
+    }
+
+    return true
+  } catch (err) {
+    console.error('[restoreExecutionState] falhou ao restaurar, descartando estado salvo:', err)
+    clearExecutionState()
+    return false
+  }
+}
+
 async function startWorkoutExecution(workoutId) {
   if (timerInterval) return
   const workout = (window._workoutsCache || {})[workoutId]
   if (!workout) { toast('Dados do treino não encontrados. Tente recarregar a página.', 'error'); return }
-  currentWorkoutData = workout
-  exerciseExecutions = {}
+  currentWorkoutData  = workout
+  exerciseExecutions  = {}
+  _execStartTimestamp = Date.now()
   renderExecutionScreen(workout)
   document.getElementById('execution-overlay').style.display = 'flex'
   document.body.style.overflow = 'hidden'
   timerSeconds = 0
   updateTimerDisplay()
-  timerInterval = setInterval(() => { timerSeconds++; updateTimerDisplay() }, 1000)
+  // timerSeconds é recalculado a partir de _execStartTimestamp (não incrementado direto)
+  // para que o tempo decorrido sobreviva a um reload/fechamento da página.
+  timerInterval = setInterval(() => {
+    timerSeconds = Math.floor((Date.now() - _execStartTimestamp) / 1000)
+    updateTimerDisplay()
+  }, 1000)
   syncTimerButtons()
+  saveExecutionState()
 }
 
 function renderExecutionScreen(workout) {
@@ -7374,19 +7474,37 @@ function confirmExerciseCompletion() {
 
   const exerciseId = _completingExerciseId
   exerciseExecutions[exerciseId] = execData
-  const card = document.getElementById(`exec-ex-${exerciseId}`)
-  if (card) {
-    card.classList.add('done')
-    const btn = card.querySelector('.exec-complete-btn')
-    if (btn) {
-      btn.innerHTML = '↺ Desfazer'
-      btn.disabled = false
-      btn.setAttribute('onclick', `uncompleteExercise('${exerciseId}')`)
-    }
-    const resultEl = document.getElementById(`exec-ex-result-${exerciseId}`)
-    if (resultEl) { resultEl.style.display = 'block'; resultEl.textContent = `Executado: ${resultText}` }
-  }
+  _markExerciseDoneUI(exerciseId, resultText)
   closeExerciseCompletionModal()
+  saveExecutionState()
+}
+
+// Reconstrói o mesmo texto de resultado exibido em confirmExerciseCompletion, a partir
+// do execData já persistido — usado para redesenhar exercícios já concluídos ao retomar
+// uma execução salva no localStorage.
+function _resultTextFromExecData(execData) {
+  if (execData.sets) {
+    return execData.sets.map((s, i) => `S${i + 1}: ${s.weight_executed.toLocaleString('pt-BR')} kg×${s.reps_executed}`).join(' · ')
+  }
+  return [
+    execData.duration_executed_min ? `${execData.duration_executed_min} min` : null,
+    execData.distance_executed_km  ? `${execData.distance_executed_km} km`  : null,
+    execData.speed_executed_kmh    ? `${execData.speed_executed_kmh} km/h`  : null
+  ].filter(Boolean).join(' / ')
+}
+
+function _markExerciseDoneUI(exerciseId, resultText) {
+  const card = document.getElementById(`exec-ex-${exerciseId}`)
+  if (!card) return
+  card.classList.add('done')
+  const btn = card.querySelector('.exec-complete-btn')
+  if (btn) {
+    btn.innerHTML = '↺ Desfazer'
+    btn.disabled = false
+    btn.setAttribute('onclick', `uncompleteExercise('${exerciseId}')`)
+  }
+  const resultEl = document.getElementById(`exec-ex-result-${exerciseId}`)
+  if (resultEl) { resultEl.style.display = 'block'; resultEl.textContent = `Executado: ${resultText}` }
 }
 
 function uncompleteExercise(exerciseId) {
@@ -7402,6 +7520,7 @@ function uncompleteExercise(exerciseId) {
   }
   const resultEl = document.getElementById(`exec-ex-result-${exerciseId}`)
   if (resultEl) { resultEl.style.display = 'none'; resultEl.textContent = '' }
+  saveExecutionState()
 }
 
 function finishWorkout() {
@@ -7415,6 +7534,7 @@ function finishWorkout() {
   document.getElementById('execution-overlay').style.display = 'none'
   document.body.style.overflow = ''
   syncTimerButtons()
+  clearExecutionState()
   showReviewModal(finalTime)
 }
 
