@@ -3896,20 +3896,27 @@ async function confirmBulkDelete() {
   const ids = [..._selectedWorkoutIds]
   if (!ids.length) return
   const btn = document.getElementById('bulk-delete-confirm-btn')
-  if (btn) {
-    btn.disabled    = true
-    btn.innerHTML   = '<span class="spinner" style="display:inline-block;width:.85rem;height:.85rem;border-width:2px;vertical-align:middle;margin-right:.4rem"></span>Excluindo…'
+  if (btn) btn.disabled = true
+
+  // Usa a mesma exclusão em cascata da exclusão individual (_cascadeDeleteWorkout),
+  // item a item: se um ID falhar, os demais continuam sendo processados em vez de
+  // parar tudo ou falhar silenciosamente. Ao final, reporta quantos tiveram sucesso
+  // e quantos falharam.
+  const succeeded = []
+  const failed    = []
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i]
+    if (btn) {
+      btn.innerHTML = `<span class="spinner" style="display:inline-block;width:.85rem;height:.85rem;border-width:2px;vertical-align:middle;margin-right:.4rem"></span>Excluindo ${i + 1}/${ids.length}…`
+    }
+    const err = await _cascadeDeleteWorkout(id)
+    if (err) { console.error('[confirmBulkDelete]', id, err); failed.push(id) }
+    else       succeeded.push(id)
   }
-  const { error } = await sb.from('workouts').delete().in('id', ids)
+
   if (btn) { btn.disabled = false; btn.textContent = 'Confirmar exclusão' }
-  if (error) {
-    toast('Erro ao excluir treinos: ' + error.message, 'error')
-    return
-  }
-  hideBulkDeleteConfirm()
-  const count = ids.length
-  toast(`${count} treino${count === 1 ? '' : 's'} excluído${count === 1 ? '' : 's'} com sucesso!`, 'success')
-  ids.forEach(wid => {
+
+  succeeded.forEach(wid => {
     const uid = wid.replace(/-/g, '')
     for (const prefix of ['', 'sh']) {
       const mainRow   = document.querySelector(`tr.history-main-row[data-uid="${prefix}${uid}"]`)
@@ -3917,8 +3924,22 @@ async function confirmBulkDelete() {
       if (mainRow)   mainRow.remove()
       if (detailRow) detailRow.remove()
     }
+    _selectedWorkoutIds.delete(wid)
   })
-  _selectedWorkoutIds.clear()
+
+  if (failed.length === 0) {
+    hideBulkDeleteConfirm()
+    toast(`${succeeded.length} treino${succeeded.length === 1 ? '' : 's'} excluído${succeeded.length === 1 ? '' : 's'} com sucesso!`, 'success')
+  } else if (succeeded.length === 0) {
+    // Nada foi excluído: mantém o modal aberto para permitir tentar de novo sem reabrir o fluxo.
+    toast(`Não foi possível excluir nenhum treino (${failed.length} falha${failed.length === 1 ? '' : 's'}). Tente novamente.`, 'error')
+  } else {
+    // Exclusão parcial: fecha o modal, mas os IDs que falharam continuam selecionados
+    // na barra de seleção em massa para o usuário tentar novamente.
+    hideBulkDeleteConfirm()
+    toast(`${succeeded.length} treino${succeeded.length === 1 ? '' : 's'} excluído${succeeded.length === 1 ? '' : 's'}, ${failed.length} falharam. Tente novamente com os restantes.`, 'error')
+  }
+
   updateBulkBar()
 }
 
