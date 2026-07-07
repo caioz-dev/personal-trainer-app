@@ -7348,6 +7348,7 @@ async function playBeep() {
       _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
     }
     if (_audioCtx.state === 'suspended') await _audioCtx.resume()
+    alert('[DEBUG playBeep] state: ' + _audioCtx.state)
     const osc  = _audioCtx.createOscillator()
     const gain = _audioCtx.createGain()
     osc.connect(gain); gain.connect(_audioCtx.destination)
@@ -7369,6 +7370,7 @@ async function playCountdownBeep() {
       _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
     }
     if (_audioCtx.state === 'suspended') await _audioCtx.resume()
+    alert('[DEBUG playCountdownBeep] state: ' + _audioCtx.state)
     const osc  = _audioCtx.createOscillator()
     const gain = _audioCtx.createGain()
     osc.connect(gain); gain.connect(_audioCtx.destination)
