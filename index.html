@@ -3783,6 +3783,10 @@ async function _cascadeDeleteWorkout(workoutId) {
   const { data: exData } = await sb.from('workout_exercises').select('id').eq('workout_id', workoutId)
   const exerciseIds = (exData || []).map(e => e.id)
 
+  // 0. Deleta avaliações (workout_reviews) vinculadas ao treino
+  const { error: e0 } = await sb.from('workout_reviews').delete().eq('workout_id', workoutId)
+  if (e0) return 'Erro ao excluir avaliações: ' + e0.message
+
   // 1a. Deleta execuções pelo workout_id
   const { error: e1a } = await sb.from('workout_executions').delete().eq('workout_id', workoutId)
   if (e1a) return 'Erro ao excluir execuções: ' + e1a.message

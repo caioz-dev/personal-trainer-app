@@ -7,7 +7,9 @@
       "PowerShell(Start-Process \"C:\\\\Users\\\\user\\\\Desktop\\\\personal-trainer-app\\\\index.html\")",
       "Bash(curl *)",
       "Bash(taskkill //IM python.exe //F)",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(find . -iname \"*.sql\" -not -path \"./node_modules/*\")",
+      "Bash(find . -iname \"*schema*\" -not -path \"./node_modules/*\" -not -path \"./.git/*\")"
     ]
   }
 }
