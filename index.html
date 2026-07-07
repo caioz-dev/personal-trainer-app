@@ -3379,15 +3379,13 @@ async function addStudentByEmail() {
   btn.textContent = 'Vinculando…'; btn.disabled = true
 
   try {
-    const { data: found, error: fErr } = await sb
-      .from('profiles')
-      .select('id, name, role')
-      .eq('email', email)
-      .eq('role', 'student')
-      .maybeSingle()
+    const { data: results, error: fErr } = await sb.rpc('search_profile_by_email', {
+      search_email: email
+    })
 
     if (fErr) throw fErr
-    if (!found) { toast('Nenhum aluno encontrado com esse e-mail.', 'error'); return }
+    const found = (results || [])[0]
+    if (!found || found.role !== 'student') { toast('Nenhum aluno encontrado com esse e-mail.', 'error'); return }
 
     const { data: existing } = await sb
       .from('personal_students')
