@@ -2240,7 +2240,8 @@
     <!-- SIDEBAR -->
     <nav class="sidebar" id="sidebar">
       <div class="sidebar-header">
-        <div class="sidebar-logo" style="display: flex; align-items: center; gap: .5rem;">
+        <div class="sidebar-logo" style="display: flex; align-items: center; gap: .5rem; cursor: pointer;"
+             onclick="navigateTo(profile?.role === 'personal' ? 'students' : 'history')" title="Voltar para o início">
           <img src="logo.png.png" alt="PersonalPro" style="height: 32px; background: white; border-radius: 8px; padding: 3px; flex-shrink: 0;">
           <span>PersonalPro<small id="sidebar-role-label" style="display:block">—</small></span>
         </div>
@@ -2353,7 +2354,10 @@
                 <span class="total-vol-value" id="total-vol-preview">0 kg</span>
               </div>
 
-              <button type="submit" id="wf-btn" class="btn btn-primary">Salvar Treino</button>
+              <div style="display:flex;gap:.625rem">
+                <button type="submit" id="wf-btn" class="btn btn-primary">Salvar Treino</button>
+                <button type="button" id="wf-cancel-btn" class="btn btn-outline" onclick="cancelWorkoutForm()">Cancelar</button>
+              </div>
             </form>
           </div>
         </div>
@@ -2703,6 +2707,9 @@ let navGen = 0        // incremented on every navigation; render fns bail if sta
 let currentView = null, currentViewOpts = {}
 let booted = false    // prevents double-boot when onAuthStateChange fires SIGNED_IN
 let editingWorkoutId = null
+let _wfEditingCreatedBy = null   // workout.created_by do treino sendo editado — usado para revalidar acesso ao restaurar um rascunho
+let _wfSaveDebounceTimer = null
+const WF_STATE_KEY = 'personalpro-wf-state'   // localStorage: rascunho do formulário de criação/edição de treino
 let timerInterval = null
 let timerSeconds  = 0
 let currentWorkoutData    = null
@@ -2747,6 +2754,8 @@ function resetAppState() {
   _execStartTimestamp     = null
   _completingExerciseId   = null
   editingWorkoutId        = null
+  _wfEditingCreatedBy     = null
+  clearTimeout(_wfSaveDebounceTimer)
   _pendingReviewFinalTime = null
   _selectedFeeling        = null
   _selectedEffort         = null
@@ -2778,6 +2787,16 @@ function resetAppState() {
 // ─────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
   sb = window.supabase.createClient(SUPA_URL, SUPA_KEY)
+
+  // Autosave (debounced) do rascunho do formulário de treino a cada digitação/mudança —
+  // cobre texto livre (nome, notas, cargas) que addExercise/removeExercise/etc não capturam
+  // sozinhos. Delegado no form inteiro, então cobre também as linhas de exercício
+  // adicionadas dinamicamente.
+  const workoutFormEl = document.getElementById('workout-form')
+  if (workoutFormEl) {
+    workoutFormEl.addEventListener('input',  _scheduleWorkoutFormSave)
+    workoutFormEl.addEventListener('change', _scheduleWorkoutFormSave)
+  }
 
   // Verifica sessão existente ANTES de qualquer outra coisa, para restaurar
   // direto na tela principal sem piscar a tela de login (#boot-loading cobre a espera)
@@ -2837,6 +2856,9 @@ async function boot() {
   // Se havia uma execução guiada de treino em andamento (salva antes de um F5/fechamento),
   // retoma direto na tela de execução por cima da navegação acima — sem pedir confirmação.
   restoreExecutionState()
+  // Se havia um rascunho de criação/edição de treino em andamento (personal), reabre o
+  // formulário já preenchido — substitui a navegação inicial acima quando aplicável.
+  await restoreWorkoutFormState()
   if (profile.role === 'student') await checkNewWorkout()
 }
 
@@ -3979,6 +4001,12 @@ async function deleteWorkoutFromSheet(workoutId, studentId, studentName) {
   else openStudentSheet(studentId, studentName)
 }
 
+// Reaproveitado por editWorkout (sempre revalida contra o banco) e por
+// restoreWorkoutFormState (revalida um rascunho de edição salvo localmente).
+async function _isLinkedOrOwner(createdBy, studentId) {
+  return createdBy === me.id || await isStudentLinkedToMe(studentId)
+}
+
 async function editWorkout(workoutId) {
   if (profile.role !== 'personal') return
   const { data: workout, error } = await sb
@@ -3989,7 +4017,7 @@ async function editWorkout(workoutId) {
     .maybeSingle()
   if (error || !workout) { toast('Erro ao carregar treino para edição.', 'error'); return }
 
-  if (workout.created_by !== me.id && !(await isStudentLinkedToMe(workout.student_id))) {
+  if (!(await _isLinkedOrOwner(workout.created_by, workout.student_id))) {
     toast('Acesso negado', 'error')
     navigateTo('students')
     return
@@ -3997,7 +4025,8 @@ async function editWorkout(workoutId) {
 
   await navigateTo('workout')
 
-  editingWorkoutId = workoutId
+  editingWorkoutId    = workoutId
+  _wfEditingCreatedBy = workout.created_by
   document.querySelector('#view-workout .card-title').textContent    = 'Editar Treino'
   document.querySelector('#view-workout .section-label').textContent = 'Editar Atividade'
   document.getElementById('wf-btn').textContent = 'Atualizar Treino'
@@ -4054,46 +4083,8 @@ async function editWorkout(workoutId) {
   const exes = (workout.workout_exercises || []).slice().sort((a, b) =>
     (a.position ?? 9999) - (b.position ?? 9999) || (a.id > b.id ? 1 : -1)
   )
-  if (!exes.length) {
-    addExercise()
-  } else {
-    exes.forEach(ex => {
-      addExercise()
-      const row    = document.getElementById(`ex-${exerciseCounter}`)
-      row.dataset.dbId = ex.id
-      const exType = ex.exercise_type || 'musculacao'
-      row.querySelector('.ex-name').value = ex.exercise_name
-      updateExerciseHeader(exerciseCounter)
-      row.querySelector('.ex-type').value = exType
-      toggleExerciseType(exerciseCounter)
-      if (exType === 'aerobico') {
-        if (ex.duration_min != null)          row.querySelector('.ex-duration')?.setAttribute('value', ex.duration_min)
-        if (ex.distance_km  != null)          row.querySelector('.ex-distance')?.setAttribute('value', ex.distance_km)
-        if (ex.speed_kmh    != null)          row.querySelector('.ex-speed')?.setAttribute('value', ex.speed_kmh)
-        if (ex.recovery_interval_min != null) row.querySelector('.ex-recovery-interval')?.setAttribute('value', ex.recovery_interval_min)
-        if (ex.recovery_speed_kmh != null)    row.querySelector('.ex-recovery-speed')?.setAttribute('value', ex.recovery_speed_kmh)
-        // Restore values via .value to trigger live binding
-        if (ex.duration_min != null)          row.querySelector('.ex-duration').value          = ex.duration_min
-        if (ex.distance_km  != null)          row.querySelector('.ex-distance').value          = ex.distance_km
-        if (ex.speed_kmh    != null)          row.querySelector('.ex-speed').value             = ex.speed_kmh
-        if (ex.recovery_interval_min != null) row.querySelector('.ex-recovery-interval').value = ex.recovery_interval_min
-        if (ex.recovery_speed_kmh != null)    row.querySelector('.ex-recovery-speed').value    = ex.recovery_speed_kmh
-        if (ex.hr_min != null)                row.querySelector('.ex-hr-min').value             = ex.hr_min
-        if (ex.hr_max != null)                row.querySelector('.ex-hr-max').value             = ex.hr_max
-        refreshPace(exerciseCounter)
-        refreshAutoCalc(exerciseCounter)
-      } else {
-        row.querySelector('.ex-sets').value     = ex.sets
-        row.querySelector('.ex-weight').value   = ex.weight_kg
-        row.querySelector('.ex-reps').value     = ex.reps
-        row.querySelector('.ex-cadencia').value    = ex.cadencia || ''
-        row.querySelector('.ex-descanso').value    = ex.tempo_descanso != null ? ex.tempo_descanso : ''
-        row.querySelector('.ex-method').value      = ex.training_method || ''
-        row.querySelector('.ex-method-desc').value = ex.method_description || ''
-        refreshExerciseVolume(exerciseCounter)
-      }
-    })
-  }
+  if (!exes.length) addExercise()
+  else _populateExerciseRows(exes, { withDbId: true })
   refreshTotalVolume()
 
   // Exibe campo de dia da semana se o treino pertence a uma rotina
@@ -4110,6 +4101,43 @@ async function editWorkout(workoutId) {
     if (_dgEl) _dgEl.style.display = 'none'
     if (_dwEl) { _dwEl.required = false; _dwEl.value = '' }
   }
+  saveWorkoutFormState()
+}
+
+// Preenche #exercise-list a partir de um array de exercícios no formato de uma linha de
+// workout_exercises. Reaproveitado por editWorkout (dados do Supabase, com id real de cada
+// linha) e por restoreWorkoutFormState (dados de um rascunho salvo no localStorage, sem id).
+function _populateExerciseRows(exesArray, { withDbId = false } = {}) {
+  exesArray.forEach(ex => {
+    addExercise()
+    const row = document.getElementById(`ex-${exerciseCounter}`)
+    if (withDbId && ex.id) row.dataset.dbId = ex.id
+    const exType = ex.exercise_type || 'musculacao'
+    row.querySelector('.ex-name').value = ex.exercise_name || ''
+    updateExerciseHeader(exerciseCounter)
+    row.querySelector('.ex-type').value = exType
+    toggleExerciseType(exerciseCounter)
+    if (exType === 'aerobico') {
+      row.querySelector('.ex-duration').value          = ex.duration_min ?? ''
+      row.querySelector('.ex-distance').value          = ex.distance_km ?? ''
+      row.querySelector('.ex-speed').value             = ex.speed_kmh ?? ''
+      row.querySelector('.ex-recovery-interval').value = ex.recovery_interval_min ?? ''
+      row.querySelector('.ex-recovery-speed').value    = ex.recovery_speed_kmh ?? ''
+      row.querySelector('.ex-hr-min').value            = ex.hr_min ?? ''
+      row.querySelector('.ex-hr-max').value            = ex.hr_max ?? ''
+      refreshPace(exerciseCounter)
+      refreshAutoCalc(exerciseCounter)
+    } else {
+      row.querySelector('.ex-sets').value        = ex.sets ?? ''
+      row.querySelector('.ex-weight').value      = ex.weight_kg ?? ''
+      row.querySelector('.ex-reps').value        = ex.reps ?? ''
+      row.querySelector('.ex-cadencia').value    = ex.cadencia ?? ''
+      row.querySelector('.ex-descanso').value    = ex.tempo_descanso ?? ''
+      row.querySelector('.ex-method').value      = ex.training_method ?? ''
+      row.querySelector('.ex-method-desc').value = ex.method_description ?? ''
+      refreshExerciseVolume(exerciseCounter)
+    }
+  })
 }
 
 function openStudentSheet(studentId, studentName) {
@@ -5821,8 +5849,223 @@ function updateProgressChart() {
 // ─────────────────────────────────────────────
 // VIEW: NOVO TREINO — formulário dinâmico
 // ─────────────────────────────────────────────
+
+// ── Persistência do rascunho de criação/edição (retomar após F5/fechamento) ──
+// Assim como saveExecutionState/restoreExecutionState (execução guiada do aluno), guarda
+// só o essencial pra reconstruir a tela — os campos do formulário e a lista de exercícios —
+// mais o contexto de redirecionamento (currentViewOpts ou historyCtx, dependendo se é
+// criação ou edição) pra saber pra onde voltar depois de salvar/cancelar. Fica só no
+// localStorage do próprio dispositivo do personal.
+function saveWorkoutFormState() {
+  if (profile?.role !== 'personal') return
+  const form = document.getElementById('workout-form')
+  if (!form || !document.getElementById('wf-name')) return
+  try {
+    const studentSel = document.getElementById('wf-student')
+    const exercises = [...document.querySelectorAll('#exercise-list .exercise-row')].map(row => ({
+      exercise_name:         row.querySelector('.ex-name')?.value ?? '',
+      exercise_type:         row.querySelector('.ex-type')?.value ?? 'musculacao',
+      sets:                  row.querySelector('.ex-sets')?.value ?? '',
+      weight_kg:              row.querySelector('.ex-weight')?.value ?? '',
+      reps:                  row.querySelector('.ex-reps')?.value ?? '',
+      cadencia:               row.querySelector('.ex-cadencia')?.value ?? '',
+      tempo_descanso:         row.querySelector('.ex-descanso')?.value ?? '',
+      training_method:        row.querySelector('.ex-method')?.value ?? '',
+      method_description:     row.querySelector('.ex-method-desc')?.value ?? '',
+      duration_min:           row.querySelector('.ex-duration')?.value ?? '',
+      distance_km:            row.querySelector('.ex-distance')?.value ?? '',
+      speed_kmh:               row.querySelector('.ex-speed')?.value ?? '',
+      recovery_interval_min:  row.querySelector('.ex-recovery-interval')?.value ?? '',
+      recovery_speed_kmh:     row.querySelector('.ex-recovery-speed')?.value ?? '',
+      hr_min:                 row.querySelector('.ex-hr-min')?.value ?? '',
+      hr_max:                 row.querySelector('.ex-hr-max')?.value ?? ''
+    }))
+
+    const redirectCtx = editingWorkoutId
+      ? { source: 'historyCtx', ...historyCtx }
+      : { source: 'prefilled',  ...currentViewOpts }
+
+    const state = {
+      personalId:        me?.id || null,
+      editingWorkoutId:  editingWorkoutId || null,
+      createdBy:         _wfEditingCreatedBy || null,
+      studentId:         studentSel?.value || '',
+      studentName:       studentSel?.options[studentSel.selectedIndex]?.textContent || '',
+      routineId:         document.getElementById('wf-routine-id')?.value || '',
+      dayOfWeek:         document.getElementById('wf-day-of-week')?.value || '',
+      name:              document.getElementById('wf-name')?.value || '',
+      date:              document.getElementById('wf-date')?.value || '',
+      endDate:           document.getElementById('wf-end-date')?.value || '',
+      notes:             document.getElementById('wf-notes')?.value || '',
+      redirectCtx,
+      exercises
+    }
+    localStorage.setItem(WF_STATE_KEY, JSON.stringify(state))
+  } catch {}
+}
+
+function clearWorkoutFormState() {
+  try { localStorage.removeItem(WF_STATE_KEY) } catch {}
+}
+
+function _scheduleWorkoutFormSave() {
+  clearTimeout(_wfSaveDebounceTimer)
+  _wfSaveDebounceTimer = setTimeout(saveWorkoutFormState, 400)
+}
+
+// Chamada no boot, depois que `me`/`profile` já estão resolvidos. Retorna true se
+// restaurou um rascunho salvo (e já deixou a tela pronta), false caso contrário.
+async function restoreWorkoutFormState() {
+  if (profile?.role !== 'personal') return false
+
+  let raw
+  try { raw = localStorage.getItem(WF_STATE_KEY) } catch { return false }
+  if (!raw) return false
+
+  let state
+  try { state = JSON.parse(raw) } catch { clearWorkoutFormState(); return false }
+
+  if (!state || typeof state !== 'object' || !state.date) {
+    clearWorkoutFormState()
+    return false
+  }
+  // Rascunho de outro personal no mesmo navegador — não restaura no lugar errado.
+  if (state.personalId && me?.id && state.personalId !== me.id) {
+    clearWorkoutFormState()
+    return false
+  }
+
+  // Rascunho de EDIÇÃO: revalida o mesmo acesso que editWorkout normalmente checa
+  // (dono do treino ou vínculo ativo com o aluno) antes de reabrir com os dados salvos.
+  if (state.editingWorkoutId) {
+    const ok = await _isLinkedOrOwner(state.createdBy, state.studentId)
+    if (!ok) {
+      clearWorkoutFormState()
+      toast('Não foi possível restaurar o rascunho: o acesso a este treino/aluno não é mais válido.', 'error')
+      return false
+    }
+  }
+
+  try {
+    await navigateTo('workout')
+
+    editingWorkoutId    = state.editingWorkoutId || null
+    _wfEditingCreatedBy = state.createdBy || null
+    if (state.redirectCtx?.source === 'prefilled') currentViewOpts = { ...state.redirectCtx }
+    else if (state.redirectCtx?.source === 'historyCtx') historyCtx = { ...state.redirectCtx }
+
+    const routineName = state.redirectCtx?.routineName || ''
+    document.querySelector('#view-workout .card-title').textContent = editingWorkoutId
+      ? (state.routineId ? 'Editar Treino (Rotina)' : 'Editar Treino')
+      : (routineName ? `Novo Treino — ${routineName}` : 'Novo Treino')
+    document.querySelector('#view-workout .section-label').textContent = editingWorkoutId ? 'Editar Atividade' : 'Registrar Atividade'
+    document.getElementById('wf-btn').textContent = editingWorkoutId ? 'Atualizar Treino' : 'Salvar Treino'
+    document.getElementById('wf-btn').disabled = false
+
+    const grp  = document.getElementById('wf-student-group')
+    const sel  = document.getElementById('wf-student')
+    const warn = document.getElementById('wf-student-inactive-warning')
+    if (warn) warn.style.display = 'none'
+    if (profile.role === 'personal') {
+      if (!students.length) { try { await fetchStudents() } catch {} }
+      grp.style.display = 'block'
+      sel.innerHTML = '<option value="">Selecione o aluno…</option>' +
+        students.map(s => `<option value="${s.id}">${displayName(s)}</option>`).join('')
+      if (state.studentId === me.id) {
+        sel.innerHTML = `<option value="${me.id}" selected>${profile.name}</option>` + sel.innerHTML
+      } else if (state.studentId && !students.find(s => s.id === state.studentId)) {
+        // Aluno salvo não está mais entre os vínculos ativos — mesma defesa de editWorkout:
+        // injeta uma option extra e mantém visível, sem travar o formulário (o saveWorkout
+        // já revalida o vínculo de novo no submit).
+        const opt = document.createElement('option')
+        opt.value = state.studentId
+        opt.textContent = `${state.studentName || 'Aluno'} (verificar vínculo)`
+        sel.insertBefore(opt, sel.firstChild)
+      }
+      sel.value = state.studentId || ''
+    } else {
+      grp.style.display = 'none'
+      sel.innerHTML = `<option value="${profile.id}" selected>${profile.name}</option>`
+    }
+    sel.onchange = syncWfStudentInactiveWarning
+
+    document.getElementById('wf-name').value     = state.name || ''
+    document.getElementById('wf-date').value     = state.date || ''
+    document.getElementById('wf-end-date').value = state.endDate || ''
+    document.getElementById('wf-notes').value    = state.notes || ''
+
+    const riEl = document.getElementById('wf-routine-id')
+    const dgEl = document.getElementById('wf-day-group')
+    const dwEl = document.getElementById('wf-day-of-week')
+    if (state.routineId) {
+      if (riEl) riEl.value = state.routineId
+      if (dgEl) dgEl.style.display = 'block'
+      if (dwEl) { dwEl.required = true; dwEl.value = state.dayOfWeek || '' }
+    } else {
+      if (riEl) riEl.value = ''
+      if (dgEl) dgEl.style.display = 'none'
+      if (dwEl) { dwEl.required = false; dwEl.value = '' }
+    }
+
+    const list = document.getElementById('exercise-list')
+    list.innerHTML = ''
+    exerciseCounter = 0
+    if (!state.exercises || !state.exercises.length) addExercise()
+    else _populateExerciseRows(state.exercises)
+    refreshTotalVolume()
+
+    // navigateTo('workout') acima já disparou setupWorkoutForm() internamente, que reseta o
+    // formulário e regrava um rascunho em branco no localStorage antes deste ponto — resalva
+    // agora com os dados restaurados de fato, sobrescrevendo esse rascunho em branco.
+    saveWorkoutFormState()
+
+    return true
+  } catch (err) {
+    console.error('[restoreWorkoutFormState] falhou ao restaurar, descartando rascunho:', err)
+    clearWorkoutFormState()
+    return false
+  }
+}
+
+// Cancela explicitamente a criação/edição em andamento: descarta o rascunho salvo e volta
+// para o mesmo lugar para onde salvar com sucesso levaria (reaproveita a lógica de
+// redirecionamento de saveWorkout).
+function cancelWorkoutForm() {
+  const wasEditing = !!editingWorkoutId
+  clearWorkoutFormState()
+  editingWorkoutId    = null
+  _wfEditingCreatedBy = null
+  _redirectAfterWorkoutForm(wasEditing)
+}
+
+function _redirectAfterWorkoutForm(wasEditing) {
+  if (wasEditing) {
+    const ctx = historyCtx
+    if      (ctx?.view === 'routine-detail') openRoutineDetail(ctx.studentId, ctx.name, ctx.routineId, ctx.routineName, ctx.fromView)
+    else if (ctx?.view === 'student-sheet')  openStudentSheet(ctx.studentId, ctx.name)
+    else if (ctx?.view === 'my-workout')     navigateTo('my-workout')
+    else if (ctx?.isDetail)                  navigateTo('student-detail', { id: ctx.studentId, name: ctx.name })
+    else                                      navigateTo('students')
+  } else {
+    const prefId        = currentViewOpts.prefilledStudentId
+    const prefName      = currentViewOpts.prefilledStudentName
+    const prefRoutineId = currentViewOpts.prefilledRoutineId
+    const prefRoutineNm = currentViewOpts.prefilledRoutineName
+    const prefFromView  = currentViewOpts.prefilledFromView
+    if (prefRoutineId && prefId) {
+      openRoutineDetail(prefId, prefName || '', prefRoutineId, prefRoutineNm || '', prefFromView || null)
+    } else if (prefId) {
+      if (prefFromView === 'my-workout') navigateTo('my-workout')
+      else openStudentSheet(prefId, prefName || '')
+    } else {
+      setupWorkoutForm()
+    }
+  }
+}
+
 async function setupWorkoutForm(opts = {}) {
-  editingWorkoutId = null
+  editingWorkoutId    = null
+  _wfEditingCreatedBy = null
   document.querySelector('#view-workout .card-title').textContent    = 'Novo Treino'
   document.querySelector('#view-workout .section-label').textContent = 'Registrar Atividade'
   document.getElementById('wf-btn').textContent = 'Salvar Treino'
@@ -5883,6 +6126,7 @@ async function setupWorkoutForm(opts = {}) {
   exerciseCounter = 0
   addExercise()
   refreshTotalVolume()
+  saveWorkoutFormState()
 }
 
 function addExercise() {
@@ -6005,6 +6249,7 @@ function addExercise() {
   updateReorderButton()
   updateReplicateButton()
   div.querySelector('.ex-name').focus()
+  saveWorkoutFormState()
 }
 
 function removeExercise(id) {
@@ -6015,6 +6260,7 @@ function removeExercise(id) {
   updateReorderButton()
   updateReplicateButton()
   refreshTotalVolume()
+  saveWorkoutFormState()
 }
 
 function updateExerciseNumbers() {
@@ -6321,6 +6567,7 @@ async function saveReorderModal() {
     }
   }
 
+  saveWorkoutFormState()
   closeReorderModal()
 }
 
@@ -6404,6 +6651,7 @@ function confirmReplicate() {
 
   toast(`Configuração aplicada a ${targets.length} exercício${targets.length === 1 ? '' : 's'}.`, 'success')
   closeReplicateModal()
+  saveWorkoutFormState()
 }
 
 function toggleExerciseBody(id) {
@@ -6666,13 +6914,10 @@ async function saveWorkout(e) {
       if (exErr) throw exErr
 
       toast('Treino atualizado com sucesso!', 'success')
-      const ctx = historyCtx
-      editingWorkoutId = null
-      if (ctx?.view === 'routine-detail') openRoutineDetail(ctx.studentId, ctx.name, ctx.routineId, ctx.routineName, ctx.fromView)
-      else if (ctx?.view === 'student-sheet') openStudentSheet(ctx.studentId, ctx.name)
-      else if (ctx?.view === 'my-workout') navigateTo('my-workout')
-      else if (ctx?.isDetail) navigateTo('student-detail', { id: ctx.studentId, name: ctx.name })
-      else navigateTo('students')
+      clearWorkoutFormState()
+      editingWorkoutId    = null
+      _wfEditingCreatedBy = null
+      _redirectAfterWorkoutForm(true)
     } else {
       const { data: workout, error: wErr } = await sb.from('workouts').insert({
         student_id:   studentId,
@@ -6710,19 +6955,8 @@ async function saveWorkout(e) {
         })
       }).catch(err => console.warn('[notify-new-workout] falhou silenciosamente:', err))
 
-      const prefId        = currentViewOpts.prefilledStudentId
-      const prefName      = currentViewOpts.prefilledStudentName
-      const prefRoutineId = currentViewOpts.prefilledRoutineId
-      const prefRoutineNm = currentViewOpts.prefilledRoutineName
-      const prefFromView  = currentViewOpts.prefilledFromView
-      if (prefRoutineId && prefId) {
-        openRoutineDetail(prefId, prefName || '', prefRoutineId, prefRoutineNm || '', prefFromView || null)
-      } else if (prefId) {
-        if (prefFromView === 'my-workout') navigateTo('my-workout')
-        else openStudentSheet(prefId, prefName || '')
-      } else {
-        await setupWorkoutForm()
-      }
+      clearWorkoutFormState()
+      _redirectAfterWorkoutForm(false)
     }
   } catch (err) {
     toast('Erro ao salvar: ' + err.message, 'error')
