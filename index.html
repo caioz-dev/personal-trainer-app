@@ -7059,6 +7059,8 @@ function startRestTimer(exerciseId, totalSeconds) {
     const remaining = restTimers[exerciseId].remaining
     const btn2 = document.getElementById(`rest-btn-${exerciseId}`)
 
+    if (remaining > 0 && remaining <= 5) playCountdownBeep()
+
     if (remaining <= 0) {
       clearInterval(restTimers[exerciseId].intervalId)
       delete restTimers[exerciseId]
@@ -7094,16 +7096,33 @@ function resetRestTimerBtn(exerciseId, totalSeconds) {
 }
 
 function playBeep() {
+  // Som de fim de descanso: mais grave, mais alto e mais longo que playCountdownBeep(),
+  // para se diferenciar claramente dos beeps dos últimos 5 segundos.
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)()
     const osc  = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.connect(gain); gain.connect(ctx.destination)
     osc.type = 'sine'
-    osc.frequency.setValueAtTime(880, ctx.currentTime)
-    gain.gain.setValueAtTime(0.5, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6)
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.6)
+    osc.frequency.setValueAtTime(440, ctx.currentTime)
+    gain.gain.setValueAtTime(0.7, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.9)
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.9)
+  } catch {}
+}
+
+function playCountdownBeep() {
+  // Beep curto para os últimos 5 segundos da contagem regressiva de descanso.
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const osc  = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain); gain.connect(ctx.destination)
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(740, ctx.currentTime)
+    gain.gain.setValueAtTime(0.35, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15)
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.15)
   } catch {}
 }
 
