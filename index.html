@@ -6118,6 +6118,20 @@ async function confirmDupWorkout() {
   const btn = document.getElementById('dup-confirm-btn')
   if (btn) { btn.disabled = true; btn.textContent = 'Duplicando…' }
 
+  // A rotina de origem pertence ao aluno original; se o destino for outro aluno,
+  // não faz sentido vincular o duplicado a uma rotina que não é dele — vira treino avulso.
+  const sameStudent  = targetStudentId === workout.student_id
+  const newRoutineId = sameStudent ? (workout.routine_id ?? null) : null
+
+  console.log('[confirmDupWorkout DEBUG]', {
+    _dupWorkoutId,
+    targetStudentId, targetStudentIdType: typeof targetStudentId,
+    'workout.student_id': workout.student_id, workoutStudentIdType: typeof workout.student_id,
+    'workout.routine_id': workout.routine_id,
+    sameStudent,
+    newRoutineId
+  })
+
   try {
     // 1. Cria o novo workout
     const { data: newWorkout, error: wErr } = await sb.from('workouts').insert({
@@ -6127,8 +6141,8 @@ async function confirmDupWorkout() {
       end_date:     newEndDate,
       total_volume: workout.total_volume ?? 0,
       notes:        workout.notes  || null,
-      routine_id:   workout.routine_id ?? null,
-      day_of_week:  workout.routine_id ? newDayOfWeek : null,
+      routine_id:   newRoutineId,
+      day_of_week:  newRoutineId ? newDayOfWeek : null,
       created_by:   me.id
     }).select().maybeSingle()
     if (wErr) throw wErr
@@ -6185,6 +6199,14 @@ async function confirmDupWorkout() {
 
     toast(`Treino duplicado para ${targetName} com ${exes.length} exercício(s)!`, 'success')
     closeDupModal()
+
+    // Atualiza a tela atual para refletir o novo treino (mesma lógica de redirecionamento de saveWorkout)
+    const ctx = historyCtx
+    if      (ctx?.view === 'routine-detail') openRoutineDetail(ctx.studentId, ctx.name, ctx.routineId, ctx.routineName, ctx.fromView)
+    else if (ctx?.view === 'student-sheet')  openStudentSheet(ctx.studentId, ctx.name)
+    else if (ctx?.view === 'my-workout')     navigateTo('my-workout')
+    else if (ctx?.isDetail)                  navigateTo('student-detail', { id: ctx.studentId, name: ctx.name })
+    else if (currentView === 'history')      navigateTo('history')
   } catch (err) {
     toast('Erro ao duplicar treino: ' + err.message, 'error')
   } finally {
