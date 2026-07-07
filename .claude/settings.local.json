@@ -9,7 +9,12 @@
       "Bash(taskkill //IM python.exe //F)",
       "Bash(node -e ' *)",
       "Bash(find . -iname \"*.sql\" -not -path \"./node_modules/*\")",
-      "Bash(find . -iname \"*schema*\" -not -path \"./node_modules/*\" -not -path \"./.git/*\")"
+      "Bash(find . -iname \"*schema*\" -not -path \"./node_modules/*\" -not -path \"./.git/*\")",
+      "Bash(find . -iname \"*notify*\" -not -path \"*/node_modules/*\")",
+      "Bash(find . -type d -iname \"functions\" -not -path \"*/node_modules/*\")",
+      "Bash(find . -maxdepth 2 -iname \"*.env*\" -o -iname \"supabase.json\")",
+      "Bash(which supabase *)",
+      "Bash(supabase projects *)"
     ]
   }
 }
