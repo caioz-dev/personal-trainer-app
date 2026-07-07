@@ -5188,7 +5188,15 @@ async function executeUnlink() {
 }
 
 async function deleteRoutine(routineId, studentId, studentName) {
-  if (!confirm('Excluir esta rotina? Treinos vinculados a ela serão desvinculados.')) return
+  const { count } = await sb.from('workouts')
+    .select('*', { count: 'exact', head: true })
+    .eq('routine_id', routineId)
+
+  const msg = count
+    ? `Excluir esta rotina? Isso vai apagar permanentemente ${count} treino(s) vinculado(s) a ela. Esta ação não pode ser desfeita.`
+    : 'Excluir esta rotina? Esta ação não pode ser desfeita.'
+  if (!confirm(msg)) return
+
   const { error } = await sb.from('routines').delete().eq('id', routineId)
   if (error) { toast('Erro ao excluir: ' + error.message, 'error'); return }
   toast('Rotina excluída.', 'success')
