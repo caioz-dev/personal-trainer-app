@@ -6123,15 +6123,6 @@ async function confirmDupWorkout() {
   const sameStudent  = targetStudentId === workout.student_id
   const newRoutineId = sameStudent ? (workout.routine_id ?? null) : null
 
-  console.log('[confirmDupWorkout DEBUG]', {
-    _dupWorkoutId,
-    targetStudentId, targetStudentIdType: typeof targetStudentId,
-    'workout.student_id': workout.student_id, workoutStudentIdType: typeof workout.student_id,
-    'workout.routine_id': workout.routine_id,
-    sameStudent,
-    newRoutineId
-  })
-
   try {
     // 1. Cria o novo workout
     const { data: newWorkout, error: wErr } = await sb.from('workouts').insert({
