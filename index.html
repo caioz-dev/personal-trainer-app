@@ -5901,7 +5901,7 @@ function saveWorkoutFormState() {
       exercises
     }
     localStorage.setItem(WF_STATE_KEY, JSON.stringify(state))
-  } catch {}
+  } catch (err) { console.error('[saveWorkoutFormState DEBUG] localStorage.setItem falhou:', err) }
 }
 
 function clearWorkoutFormState() {
@@ -5916,21 +5916,26 @@ function _scheduleWorkoutFormSave() {
 // Chamada no boot, depois que `me`/`profile` já estão resolvidos. Retorna true se
 // restaurou um rascunho salvo (e já deixou a tela pronta), false caso contrário.
 async function restoreWorkoutFormState() {
-  if (profile?.role !== 'personal') return false
+  console.log('[restoreWorkoutFormState DEBUG] chamada. profile?.role:', profile?.role, 'me?.id:', me?.id)
+  if (profile?.role !== 'personal') { console.log('[restoreWorkoutFormState DEBUG] abortou: role não é personal'); return false }
 
   let raw
-  try { raw = localStorage.getItem(WF_STATE_KEY) } catch { return false }
-  if (!raw) return false
+  try { raw = localStorage.getItem(WF_STATE_KEY) } catch (err) { console.error('[restoreWorkoutFormState DEBUG] localStorage.getItem falhou:', err); return false }
+  console.log('[restoreWorkoutFormState DEBUG] raw do localStorage:', raw)
+  if (!raw) { console.log('[restoreWorkoutFormState DEBUG] nada salvo (raw vazio) — nunca chegou a salvar, ou já foi limpo'); return false }
 
   let state
-  try { state = JSON.parse(raw) } catch { clearWorkoutFormState(); return false }
+  try { state = JSON.parse(raw) } catch (err) { console.error('[restoreWorkoutFormState DEBUG] JSON.parse falhou:', err, 'raw:', raw); clearWorkoutFormState(); return false }
+  console.log('[restoreWorkoutFormState DEBUG] state parseado:', state)
 
   if (!state || typeof state !== 'object' || !state.date) {
+    console.log('[restoreWorkoutFormState DEBUG] state com formato inválido/incompleto — descartando. date:', state?.date)
     clearWorkoutFormState()
     return false
   }
   // Rascunho de outro personal no mesmo navegador — não restaura no lugar errado.
   if (state.personalId && me?.id && state.personalId !== me.id) {
+    console.log('[restoreWorkoutFormState DEBUG] personalId do rascunho não bate com o usuário logado. salvo:', state.personalId, 'logado:', me.id)
     clearWorkoutFormState()
     return false
   }
@@ -5939,6 +5944,7 @@ async function restoreWorkoutFormState() {
   // (dono do treino ou vínculo ativo com o aluno) antes de reabrir com os dados salvos.
   if (state.editingWorkoutId) {
     const ok = await _isLinkedOrOwner(state.createdBy, state.studentId)
+    console.log('[restoreWorkoutFormState DEBUG] revalidação de acesso (editingWorkoutId presente):', ok)
     if (!ok) {
       clearWorkoutFormState()
       toast('Não foi possível restaurar o rascunho: o acesso a este treino/aluno não é mais válido.', 'error')
@@ -7329,17 +7335,19 @@ function resetRestTimerBtn(exerciseId, totalSeconds) {
   btn.style.cssText = ''
 }
 
-function playBeep() {
+async function playBeep() {
   // Som de fim de descanso: mais grave, mais alto e mais longo que playCountdownBeep(),
   // para se diferenciar claramente dos beeps dos últimos 5 segundos.
   // Reaproveita o mesmo _audioCtx global (e o mesmo resume() em estado suspenso) que
   // _metronomeClick já usa — necessário pro som funcionar em mobile, já que esta função
   // é chamada de dentro de um tick de setInterval, fora do gesto de clique original.
+  // resume() é assíncrono em mobile (só resolve depois de efetivamente desbloquear o
+  // contexto) — sem o await, osc.start() rodava contra um contexto ainda suspenso.
   try {
     if (!_audioCtx || _audioCtx.state === 'closed') {
       _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
     }
-    if (_audioCtx.state === 'suspended') _audioCtx.resume()
+    if (_audioCtx.state === 'suspended') await _audioCtx.resume()
     const osc  = _audioCtx.createOscillator()
     const gain = _audioCtx.createGain()
     osc.connect(gain); gain.connect(_audioCtx.destination)
@@ -7351,15 +7359,16 @@ function playBeep() {
   } catch {}
 }
 
-function playCountdownBeep() {
+async function playCountdownBeep() {
   // Beep curto para os últimos 5 segundos da contagem regressiva de descanso.
   // Mesmo motivo de playBeep(): reaproveita _audioCtx global com resume() em vez de criar
-  // um AudioContext novo e descartável, pro som funcionar em mobile.
+  // um AudioContext novo e descartável, e aguarda o resume() resolver antes de tocar,
+  // pro som funcionar em mobile.
   try {
     if (!_audioCtx || _audioCtx.state === 'closed') {
       _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
     }
-    if (_audioCtx.state === 'suspended') _audioCtx.resume()
+    if (_audioCtx.state === 'suspended') await _audioCtx.resume()
     const osc  = _audioCtx.createOscillator()
     const gain = _audioCtx.createGain()
     osc.connect(gain); gain.connect(_audioCtx.destination)
@@ -7497,7 +7506,7 @@ function saveExecutionState() {
       restTimers:         restSnapshot
     }
     localStorage.setItem(EXEC_STATE_KEY, JSON.stringify(state))
-  } catch {}
+  } catch (err) { console.error('[saveExecutionState DEBUG] localStorage.setItem falhou:', err) }
 }
 
 function clearExecutionState() {
@@ -7508,21 +7517,26 @@ function clearExecutionState() {
 // restaurou uma execução salva (e já deixou a tela pronta), false caso contrário —
 // nesse caso o chamador segue o fluxo normal de navegação.
 function restoreExecutionState() {
-  if (timerInterval) return false   // já existe uma execução ativa em memória
+  console.log('[restoreExecutionState DEBUG] chamada. timerInterval:', timerInterval, 'me?.id:', me?.id)
+  if (timerInterval) { console.log('[restoreExecutionState DEBUG] abortou: já existe timerInterval ativo em memória'); return false }
 
   let raw
-  try { raw = localStorage.getItem(EXEC_STATE_KEY) } catch { return false }
-  if (!raw) return false
+  try { raw = localStorage.getItem(EXEC_STATE_KEY) } catch (err) { console.error('[restoreExecutionState DEBUG] localStorage.getItem falhou:', err); return false }
+  console.log('[restoreExecutionState DEBUG] raw do localStorage:', raw)
+  if (!raw) { console.log('[restoreExecutionState DEBUG] nada salvo (raw vazio) — nunca chegou a salvar, ou já foi limpo'); return false }
 
   let state
-  try { state = JSON.parse(raw) } catch { clearExecutionState(); return false }
+  try { state = JSON.parse(raw) } catch (err) { console.error('[restoreExecutionState DEBUG] JSON.parse falhou:', err, 'raw:', raw); clearExecutionState(); return false }
+  console.log('[restoreExecutionState DEBUG] state parseado:', state)
 
   if (!state || typeof state !== 'object' || !state.workoutId || !state.currentWorkoutData || !state.startTimestamp) {
+    console.log('[restoreExecutionState DEBUG] state com formato inválido/incompleto — descartando. workoutId:', state?.workoutId, 'currentWorkoutData:', !!state?.currentWorkoutData, 'startTimestamp:', state?.startTimestamp)
     clearExecutionState()
     return false
   }
   // Estado de outro aluno/conta no mesmo navegador — não retoma silenciosamente no lugar errado.
   if (state.studentId && me?.id && state.studentId !== me.id) {
+    console.log('[restoreExecutionState DEBUG] studentId do estado salvo não bate com o usuário logado. salvo:', state.studentId, 'logado:', me.id)
     clearExecutionState()
     return false
   }
