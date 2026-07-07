@@ -2612,7 +2612,7 @@
         </tfoot>
       </table>
     </div>
-    <button class="btn btn-success btn-block" style="margin-top:1.5rem" onclick="dismissComparison()">Fechar</button>
+    <button id="comparison-close-btn" class="btn btn-success btn-block" style="margin-top:1.5rem" onclick="finishAndCloseComparison()">Fechar</button>
   </div>
 </div>
 
@@ -2706,6 +2706,7 @@ let exerciseExecutions    = {}
 let _completingExerciseId = null
 let restTimers            = {}
 let _pendingReviewFinalTime = null
+let _pendingExecutionsSave  = null   // Promise que só resolve após salvar workout_executions com sucesso
 let _selectedFeeling        = null
 let _selectedEffort         = null
 let _selectedWorkoutIds     = new Set()
@@ -6730,12 +6731,23 @@ function today() {
   return new Date().toISOString().split('T')[0]
 }
 
-function toast(msg, type = 'info') {
+function toast(msg, type = 'info', opts = {}) {
   const icons = { success:'✅', error:'❌', info:'ℹ️' }
   const el = document.createElement('div')
   el.className = `toast ${type}`
   el.innerHTML = `<span>${icons[type] || 'ℹ️'}</span><span>${msg}</span>`
+  if (opts.actionLabel && opts.onAction) {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.textContent = opts.actionLabel
+    btn.style.cssText = 'margin-left:.75rem;background:none;border:none;color:inherit;text-decoration:underline;cursor:pointer;font:inherit;padding:0'
+    btn.onclick = () => { el.remove(); opts.onAction() }
+    el.appendChild(btn)
+  }
   document.getElementById('toasts').appendChild(el)
+  // Toasts com ação (ex: "Tentar novamente") ficam visíveis até o usuário agir —
+  // fechar sozinho depois de poucos segundos derrubaria a única forma de reenviar dados que falharam.
+  if (opts.actionLabel) return
   setTimeout(() => {
     el.style.transition = 'opacity .3s, transform .3s'
     el.style.opacity    = '0'
@@ -6772,10 +6784,16 @@ function updateTimerDisplay() {
 
 function stopWorkoutTimer() {
   if (!timerInterval) return
+  document.getElementById('workout-timer-widget').style.display = 'none'
+
+  // Se há um treino guiado em andamento (execução com exercícios/dados a salvar),
+  // segue o mesmo fluxo validado de finishWorkout() — nunca mostra o troféu direto,
+  // pois isso pularia a revisão e o salvamento de workout_executions/workout_reviews.
+  if (currentWorkoutData) { finishWorkout(); return }
+
   clearInterval(timerInterval)
   timerInterval = null
   const finalTime = document.getElementById('timer-display')?.textContent || '00:00:00'
-  document.getElementById('workout-timer-widget').style.display = 'none'
   syncTimerButtons()
   document.getElementById('timer-modal-time').textContent = finalTime
   document.getElementById('timer-modal-overlay').style.display = 'flex'
@@ -7193,17 +7211,38 @@ async function submitReview() {
   const notes = document.getElementById('review-modal-notes').value.trim() || null
   document.getElementById('review-modal').style.display = 'none'
   if (currentWorkoutData && (_selectedFeeling || _selectedEffort || notes)) {
-    sb.from('workout_reviews').insert({
+    // Aguarda a avaliação ser salva (com retry em caso de falha) antes de seguir para a tela de conclusão
+    await saveReviewWithRetry({
       workout_id:       currentWorkoutData.id,
       student_id:       profile.id,
       feeling:          _selectedFeeling || null,
       perceived_effort: _selectedEffort  || null,
       notes
-    }).then(({ error }) => {
-      if (error) console.error('[submitReview]', error.message)
     })
   }
   showComparisonModal(_pendingReviewFinalTime)
+}
+
+// Só resolve quando o insert tiver sucesso; em falha real (inclusive erro de rede,
+// que rejeita a Promise em vez de resolver com {error}) mostra toast com "Tentar novamente"
+// e tenta de novo somente quando o usuário clicar.
+function saveReviewWithRetry(payload) {
+  return new Promise(resolve => {
+    const attempt = async () => {
+      try {
+        const { error } = await sb.from('workout_reviews').insert(payload)
+        if (error) throw error
+        resolve()
+      } catch (err) {
+        console.error('[submitReview]', err?.message || err)
+        toast('Não foi possível salvar sua avaliação. Verifique sua conexão e tente novamente.', 'error', {
+          actionLabel: 'Tentar novamente',
+          onAction: attempt
+        })
+      }
+    }
+    attempt()
+  })
 }
 
 function skipReview() {
@@ -7326,7 +7365,20 @@ function showComparisonModal(finalTime) {
   document.getElementById('comp-final-time').textContent = finalTime
   document.getElementById('comparison-modal').style.display = 'flex'
 
-  saveWorkoutExecutions(workout.id).catch(err => console.error('Erro ao salvar execuções:', err))
+  // Dispara o salvamento em segundo plano; a Promise só resolve quando o insert
+  // realmente tiver sucesso (com retry), e é isso que finishAndCloseComparison espera
+  // antes de liberar a tela "Treino Concluído".
+  _pendingExecutionsSave = saveWorkoutExecutions(workout.id)
+}
+
+async function finishAndCloseComparison() {
+  const btn = document.getElementById('comparison-close-btn')
+  if (_pendingExecutionsSave) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando…' }
+    await _pendingExecutionsSave
+    if (btn) { btn.disabled = false; btn.textContent = 'Fechar' }
+  }
+  dismissComparison()
 }
 
 function dismissComparison() {
@@ -7334,8 +7386,9 @@ function dismissComparison() {
   const finalTime = document.getElementById('comp-final-time')?.textContent || '00:00:00'
   document.getElementById('timer-modal-time').textContent = finalTime
   document.getElementById('timer-modal-overlay').style.display = 'flex'
-  currentWorkoutData = null
-  exerciseExecutions = {}
+  currentWorkoutData      = null
+  exerciseExecutions      = {}
+  _pendingExecutionsSave  = null
 }
 
 async function saveWorkoutExecutions(workoutId) {
@@ -7395,8 +7448,29 @@ async function saveWorkoutExecutions(workoutId) {
   }
 
   if (!records.length) return
-  const { error } = await sb.from('workout_executions').insert(records)
-  if (error) console.error('[saveWorkoutExecutions] erro:', error.code, error.message)
+  await insertWorkoutExecutions(records)
+}
+
+// Só resolve quando o insert tiver sucesso; em falha real (inclusive erro de rede,
+// que rejeita a Promise em vez de resolver com {error}) mostra toast com "Tentar novamente"
+// e tenta de novo somente quando o usuário clicar.
+function insertWorkoutExecutions(records) {
+  return new Promise(resolve => {
+    const attempt = async () => {
+      try {
+        const { error } = await sb.from('workout_executions').insert(records)
+        if (error) throw error
+        resolve()
+      } catch (err) {
+        console.error('[saveWorkoutExecutions] erro:', err?.message || err)
+        toast('Não foi possível salvar os dados do seu treino. Verifique sua conexão e tente novamente.', 'error', {
+          actionLabel: 'Tentar novamente',
+          onAction: attempt
+        })
+      }
+    }
+    attempt()
+  })
 }
 </script>
 
