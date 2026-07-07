@@ -3926,6 +3926,12 @@ async function deleteExecutionGroup(workoutId, executedAt, studentId, studentNam
   const t    = new Date(executedAt).getTime()
   const from = new Date(t - 3600000).toISOString()
   const to   = new Date(t + 3600000).toISOString()
+
+  // Deleta primeiro as avaliações (workout_reviews) vinculadas ao treino,
+  // pois referenciam workout_id e bloqueariam a exclusão da execução por FK
+  const { error: reviewErr } = await sb.from('workout_reviews').delete().eq('workout_id', workoutId)
+  if (reviewErr) { toast('Erro ao apagar avaliação da execução: ' + reviewErr.message, 'error'); return }
+
   const { error } = await sb.from('workout_executions')
     .delete()
     .eq('workout_id', workoutId)
