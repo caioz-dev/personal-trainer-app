@@ -3462,6 +3462,7 @@ async function renderDetail(studentId, studentName, gen = 0) {
 // ─────────────────────────────────────────────
 async function renderHistory(studentId, gen = 0) {
   historyCtx = { studentId, name: profile.name, isDetail: false }
+  _selectedWorkoutIds.clear()
   const body = document.getElementById('history-body')
   body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando histórico…</div>'
 
@@ -3833,6 +3834,7 @@ function _bulkRoot() {
   const viewId = currentView === 'student-sheet'  ? 'view-student-sheet'
                : currentView === 'student-detail' ? 'view-student-detail'
                : currentView === 'history'        ? 'view-history'
+               : currentView === 'routine-detail' ? 'view-routine-detail'
                : null
   return (viewId && document.getElementById(viewId)) || document.body
 }
@@ -3926,6 +3928,13 @@ async function confirmBulkDelete() {
     }
     _selectedWorkoutIds.delete(wid)
   })
+
+  // Cards de rotina não são <tr>, então a remoção acima não se aplica a eles;
+  // recarrega a rotina do banco (mesma abordagem de deleteWorkoutFromRoutine)
+  // para atualizar a lista de cards e o contador "X treinos".
+  if (succeeded.length > 0 && currentView === 'routine-detail' && historyCtx) {
+    openRoutineDetail(historyCtx.studentId, historyCtx.name, historyCtx.routineId, historyCtx.routineName, historyCtx.fromView)
+  }
 
   if (failed.length === 0) {
     hideBulkDeleteConfirm()
@@ -4913,6 +4922,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
 
   const snSafe = (studentName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
   body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando…</div>'
+  _selectedWorkoutIds.clear()
 
   try {
     const routineQuery = sb.from('routines').select('*').eq('id', routineId)
@@ -4976,6 +4986,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
           <div style="position:relative;padding:.75rem 1rem;cursor:pointer"
                onclick="toggleRoutineWorkoutAccordion('${uid}','${w.id}')">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem">
+              ${profile.role === 'personal' ? `<input type="checkbox" class="workout-checkbox" data-workout-id="${w.id}" onclick="event.stopPropagation();toggleWorkoutCheckbox('${w.id}',this)">` : ''}
               <div style="min-width:0;flex:1">
                 <div style="font-weight:700;font-size:.9rem;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(w.name || 'Treino sem nome')}</div>
                 <div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem">${exCount} exercício${exCount !== 1 ? 's' : ''} · Vol: ${workoutVolumeDisplay(w)}</div>
@@ -5034,6 +5045,17 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
       </div>
       ${routine.general_instructions ? `<div style="background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.75rem 1rem;margin-bottom:1.25rem;font-size:.83rem;color:var(--text-secondary)">📝 ${escHtml(routine.general_instructions)}</div>` : ''}
       <div class="section-label" style="margin-bottom:.75rem">Treinos</div>
+      ${profile.role === 'personal' && workouts.length > 0 ? `<div id="bulk-select-bar" class="bulk-select-bar" style="display:none">
+        <label class="bulk-select-all-label">
+          <input type="checkbox" id="bulk-select-all-cb" onchange="toggleBulkSelectAll(this.checked)">
+          <span>Selecionar todos</span>
+        </label>
+        <span id="bulk-select-count" class="bulk-select-count"></span>
+        <div class="bulk-select-actions">
+          <button class="btn btn-sm btn-outline" onclick="cancelBulkSelection()">Cancelar</button>
+          <button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="showBulkDeleteConfirm()">🗑️ Excluir selecionados</button>
+        </div>
+      </div>` : ''}
       ${workoutListHTML}`
   } catch (err) {
     const errSnSafe = (opts.studentName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
