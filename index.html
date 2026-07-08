@@ -5658,16 +5658,12 @@ async function renderProgress(studentIdOverride) {
 
     if (profile.role === 'personal') {
       if (!students.length) await fetchStudents()
-      if (!students.length) {
-        body.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div>
-          <p>Nenhum aluno vinculado ainda.</p></div>`
-        return
-      }
-      studentId = studentIdOverride || students[0]?.id || null
+      studentId = studentIdOverride || students[0]?.id || profile.id
       studentSelectorHTML = `
         <div class="form-group" style="max-width:300px;margin-bottom:1.5rem">
           <label>Aluno</label>
           <select class="form-control" id="prog-student" onchange="renderProgress(this.value)">
+            <option value="${profile.id}"${profile.id === studentId ? ' selected' : ''}>${profile.name} (Eu)</option>
             ${students.map(s => `<option value="${s.id}"${s.id === studentId ? ' selected' : ''}>${displayName(s)}</option>`).join('')}
           </select>
         </div>`
