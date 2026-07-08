@@ -6415,6 +6415,12 @@ async function confirmDupWorkout() {
   const newRoutineId = sameStudent ? (workout.routine_id ?? null) : null
 
   try {
+    const finalDayOfWeek = newRoutineId ? newDayOfWeek : null
+    const similar = await _findRecentSimilarWorkout(targetStudentId, workout.name || null, finalDayOfWeek, newRoutineId)
+    if (similar && !confirm('Já existe um treino igual a este criado há poucos minutos. Deseja duplicar mesmo assim?')) {
+      return
+    }
+
     // 1. Cria o novo workout
     const { data: newWorkout, error: wErr } = await sb.from('workouts').insert({
       student_id:   targetStudentId,
@@ -6822,6 +6828,25 @@ function syncWfStudentInactiveWarning() {
   if (btn)  btn.disabled       = isInactive
 }
 
+// Detecta um treino "quase idêntico" criado há pouco tempo pro mesmo aluno,
+// pra evitar duplicação por reenvio (duplo-clique, ou o usuário achando que
+// não salvou e criando de novo). Compara nome + dia da semana + rotina —
+// não só nome, pra não acusar falso positivo entre treinos avulsos e de rotina.
+async function _findRecentSimilarWorkout(studentId, name, dayOfWeek, routineId) {
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+  let query = sb.from('workouts')
+    .select('id, created_at')
+    .eq('student_id', studentId)
+    .gte('created_at', fiveMinAgo)
+
+  query = name       ? query.eq('name', name)             : query.is('name', null)
+  query = dayOfWeek  ? query.eq('day_of_week', dayOfWeek) : query.is('day_of_week', null)
+  query = routineId  ? query.eq('routine_id', routineId)  : query.is('routine_id', null)
+
+  const { data } = await query.limit(1)
+  return (data && data[0]) || null
+}
+
 async function saveWorkout(e) {
   e.preventDefault()
   const btn = document.getElementById('wf-btn')
@@ -6967,6 +6992,12 @@ async function saveWorkout(e) {
       _wfEditingCreatedBy = null
       _redirectAfterWorkoutForm(true)
     } else {
+      const similar = await _findRecentSimilarWorkout(studentId, workoutName || null, dayOfWeek, routineId)
+      if (similar && !confirm(`Você já registrou um treino${workoutName ? ` chamado "${workoutName}"` : ''} igual a este há poucos minutos. Deseja criar mesmo assim?`)) {
+        btn.textContent = 'Salvar Treino'; btn.disabled = false
+        return
+      }
+
       const { data: workout, error: wErr } = await sb.from('workouts').insert({
         student_id:   studentId,
         name:         workoutName || null,

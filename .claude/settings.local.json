@@ -17,7 +17,9 @@
       "Bash(supabase projects *)",
       "Bash(find . -maxdepth 1 -iname \"vercel.json\" -o -iname \"now.json\")",
       "Bash(find . -maxdepth 2 -iname \"*.json\" -not -path \"*/node_modules/*\" -not -path \"*/.git/*\")",
-      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('vercel.json','utf8'\\)\\); console.log\\('valid JSON'\\)\")"
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('vercel.json','utf8'\\)\\); console.log\\('valid JSON'\\)\")",
+      "Bash(cat .temp/pooler-url)",
+      "Bash(supabase --version)"
     ]
   }
 }
