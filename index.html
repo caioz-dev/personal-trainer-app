@@ -3106,6 +3106,19 @@ async function navigateTo(view, opts = {}) {
   // Como #execution-overlay cobre a tela inteira, a navegação por trás dele fica
   // apenas "estacionada" e invisível enquanto ele estiver aberto.
 
+  // Saindo da tela de criação/edição de treino para qualquer outra: os dados do rascunho
+  // continuam salvos (não é apagado), mas marcados como "não ativo" — um F5 a partir de
+  // outra tela não deve mais sequestrar a navegação de volta pro formulário. Só volta
+  // automaticamente se o reload acontecer com o formulário ainda sendo a tela atual.
+  // Só marca se ainda existir rascunho salvo — cancelWorkoutForm()/saveWorkout() já
+  // chamam clearWorkoutFormState() antes de redirecionar, e não devemos ressuscitar um
+  // rascunho que acabou de ser explicitamente limpo.
+  if (view !== 'workout' && currentView === 'workout') {
+    let hasDraft = false
+    try { hasDraft = !!localStorage.getItem(WF_STATE_KEY) } catch {}
+    if (hasDraft) saveWorkoutFormState(false)
+  }
+
   currentView = view; currentViewOpts = opts
   const gen = ++navGen   // any in-flight render with a smaller gen will abort
 
@@ -5856,7 +5869,10 @@ function updateProgressChart() {
 // mais o contexto de redirecionamento (currentViewOpts ou historyCtx, dependendo se é
 // criação ou edição) pra saber pra onde voltar depois de salvar/cancelar. Fica só no
 // localStorage do próprio dispositivo do personal.
-function saveWorkoutFormState() {
+// active=false marca o rascunho como "não é mais a tela atual" (personal navegou pra outra
+// tela) — os dados continuam salvos, mas restoreWorkoutFormState não deve reabrir sozinho
+// nesse caso. Ver navigateTo().
+function saveWorkoutFormState(active = true) {
   if (profile?.role !== 'personal') return
   const form = document.getElementById('workout-form')
   if (!form || !document.getElementById('wf-name')) return
@@ -5898,7 +5914,9 @@ function saveWorkoutFormState() {
       endDate:           document.getElementById('wf-end-date')?.value || '',
       notes:             document.getElementById('wf-notes')?.value || '',
       redirectCtx,
-      exercises
+      exercises,
+      active,
+      savedAt:           Date.now()
     }
     localStorage.setItem(WF_STATE_KEY, JSON.stringify(state))
   } catch (err) { console.error('[saveWorkoutFormState DEBUG] localStorage.setItem falhou:', err) }
@@ -5933,6 +5951,21 @@ async function restoreWorkoutFormState() {
     clearWorkoutFormState()
     return false
   }
+
+  // Rascunho velho (de dias/testes anteriores) — não fica restaurando indefinidamente.
+  const WF_DRAFT_MAX_AGE_MS = 60 * 60 * 1000 // 1 hora
+  if (!state.savedAt || (Date.now() - state.savedAt) > WF_DRAFT_MAX_AGE_MS) {
+    console.log('[restoreWorkoutFormState DEBUG] rascunho expirado (sem savedAt ou com mais de 1h) — descartando. savedAt:', state.savedAt)
+    clearWorkoutFormState()
+    return false
+  }
+  // Personal já tinha navegado pra outra tela antes de recarregar — não sequestra a
+  // navegação de volta pro formulário; os dados continuam salvos, só não reabrem sozinhos.
+  if (state.active === false) {
+    console.log('[restoreWorkoutFormState DEBUG] rascunho marcado como inativo (não era mais a tela atual) — não restaura automaticamente')
+    return false
+  }
+
   // Rascunho de outro personal no mesmo navegador — não restaura no lugar errado.
   if (state.personalId && me?.id && state.personalId !== me.id) {
     console.log('[restoreWorkoutFormState DEBUG] personalId do rascunho não bate com o usuário logado. salvo:', state.personalId, 'logado:', me.id)
@@ -7348,7 +7381,6 @@ async function playBeep() {
       _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
     }
     if (_audioCtx.state === 'suspended') await _audioCtx.resume()
-    alert('[DEBUG playBeep] state: ' + _audioCtx.state)
     const osc  = _audioCtx.createOscillator()
     const gain = _audioCtx.createGain()
     osc.connect(gain); gain.connect(_audioCtx.destination)
@@ -7370,7 +7402,6 @@ async function playCountdownBeep() {
       _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
     }
     if (_audioCtx.state === 'suspended') await _audioCtx.resume()
-    alert('[DEBUG playCountdownBeep] state: ' + _audioCtx.state)
     const osc  = _audioCtx.createOscillator()
     const gain = _audioCtx.createGain()
     osc.connect(gain); gain.connect(_audioCtx.destination)
