@@ -7546,74 +7546,34 @@ function clearExecutionState() {
   try { localStorage.removeItem(EXEC_STATE_KEY) } catch {}
 }
 
-// ── DEBUG VISUAL TEMPORÁRIO — remover depois de diagnosticar o mobile ──
-// Mostra logs direto na tela (sem precisar de cabo/DevTools remoto). Ver restoreExecutionState().
-function debugLog(msg) {
-  let el = document.getElementById('debug-overlay')
-  if (!el) {
-    el = document.createElement('div')
-    el.id = 'debug-overlay'
-    el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;max-height:40vh;overflow-y:auto;background:rgba(0,0,0,0.85);color:#0f0;font-size:10px;padding:8px;z-index:99999;white-space:pre-wrap;font-family:monospace;'
-    document.body.appendChild(el)
-  }
-  el.innerHTML += msg + '<br>'
-}
-
 // Chamada no boot, depois que `me`/`profile` já estão resolvidos. Retorna true se
 // restaurou uma execução salva (e já deixou a tela pronta), false caso contrário —
 // nesse caso o chamador segue o fluxo normal de navegação.
 function restoreExecutionState() {
   console.log('[restoreExecutionState DEBUG] chamada. timerInterval:', timerInterval, 'me?.id:', me?.id)
-  debugLog('[restore] chamada. timerInterval=' + timerInterval + ' me.id=' + me?.id)
-  if (timerInterval) {
-    console.log('[restoreExecutionState DEBUG] abortou: já existe timerInterval ativo em memória')
-    debugLog('[restore] ABORTOU: já existe timerInterval ativo em memória')
-    return false
-  }
+  if (timerInterval) { console.log('[restoreExecutionState DEBUG] abortou: já existe timerInterval ativo em memória'); return false }
 
   let raw
-  try { raw = localStorage.getItem(EXEC_STATE_KEY) } catch (err) {
-    console.error('[restoreExecutionState DEBUG] localStorage.getItem falhou:', err)
-    debugLog('[restore] ERRO localStorage.getItem: ' + err)
-    return false
-  }
+  try { raw = localStorage.getItem(EXEC_STATE_KEY) } catch (err) { console.error('[restoreExecutionState DEBUG] localStorage.getItem falhou:', err); return false }
   console.log('[restoreExecutionState DEBUG] raw do localStorage:', raw)
-  debugLog('[restore] raw existe? ' + (raw ? 'SIM (' + raw.length + ' chars)' : 'NÃO'))
-  if (!raw) {
-    console.log('[restoreExecutionState DEBUG] nada salvo (raw vazio) — nunca chegou a salvar, ou já foi limpo')
-    debugLog('[restore] nada salvo — nunca chegou a salvar, ou já foi limpo')
-    return false
-  }
+  if (!raw) { console.log('[restoreExecutionState DEBUG] nada salvo (raw vazio) — nunca chegou a salvar, ou já foi limpo'); return false }
 
   let state
-  try { state = JSON.parse(raw) } catch (err) {
-    console.error('[restoreExecutionState DEBUG] JSON.parse falhou:', err, 'raw:', raw)
-    debugLog('[restore] ERRO JSON.parse: ' + err)
-    clearExecutionState()
-    return false
-  }
+  try { state = JSON.parse(raw) } catch (err) { console.error('[restoreExecutionState DEBUG] JSON.parse falhou:', err, 'raw:', raw); clearExecutionState(); return false }
   console.log('[restoreExecutionState DEBUG] state parseado:', state)
-  debugLog('[restore] state OK — workoutId=' + state?.workoutId
-    + ' studentId=' + state?.studentId
-    + ' startTimestamp=' + state?.startTimestamp
-    + (state?.startTimestamp ? ' (' + new Date(state.startTimestamp).toLocaleString('pt-BR') + ')' : '')
-    + ' exercicios concluidos=' + Object.keys(state?.exerciseExecutions || {}).length)
 
   if (!state || typeof state !== 'object' || !state.workoutId || !state.currentWorkoutData || !state.startTimestamp) {
     console.log('[restoreExecutionState DEBUG] state com formato inválido/incompleto — descartando. workoutId:', state?.workoutId, 'currentWorkoutData:', !!state?.currentWorkoutData, 'startTimestamp:', state?.startTimestamp)
-    debugLog('[restore] FORMATO INVÁLIDO — descartando. workoutId=' + state?.workoutId + ' currentWorkoutData=' + !!state?.currentWorkoutData + ' startTimestamp=' + state?.startTimestamp)
     clearExecutionState()
     return false
   }
   // Estado de outro aluno/conta no mesmo navegador — não retoma silenciosamente no lugar errado.
   if (state.studentId && me?.id && state.studentId !== me.id) {
     console.log('[restoreExecutionState DEBUG] studentId do estado salvo não bate com o usuário logado. salvo:', state.studentId, 'logado:', me.id)
-    debugLog('[restore] studentId NÃO BATE — salvo=' + state.studentId + ' logado=' + me.id)
     clearExecutionState()
     return false
   }
 
-  debugLog('[restore] DECIDIU RESTAURAR — aplicando estado na tela...')
   try {
     currentWorkoutData  = state.currentWorkoutData
     exerciseExecutions  = state.exerciseExecutions || {}
@@ -7645,11 +7605,9 @@ function restoreExecutionState() {
       })
     }
 
-    debugLog('[restore] SUCESSO — tela restaurada.')
     return true
   } catch (err) {
     console.error('[restoreExecutionState] falhou ao restaurar, descartando estado salvo:', err)
-    debugLog('[restore] ERRO ao aplicar na tela: ' + err + ' — descartando estado salvo')
     clearExecutionState()
     return false
   }
