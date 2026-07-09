@@ -7302,6 +7302,7 @@ async function checkAppVersion() {
     const { version } = await res.json()
     if (__appVersion === null) { __appVersion = version; return }
     if (version && version !== __appVersion) {
+      if (__updateToastShown) return
       __updateToastShown = true
       toast('Nova versão disponível', 'info', {
         actionLabel: 'Atualizar',
