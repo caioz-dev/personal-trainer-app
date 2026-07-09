@@ -6422,7 +6422,7 @@ async function confirmDupWorkout() {
 
   try {
     const finalDayOfWeek = newRoutineId ? newDayOfWeek : null
-    const similar = await _findRecentSimilarWorkout(targetStudentId, workout.name || null, finalDayOfWeek, newRoutineId)
+    const similar = await _findRecentSimilarWorkout(targetStudentId, workout.name || null, newDate, finalDayOfWeek, newRoutineId)
     if (similar && !confirm('Já existe um treino igual a este criado há poucos minutos. Deseja duplicar mesmo assim?')) {
       return
     }
@@ -6836,9 +6836,10 @@ function syncWfStudentInactiveWarning() {
 
 // Detecta um treino "quase idêntico" criado há pouco tempo pro mesmo aluno,
 // pra evitar duplicação por reenvio (duplo-clique, ou o usuário achando que
-// não salvou e criando de novo). Compara nome + dia da semana + rotina —
-// não só nome, pra não acusar falso positivo entre treinos avulsos e de rotina.
-async function _findRecentSimilarWorkout(studentId, name, dayOfWeek, routineId) {
+// não salvou e criando de novo). Compara nome + data + dia da semana + rotina —
+// data entra pra não acusar falso positivo ao duplicar o mesmo treino pra
+// datas diferentes (ex: replicar um treino de rotina pras próximas semanas).
+async function _findRecentSimilarWorkout(studentId, name, date, dayOfWeek, routineId) {
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
   let query = sb.from('workouts')
     .select('id, created_at')
@@ -6846,6 +6847,7 @@ async function _findRecentSimilarWorkout(studentId, name, dayOfWeek, routineId) 
     .gte('created_at', fiveMinAgo)
 
   query = name       ? query.eq('name', name)             : query.is('name', null)
+  query = date       ? query.eq('date', date)             : query.is('date', null)
   query = dayOfWeek  ? query.eq('day_of_week', dayOfWeek) : query.is('day_of_week', null)
   query = routineId  ? query.eq('routine_id', routineId)  : query.is('routine_id', null)
 
@@ -6998,7 +7000,7 @@ async function saveWorkout(e) {
       _wfEditingCreatedBy = null
       _redirectAfterWorkoutForm(true)
     } else {
-      const similar = await _findRecentSimilarWorkout(studentId, workoutName || null, dayOfWeek, routineId)
+      const similar = await _findRecentSimilarWorkout(studentId, workoutName || null, date, dayOfWeek, routineId)
       if (similar && !confirm(`Você já registrou um treino${workoutName ? ` chamado "${workoutName}"` : ''} igual a este há poucos minutos. Deseja criar mesmo assim?`)) {
         btn.textContent = 'Salvar Treino'; btn.disabled = false
         return
@@ -7304,12 +7306,21 @@ async function checkAppVersion() {
     if (version && version !== __appVersion) {
       if (__updateToastShown) return
       __updateToastShown = true
-      toast('Nova versão disponível', 'info', {
-        actionLabel: 'Atualizar',
-        onAction: () => location.reload()
-      })
+      _showUpdateToastWhenIdle()
     }
   } catch (e) { /* falha na checagem não deve incomodar o usuário */ }
+}
+
+// Adia a exibição (não só a checagem) enquanto houver um timer de descanso rodando —
+// "Atualizar" recarrega a página, e o cronômetro de descanso não é restaurado depois
+// do reload, então mostrar o toast nesse momento arriscaria o aluno perder a contagem.
+function _showUpdateToastWhenIdle() {
+  const restTimerActive = Object.values(restTimers).some(rt => rt?.intervalId)
+  if (restTimerActive) { setTimeout(_showUpdateToastWhenIdle, 5000); return }
+  toast('Nova versão disponível', 'info', {
+    actionLabel: 'Atualizar',
+    onAction: () => location.reload()
+  })
 }
 
 function initUpdateCheck() {
