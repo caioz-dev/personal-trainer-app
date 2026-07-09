@@ -4384,6 +4384,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
               const planDur  = parseFloat(we?.duration_min) || 0
               const planDist = parseFloat(we?.distance_km)  || 0
               const planSpd  = parseFloat(we?.speed_kmh)    || 0
+              const notExecuted = ex.duration_executed_min == null && ex.distance_executed_km == null && ex.speed_executed_kmh == null
               const execDur  = parseFloat(ex.duration_executed_min) || 0
               const execDist = parseFloat(ex.distance_executed_km)  || 0
               const execSpd  = parseFloat(ex.speed_executed_kmh)    || 0
@@ -4392,11 +4393,14 @@ async function renderStudentSheet(studentId, studentName, gen) {
               const unit     = planDist > 0 ? 'km' : 'min'
               const diff     = executed - planned
               totalPlannedAero  += planned
-              totalExecutedAero += executed
+              if (!notExecuted) totalExecutedAero += executed
 
               const plannedTxt  = [planDur > 0 ? planDur + ' min' : null, planDist > 0 ? planDist + ' km' : null, planSpd > 0 ? planSpd + ' km/h' : null, (we?.hr_min || we?.hr_max) ? `❤️ FC: ${we.hr_min || '?'}–${we.hr_max || '?'} bpm` : null].filter(Boolean).join(' · ') || '—'
-              const executedTxt = [execDur > 0 ? execDur.toLocaleString('pt-BR') + ' min' : null, execDist > 0 ? execDist.toLocaleString('pt-BR') + ' km' : null, execSpd > 0 ? execSpd.toLocaleString('pt-BR') + ' km/h' : null].filter(Boolean).join(' · ') || '—'
-              const diffCell    = diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>`
+              const executedTxt = notExecuted
+                ? '<span style="color:var(--text-muted)">Não executado</span>'
+                : [execDur > 0 ? execDur.toLocaleString('pt-BR') + ' min' : null, execDist > 0 ? execDist.toLocaleString('pt-BR') + ' km' : null, execSpd > 0 ? execSpd.toLocaleString('pt-BR') + ' km/h' : null].filter(Boolean).join(' · ') || '—'
+              const diffCell    = notExecuted ? '—'
+                : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>`
                 : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} ${unit}</span>`
                 :             `<span style="color:var(--text-muted)">= 0 ${unit}</span>`
               const exName = `🏃 ${we?.exercise_name || '—'}`
@@ -4421,17 +4425,19 @@ async function renderStudentSheet(studentId, studentName, gen) {
               const planned    = planSets * planReps * planWeight
               totalPlannedMusc += planned
 
-              const sortedSets = (ex.sets || []).sort((a, b) => a.set_number - b.set_number)
+              const sortedSets  = (ex.sets || []).sort((a, b) => a.set_number - b.set_number)
+              const notExecuted = sortedSets.length === 0
               let executed = 0
               sortedSets.forEach(s => { executed += (parseFloat(s.weight_executed) || 0) * (s.reps_executed || 0) })
-              totalExecutedMusc += executed
+              if (!notExecuted) totalExecutedMusc += executed
 
               const diff        = executed - planned
               const plannedTxt  = planned > 0 ? `${planWeight} kg × ${planReps} reps × ${planSets} séries = ${planned.toLocaleString('pt-BR')} kg` : '—'
-              const executedTxt = sortedSets.length > 0
-                ? sortedSets.map(s => `S${s.set_number}: ${s.weight_executed}×${s.reps_executed}`).join(' · ') + ` = ${executed.toLocaleString('pt-BR')} kg`
-                : '—'
-              const diffCell    = diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>`
+              const executedTxt = notExecuted
+                ? '<span style="color:var(--text-muted)">Não executado</span>'
+                : sortedSets.map(s => `S${s.set_number}: ${s.weight_executed}×${s.reps_executed}`).join(' · ') + ` = ${executed.toLocaleString('pt-BR')} kg`
+              const diffCell    = notExecuted ? '—'
+                : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>`
                 : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>`
                 :             `<span style="color:var(--text-muted)">= 0 kg</span>`
               const methodTag = we?.training_method ? `⚡ ${we.training_method}` : ''
@@ -4757,13 +4763,14 @@ async function renderMyWorkout(gen) {
             const isAero = we?.exercise_type === 'aerobico' || we?.duration_min != null || ex.duration_executed_min != null
             if (isAero) {
               const planDur = parseFloat(we?.duration_min) || 0, planDist = parseFloat(we?.distance_km) || 0, planSpd = parseFloat(we?.speed_kmh) || 0
+              const notExecuted = ex.duration_executed_min == null && ex.distance_executed_km == null && ex.speed_executed_kmh == null
               const execDur = parseFloat(ex.duration_executed_min) || 0, execDist = parseFloat(ex.distance_executed_km) || 0, execSpd = parseFloat(ex.speed_executed_kmh) || 0
               const planned = planDist > 0 ? planDist : planDur, executed = execDist > 0 ? execDist : execDur, unit = planDist > 0 ? 'km' : 'min'
               const diff = executed - planned
-              totalPlannedAero += planned; totalExecutedAero += executed
+              totalPlannedAero += planned; if (!notExecuted) totalExecutedAero += executed
               const plannedTxt  = [planDur > 0 ? planDur + ' min' : null, planDist > 0 ? planDist + ' km' : null, planSpd > 0 ? planSpd + ' km/h' : null, (we?.hr_min || we?.hr_max) ? `❤️ FC: ${we.hr_min || '?'}–${we.hr_max || '?'} bpm` : null].filter(Boolean).join(' · ') || '—'
-              const executedTxt = [execDur > 0 ? execDur.toLocaleString('pt-BR') + ' min' : null, execDist > 0 ? execDist.toLocaleString('pt-BR') + ' km' : null, execSpd > 0 ? execSpd.toLocaleString('pt-BR') + ' km/h' : null].filter(Boolean).join(' · ') || '—'
-              const diffCell    = diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>` : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} ${unit}</span>` : `<span style="color:var(--text-muted)">= 0 ${unit}</span>`
+              const executedTxt = notExecuted ? '<span style="color:var(--text-muted)">Não executado</span>' : [execDur > 0 ? execDur.toLocaleString('pt-BR') + ' min' : null, execDist > 0 ? execDist.toLocaleString('pt-BR') + ' km' : null, execSpd > 0 ? execSpd.toLocaleString('pt-BR') + ' km/h' : null].filter(Boolean).join(' · ') || '—'
+              const diffCell    = notExecuted ? '—' : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>` : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} ${unit}</span>` : `<span style="color:var(--text-muted)">= 0 ${unit}</span>`
               const exName = `🏃 ${we?.exercise_name || '—'}`
               const row = `<tr><td style="font-weight:500;color:var(--text-secondary)">${exName}</td><td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td><td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td><td style="font-size:.82rem">${diffCell}</td></tr>`
               const card = `<div class="comp-card">
@@ -4776,12 +4783,13 @@ async function renderMyWorkout(gen) {
             } else {
               const planSets = we?.sets || 0, planWeight = parseFloat(we?.weight_kg) || 0, planReps = we?.reps || 0, planned = planSets * planReps * planWeight
               totalPlannedMusc += planned
-              const sortedSets = (ex.sets || []).sort((a, b) => a.set_number - b.set_number)
-              let executed = 0; sortedSets.forEach(s => { executed += (parseFloat(s.weight_executed) || 0) * (s.reps_executed || 0) }); totalExecutedMusc += executed
+              const sortedSets  = (ex.sets || []).sort((a, b) => a.set_number - b.set_number)
+              const notExecuted = sortedSets.length === 0
+              let executed = 0; sortedSets.forEach(s => { executed += (parseFloat(s.weight_executed) || 0) * (s.reps_executed || 0) }); if (!notExecuted) totalExecutedMusc += executed
               const diff        = executed - planned
               const plannedTxt  = planned > 0 ? `${planWeight} kg × ${planReps} reps × ${planSets} séries = ${planned.toLocaleString('pt-BR')} kg` : '—'
-              const executedTxt = sortedSets.length > 0 ? sortedSets.map(s => `S${s.set_number}: ${s.weight_executed}×${s.reps_executed}`).join(' · ') + ` = ${executed.toLocaleString('pt-BR')} kg` : '—'
-              const diffCell    = diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>` : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>` : `<span style="color:var(--text-muted)">= 0 kg</span>`
+              const executedTxt = notExecuted ? '<span style="color:var(--text-muted)">Não executado</span>' : sortedSets.map(s => `S${s.set_number}: ${s.weight_executed}×${s.reps_executed}`).join(' · ') + ` = ${executed.toLocaleString('pt-BR')} kg`
+              const diffCell    = notExecuted ? '—' : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>` : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>` : `<span style="color:var(--text-muted)">= 0 kg</span>`
               const methodTag = we?.training_method ? `⚡ ${we.training_method}` : ''
               const row = `<tr><td style="font-weight:500;color:var(--text-secondary)">${we?.exercise_name || '—'}${methodTag ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">${methodTag}</div>` : ''}</td><td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td><td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td><td style="font-size:.82rem">${diffCell}</td></tr>`
               const card = `<div class="comp-card">
@@ -8125,9 +8133,9 @@ async function saveWorkoutExecutions(workoutId) {
         set_number:            1,
         weight_executed:       null,
         reps_executed:         null,
-        duration_executed_min: exec?.duration_executed_min ?? ex.duration_min ?? null,
-        distance_executed_km:  exec?.distance_executed_km  ?? ex.distance_km  ?? null,
-        speed_executed_kmh:    exec?.speed_executed_kmh    ?? ex.speed_kmh    ?? null
+        duration_executed_min: exec?.duration_executed_min ?? null,
+        distance_executed_km:  exec?.distance_executed_km  ?? null,
+        speed_executed_kmh:    exec?.speed_executed_kmh    ?? null
       })
     } else {
       const recordedSets = exec?.sets?.length > 0 ? exec.sets : null
@@ -8146,21 +8154,19 @@ async function saveWorkoutExecutions(workoutId) {
           })
         }
       } else {
-        // Aluno não marcou séries: assume valores prescritos
-        const prescribedSets = parseInt(ex.sets) || 1
-        for (let i = 0; i < prescribedSets; i++) {
-          records.push({
-            workout_id:            workoutId,
-            exercise_id:           ex.id,
-            student_id:            profile.id,
-            set_number:            i + 1,
-            weight_executed:       ex.weight_kg ?? null,
-            reps_executed:         ex.reps      ?? null,
-            duration_executed_min: null,
-            distance_executed_km:  null,
-            speed_executed_kmh:    null
-          })
-        }
+        // Aluno não marcou o exercício como concluído: registra a linha sem dados de
+        // execução (weight/reps null), pra "Não executado" aparecer certo na tela do personal.
+        records.push({
+          workout_id:            workoutId,
+          exercise_id:           ex.id,
+          student_id:            profile.id,
+          set_number:            1,
+          weight_executed:       null,
+          reps_executed:         null,
+          duration_executed_min: null,
+          distance_executed_km:  null,
+          speed_executed_kmh:    null
+        })
       }
     }
   }

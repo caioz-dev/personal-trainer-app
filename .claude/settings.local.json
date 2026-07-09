@@ -19,7 +19,10 @@
       "Bash(find . -maxdepth 2 -iname \"*.json\" -not -path \"*/node_modules/*\" -not -path \"*/.git/*\")",
       "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('vercel.json','utf8'\\)\\); console.log\\('valid JSON'\\)\")",
       "Bash(cat .temp/pooler-url)",
-      "Bash(supabase --version)"
+      "Bash(supabase --version)",
+      "Bash(node --check /tmp_check.js)",
+      "Bash(node \"/c/Users/user/AppData/Local/Temp/claude/C--Users-user-Desktop-personal-trainer-app/6e3d2776-6d44-4c66-8ee8-2a8ddee2a31c/scratchpad/extract_check.js\")",
+      "Bash(node --check \"/c/Users/user/AppData/Local/Temp/claude/C--Users-user-Desktop-personal-trainer-app/6e3d2776-6d44-4c66-8ee8-2a8ddee2a31c/scratchpad/extracted.js\")"
     ]
   }
 }
