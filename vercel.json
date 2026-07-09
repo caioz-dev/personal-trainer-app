@@ -1,4 +1,6 @@
 {
+  "buildCommand": "printf '{\"version\":\"%s\"}' \"$VERCEL_GIT_COMMIT_SHA\" > version.json",
+  "outputDirectory": ".",
   "headers": [
     {
       "source": "/",
@@ -8,6 +10,12 @@
     },
     {
       "source": "/index.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/version.json",
       "headers": [
         { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
       ]

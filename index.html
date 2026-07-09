@@ -2788,6 +2788,8 @@ function resetAppState() {
 window.addEventListener('DOMContentLoaded', async () => {
   sb = window.supabase.createClient(SUPA_URL, SUPA_KEY)
 
+  initUpdateCheck()
+
   // Autosave (debounced) do rascunho do formulário de treino a cada digitação/mudança —
   // cobre texto livre (nome, notas, cargas) que addExercise/removeExercise/etc não capturam
   // sozinhos. Delegado no form inteiro, então cobre também as linhas de exercício
@@ -7276,6 +7278,36 @@ function toast(msg, type = 'info', opts = {}) {
     el.style.transform  = 'translateX(110%)'
     setTimeout(() => el.remove(), 300)
   }, 3500)
+}
+
+// ─────────────────────────────────────────────
+// VERIFICAÇÃO DE NOVA VERSÃO (version.json)
+// ─────────────────────────────────────────────
+let __appVersion = null
+let __updateToastShown = false
+
+async function checkAppVersion() {
+  if (__updateToastShown) return
+  try {
+    const res = await fetch(`version.json?t=${Date.now()}`, { cache: 'no-store' })
+    if (!res.ok) return
+    const { version } = await res.json()
+    if (__appVersion === null) { __appVersion = version; return }
+    if (version && version !== __appVersion) {
+      __updateToastShown = true
+      toast('Nova versão disponível', 'info', {
+        actionLabel: 'Atualizar',
+        onAction: () => location.reload()
+      })
+    }
+  } catch (e) { /* falha na checagem não deve incomodar o usuário */ }
+}
+
+function initUpdateCheck() {
+  checkAppVersion()
+  setInterval(checkAppVersion, 5 * 60 * 1000)
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkAppVersion() })
+  window.addEventListener('focus', checkAppVersion)
 }
 
 // ─────────────────────────────────────────────
