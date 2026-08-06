@@ -2384,13 +2384,13 @@
             </p>
             <div id="calc-student-group" class="form-group">
               <label>Aluno</label>
-              <select id="calc-student" class="form-control" onchange="clearCalcResult();updateCalcPrescribed()"></select>
+              <select id="calc-student" class="form-control" onchange="calcClearResult('calc');calcUpdatePrescribed('calc')"></select>
             </div>
             <div class="form-group">
               <label>Exercício</label>
               <input id="calc-exercise" type="text" class="form-control" placeholder="Ex: Supino Reto"
                      list="calc-exercise-list" autocomplete="off"
-                     oninput="clearCalcResult();updateCalcPrescribed()">
+                     oninput="calcClearResult('calc');calcUpdatePrescribed('calc')">
               <datalist id="calc-exercise-list"></datalist>
             </div>
             <div class="form-group">
@@ -2398,7 +2398,7 @@
               <input id="calc-weight" type="number" class="form-control" placeholder="Ex: 85" step="0.5" min="0.5">
               <div id="calc-prescribed" style="display:none;font-size:.8rem;color:var(--text-muted);font-weight:500;margin-top:.35rem"></div>
             </div>
-            <button class="btn btn-primary" onclick="runCalc()">Calcular</button>
+            <button class="btn btn-primary" onclick="calcRun('calc')">Calcular</button>
             <div id="calc-out"></div>
           </div>
         </div>
@@ -3075,7 +3075,7 @@ function buildSidebar() {
   badge.className   = `role-badge ${isP ? 'role-personal' : 'role-student'}`
 
   const items = isP
-    ? [['students','👥','Alunos'],['my-workout','🏋️','Meu Treino'],['calculator','🧮','Calculadora'],['progress','📈','Progresso'],['personal-profile','👤','Meu Perfil']]
+    ? [['students','👥','Alunos'],['my-workout','🏋️','Meu Treino'],['progress','📈','Progresso'],['personal-profile','👤','Meu Perfil']]
     : [['history','📊','Meu Histórico'],['profile','👤','Meu Perfil'],['calculator','🧮','Calculadora'],['progress','📈','Progresso']]
 
   document.getElementById('nav-list').innerHTML = items.map(([id, icon, label]) => `
@@ -4598,6 +4598,35 @@ async function renderStudentSheet(studentId, studentName, gen) {
         ${studentProfileData.weight_kg ? `<div style="background:var(--accent-a08);border:1px solid var(--accent-a18);border-radius:var(--radius-lg);padding:.5rem 1rem;text-align:center"><div style="font-size:1.1rem;font-weight:800;color:var(--text-primary)">${studentProfileData.weight_kg}</div><div style="font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted)">kg</div></div>` : ''}
       </div>` : ''
 
+    // Calculadora de Repetições embutida na ficha — studentId já vem fixo do contexto
+    // (sem dropdown de aluno), evitando o personal selecionar o aluno errado por engano.
+    const calcSectionHTML = `
+      <div class="card calc-wrap" style="margin-bottom:1.25rem">
+        <div class="card-header">
+          <div>
+            <div class="section-label">Ferramentas</div>
+            <div class="card-title">🧮 Calculadora de Repetições</div>
+          </div>
+        </div>
+        <p style="font-size:.875rem;color:var(--text-muted);margin-bottom:1.25rem">
+          Informe o exercício e o peso de hoje para descobrir o mínimo de repetições necessárias para superar o volume anterior.
+        </p>
+        <div class="form-group">
+          <label>Exercício</label>
+          <input id="sheet-calc-exercise" type="text" class="form-control" placeholder="Ex: Supino Reto"
+                 list="sheet-calc-exercise-list" autocomplete="off"
+                 oninput="calcClearResult('sheet-calc');calcUpdatePrescribed('sheet-calc','${safeIdH}')">
+          <datalist id="sheet-calc-exercise-list"></datalist>
+        </div>
+        <div class="form-group">
+          <label>Carga de hoje (kg)</label>
+          <input id="sheet-calc-weight" type="number" class="form-control" placeholder="Ex: 85" step="0.5" min="0.5">
+          <div id="sheet-calc-prescribed" style="display:none;font-size:.8rem;color:var(--text-muted);font-weight:500;margin-top:.35rem"></div>
+        </div>
+        <button class="btn btn-primary" onclick="calcRun('sheet-calc','${safeIdH}')">Calcular</button>
+        <div id="sheet-calc-out"></div>
+      </div>`
+
     const historyTableHTML = standAloneWorkouts.length
       ? `<p style="font-size:.78rem;color:var(--text-muted);margin-bottom:.875rem">Clique em um treino para ver os exercícios.</p>
       ${profile.role === 'personal' ? `<div id="bulk-select-bar" class="bulk-select-bar" style="display:none">
@@ -4637,6 +4666,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
           <div class="stat-label">Execuções</div>
         </div>
       </div>
+      ${calcSectionHTML}
       ${routinesSectionHTML}
       <div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border-subtle)">
       <div class="section-label" style="margin-bottom:.75rem">Histórico de Treinos</div>
@@ -4647,6 +4677,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
       </div>
       </div>`
     bindWorkoutRowClicks(body)
+    setupSheetCalc(studentId)
   } catch (err) {
     body.innerHTML = `${header}<div class="empty-state"><div class="empty-icon">⚠️</div>
       <p>Erro ao carregar histórico.</p>
@@ -7082,22 +7113,36 @@ async function setupCalc() {
 
     document.getElementById('calc-exercise').value = ''
     document.getElementById('calc-weight').value   = ''
-    clearCalcResult()
-    loadCalcExerciseNames()
+    calcClearResult('calc')
+    calcLoadExerciseNames('calc')
   } catch (err) {
     toast('Erro ao carregar calculadora.', 'error')
   }
 }
 
-function clearCalcResult() {
-  document.getElementById('calc-out').innerHTML = ''
+// setupSheetCalc: variante embutida na Ficha do Aluno — sem dropdown de aluno,
+// o studentId já vem fixo do contexto da ficha (evita selecionar o aluno errado).
+function setupSheetCalc(studentId) {
+  document.getElementById('sheet-calc-exercise').value = ''
+  document.getElementById('sheet-calc-weight').value   = ''
+  calcClearResult('sheet-calc')
+  calcLoadExerciseNames('sheet-calc', studentId)
 }
 
-async function loadCalcExerciseNames() {
+// Funções genéricas da calculadora, parametrizadas por `prefix` (prefixo dos ids no DOM:
+// 'calc' na view solta de Calculadora, 'sheet-calc' na versão embutida na Ficha do Aluno)
+// e por `fixedStudentId` (quando presente, ignora o dropdown/role e usa esse aluno fixo).
+function calcClearResult(prefix) {
+  document.getElementById(`${prefix}-out`).innerHTML = ''
+}
+
+async function calcLoadExerciseNames(prefix, fixedStudentId) {
   try {
-    const studentIds = profile.role === 'personal'
-      ? [profile.id, ...students.map(s => s.id)]
-      : [profile.id]
+    const studentIds = fixedStudentId
+      ? [fixedStudentId]
+      : profile.role === 'personal'
+        ? [profile.id, ...students.map(s => s.id)]
+        : [profile.id]
 
     const { data: wData } = await sb
       .from('workouts').select('id')
@@ -7112,27 +7157,29 @@ async function loadCalcExerciseNames() {
     const names = [...new Set(exData.map(e => e.exercise_name).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }))
 
-    const dl = document.getElementById('calc-exercise-list')
+    const dl = document.getElementById(`${prefix}-exercise-list`)
     if (dl) dl.innerHTML = names.map(n => `<option value="${escHtml(n)}">`).join('')
   } catch {}
 }
 
 let _calcPrescribedTimer = null
-function updateCalcPrescribed() {
+function calcUpdatePrescribed(prefix, fixedStudentId) {
   clearTimeout(_calcPrescribedTimer)
-  _calcPrescribedTimer = setTimeout(_doUpdateCalcPrescribed, 350)
+  _calcPrescribedTimer = setTimeout(() => _doUpdateCalcPrescribed(prefix, fixedStudentId), 350)
 }
 
-async function _doUpdateCalcPrescribed() {
-  const exerciseName = document.getElementById('calc-exercise').value.trim()
-  const el = document.getElementById('calc-prescribed')
+async function _doUpdateCalcPrescribed(prefix, fixedStudentId) {
+  const exerciseName = document.getElementById(`${prefix}-exercise`).value.trim()
+  const el = document.getElementById(`${prefix}-prescribed`)
   if (!el) return
 
   if (!exerciseName) { el.style.display = 'none'; return }
 
   try {
     let studentIds
-    if (profile.role === 'personal') {
+    if (fixedStudentId) {
+      studentIds = [fixedStudentId]
+    } else if (profile.role === 'personal') {
       const sid = document.getElementById('calc-student').value
       studentIds = sid ? [sid] : [profile.id, ...students.map(s => s.id)]
     } else {
@@ -7165,19 +7212,21 @@ async function _doUpdateCalcPrescribed() {
   }
 }
 
-async function runCalc() {
-  const sid = profile.role === 'personal'
-    ? document.getElementById('calc-student').value
-    : profile.id
+async function calcRun(prefix, fixedStudentId) {
+  const sid = fixedStudentId
+    ? fixedStudentId
+    : profile.role === 'personal'
+      ? document.getElementById('calc-student').value
+      : profile.id
 
-  const exerciseName = document.getElementById('calc-exercise').value.trim()
-  const weight       = parseFloat(document.getElementById('calc-weight').value)
+  const exerciseName = document.getElementById(`${prefix}-exercise`).value.trim()
+  const weight       = parseFloat(document.getElementById(`${prefix}-weight`).value)
 
-  if (profile.role === 'personal' && !sid) { toast('Selecione um aluno.', 'error'); return }
+  if (!fixedStudentId && profile.role === 'personal' && !sid) { toast('Selecione um aluno.', 'error'); return }
   if (!exerciseName)                        { toast('Informe o nome do exercício.', 'error'); return }
   if (weight == null || isNaN(weight) || weight <= 0) { toast('Informe o peso de hoje.', 'error'); return }
 
-  const out = document.getElementById('calc-out')
+  const out = document.getElementById(`${prefix}-out`)
   out.innerHTML = '<div class="loading"><div class="spinner"></div>Buscando…</div>'
 
   try {
