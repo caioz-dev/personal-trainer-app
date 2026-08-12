@@ -3359,7 +3359,7 @@ async function renderStudents() {
       const ids = students.map(s => s.id)
       const { data: le } = await sb
         .from('workout_executions')
-        .select('executed_at, student_id, workouts(name)')
+        .select('executed_at, student_id, workouts!inner(name)')
         .in('student_id', ids)
         .order('executed_at', { ascending: false })
         .limit(1)
@@ -4243,7 +4243,11 @@ async function renderStudentSheet(studentId, studentName, gen) {
 
     const [execRes, spRes, reviewsRes, routinesRes] = await Promise.all([
       sb.from('workout_executions')
-        .select('*, workout_exercises(exercise_name, exercise_type, sets, reps, weight_kg, duration_min, distance_km, speed_kmh, hr_min, hr_max, training_method, method_description), workouts(name, date)')
+        // workouts!inner (não workouts) para excluir execuções de treinos que não pertencem
+        // a este personal — a RLS de workouts (created_by = auth.uid()) já faz esse filtro,
+        // o !inner só transforma o embed opcional num inner join que descarta a linha inteira
+        // em vez de retornar workout=null pra treinos de outro personal (ver ficha do aluno).
+        .select('*, workout_exercises(exercise_name, exercise_type, sets, reps, weight_kg, duration_min, distance_km, speed_kmh, hr_min, hr_max, training_method, method_description), workouts!inner(name, date)')
         .eq('student_id', studentId)
         .order('executed_at', { ascending: false }),
       sb.from('student_profiles').select('*').eq('student_id', studentId).maybeSingle(),
@@ -4352,10 +4356,12 @@ async function renderStudentSheet(studentId, studentName, gen) {
         </tr>`
     }).join('')
 
-    // Agrupa por workout_id; dentro de cada workout, agrega séries por exercise_id
+    // Agrupa por workout_id + executed_at exato (uma sessão = todas as linhas gravadas no
+    // mesmo insert, mesmo timestamp); só workout_id juntaria sessões diferentes do mesmo
+    // treino-modelo (ex: duas semanas de "Treino A") num único card.
     const execByWorkout = {}
     for (const ex of executions) {
-      const key = ex.workout_id
+      const key = ex.workout_id + '|' + ex.executed_at
       if (!execByWorkout[key]) {
         execByWorkout[key] = {
           workoutId:    ex.workout_id,
@@ -4799,9 +4805,11 @@ async function renderMyWorkout(gen) {
         }).join('')}</div>`
 
     // ── Execution groups ──
+    // Agrupa por workout_id + executed_at exato (ver renderStudentSheet) pra não fundir
+    // sessões diferentes do mesmo treino-modelo num único card.
     const execByWorkout = {}
     for (const ex of executions) {
-      const key = ex.workout_id
+      const key = ex.workout_id + '|' + ex.executed_at
       if (!execByWorkout[key]) {
         execByWorkout[key] = { workoutId: ex.workout_id, workoutName: ex.workouts?.name || (ex.workouts?.date ? fmtDate(ex.workouts.date) : '—'), executedAt: ex.executed_at, exerciseMap: {} }
       }
@@ -5758,7 +5766,9 @@ async function renderProgress(studentIdOverride) {
 
     const { data: execData, error: execErr } = await sb
       .from('workout_executions')
-      .select('executed_at, weight_executed, reps_executed, duration_executed_min, distance_executed_km, speed_executed_kmh, workout_exercises(exercise_name)')
+      // workouts!inner só pra forçar a RLS de workouts a excluir execuções de treinos de
+      // outro personal (evita colisão de nome de exercício poluindo o gráfico deste aluno).
+      .select('executed_at, weight_executed, reps_executed, duration_executed_min, distance_executed_km, speed_executed_kmh, workout_exercises(exercise_name), workouts!inner()')
       .eq('student_id', studentId)
       .order('executed_at', { ascending: true })
     if (execErr) throw execErr
