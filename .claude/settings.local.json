@@ -22,7 +22,61 @@
       "Bash(supabase --version)",
       "Bash(node --check /tmp_check.js)",
       "Bash(node \"/c/Users/user/AppData/Local/Temp/claude/C--Users-user-Desktop-personal-trainer-app/6e3d2776-6d44-4c66-8ee8-2a8ddee2a31c/scratchpad/extract_check.js\")",
-      "Bash(node --check \"/c/Users/user/AppData/Local/Temp/claude/C--Users-user-Desktop-personal-trainer-app/6e3d2776-6d44-4c66-8ee8-2a8ddee2a31c/scratchpad/extracted.js\")"
+      "Bash(node --check \"/c/Users/user/AppData/Local/Temp/claude/C--Users-user-Desktop-personal-trainer-app/6e3d2776-6d44-4c66-8ee8-2a8ddee2a31c/scratchpad/extracted.js\")",
+      "Bash(where strix-claude-cli *)",
+      "Bash(where strix *)",
+      "Bash(npm ls *)",
+      "Bash(strix-claude-cli *)",
+      "Bash(docker info *)",
+      "Bash(rm -f strix-report.md)",
+      "Bash(PYTHONUTF8=1 PYTHONIOENCODING=utf-8 strix-claude-cli -t . -m quick -o strix-report.md -v)",
+      "Bash(mkdir -p /c/tmp)",
+      "Read(//c//**)",
+      "Bash(cd *)",
+      "Bash(where claude *)",
+      "Bash(claude --version)",
+      "Bash(where deno *)",
+      "mcp__supabase__list_projects",
+      "mcp__supabase__list_edge_functions",
+      "mcp__supabase__deploy_edge_function",
+      "mcp__supabase__execute_sql",
+      "mcp__supabase__get_advisors",
+      "mcp__supabase__apply_migration",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_fill_form",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_console_messages",
+      "mcp__supabase__list_tables"
     ]
-  }
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \"C:\\\\Users\\\\user\\\\.claude\\\\skills\\\\impeccable\\\\scripts\\\\hook.mjs\" ] || node \"C:\\\\Users\\\\user\\\\.claude\\\\skills\\\\impeccable\\\\scripts\\\\hook.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking UI changes"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \"C:\\\\Users\\\\user\\\\.claude\\\\skills\\\\impeccable\\\\scripts\\\\hook.mjs\" ] || node \"C:\\\\Users\\\\user\\\\.claude\\\\skills\\\\impeccable\\\\scripts\\\\hook.mjs\"",
+            "timeout": 30,
+            "statusMessage": "Design deep pass"
+          }
+        ]
+      }
+    ]
+  },
+  "description": "Impeccable design detector: immediate-tier checks after Edit/Write/MultiEdit on UI files, full-rule deep pass on Stop."
 }
