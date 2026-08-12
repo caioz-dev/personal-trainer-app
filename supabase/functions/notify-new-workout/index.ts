@@ -12,6 +12,28 @@ serve(async (req) => {
   }
 
   try {
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Missing Authorization header' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Cliente com o token do chamador, só para identificá-lo via auth.getUser()
+    const sbAuth = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: authHeader } } }
+    )
+    const { data: { user }, error: userErr } = await sbAuth.auth.getUser()
+    if (userErr || !user) {
+      return new Response(JSON.stringify({ error: 'Invalid or expired session' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const { student_id, workout_name, workout_date, personal_name } = await req.json()
 
     if (!student_id) {
@@ -21,11 +43,31 @@ serve(async (req) => {
       })
     }
 
-    // Supabase client com service role para ler a tabela profiles
+    // Supabase client com service role para ler profiles e validar o vínculo personal↔aluno
     const sb = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
+
+    // Só permite notificar se o chamador for o próprio aluno (auto-registro) ou o
+    // personal trainer com vínculo ativo para esse student_id — nunca um terceiro.
+    if (user.id !== student_id) {
+      const { data: link, error: linkErr } = await sb
+        .from('personal_students')
+        .select('id')
+        .eq('personal_id', user.id)
+        .eq('student_id', student_id)
+        .eq('active', true)
+        .maybeSingle()
+
+      if (linkErr || !link) {
+        console.error('[notify-new-workout] chamador sem vínculo com o aluno:', user.id, student_id)
+        return new Response(JSON.stringify({ error: 'Not authorized for this student' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+    }
 
     // Busca email e nome do aluno
     const { data: student, error: studentErr } = await sb

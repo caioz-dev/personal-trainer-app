@@ -3228,12 +3228,17 @@ async function fetchStudents() {
 }
 
 async function fetchStudentPersonal(studentId) {
-  const { data: link } = await sb
+  // Usa order+limit(1) em vez de .maybeSingle(): se por engano existir mais de um
+  // vínculo ativo para o mesmo aluno, .maybeSingle() falharia e retornaria null
+  // silenciosamente. Aqui, pega o vínculo ativo mais recente em vez de quebrar.
+  const { data: links } = await sb
     .from('personal_students')
     .select('personal_id')
     .eq('student_id', studentId)
     .eq('active', true)
-    .maybeSingle()
+    .order('created_at', { ascending: false })
+    .limit(1)
+  const link = links?.[0]
   if (!link?.personal_id) return null
   const { data } = await sb
     .from('profiles')
