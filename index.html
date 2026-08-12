@@ -2707,6 +2707,12 @@
 const SUPA_URL = 'https://kdmcaksypdjsnwufkxng.supabase.co'
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtkbWNha3N5cGRqc253dWZreG5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3MTc1NzgsImV4cCI6MjA5NTI5MzU3OH0.K9Gc4qX9bNONk7Yx3QbW_W6KiyvTYhsp67YweOTAr6k'
 
+async function authHeader() {
+  const { data } = await sb.auth.getSession()
+  const token = data?.session?.access_token
+  return 'Bearer ' + (token || SUPA_KEY)
+}
+
 let sb, me, profile, students = [], chart = null, sheetChart = null, progressChart = null
 let exerciseCounter = 0
 let _dupWorkoutId = null
@@ -3391,13 +3397,13 @@ async function renderStudents() {
         ${withLast.map((s, i) => {
           const vol      = s.last ? getWorkoutVolume(s.last) : null
           const dName    = displayName(s)
-          const nameSafe = dName.replace(/\\/g,'\\\\').replace(/'/g,"\\'")
+          const nameSafe = escHtml(dName.replace(/\\/g,'\\\\').replace(/'/g,"\\'"))
           return `<div class="student-card stagger-item" data-student-id="${s.id}" style="--stagger-index:${i}"
               onclick="openStudentSheet('${s.id}','${nameSafe}')">
             <button class="student-unlink-btn" title="Desvincular aluno"
                 onclick="event.stopPropagation();confirmUnlinkStudent('${s.id}','${nameSafe}')">✕</button>
             ${avatarEl(dName, s.avatar_url || null, 48, 'margin-bottom:.875rem')}
-            <div class="student-name">${dName}</div>
+            <div class="student-name">${escHtml(dName)}</div>
             <div class="student-meta">
               Último treino: ${s.last ? fmtDate(s.last.date) : '—'}<br>
               Volume: ${vol !== null ? vol.toLocaleString('pt-BR') + ' kg' : '—'}
@@ -3630,7 +3636,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '') {
     const exCount = exes.length
     const exLabel = exCount > 0
       ? `${exCount} ${exCount === 1 ? 'exercício' : 'exercícios'}`
-      : (w.notes || '<span style="color:var(--text-muted)">—</span>')
+      : (w.notes ? escHtml(w.notes) : '<span style="color:var(--text-muted)">—</span>')
 
     const exDetailPairs = exCount > 0
       ? exes.map(ex => {
@@ -4072,7 +4078,7 @@ async function editWorkout(workoutId) {
     const saveBtn = document.getElementById('wf-btn')
     if (workout.student_id === me.id) {
       grp.style.display = 'none'
-      sel.innerHTML = `<option value="${me.id}" selected>${profile.name}</option>`
+      sel.innerHTML = `<option value="${me.id}" selected>${escHtml(profile.name)}</option>`
       if (warn) warn.style.display = 'none'
       if (saveBtn) saveBtn.disabled = false
     } else if (students.find(s => s.id === workout.student_id)) {
@@ -4519,7 +4525,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
               <div style="display:flex;gap:1.25rem;flex-wrap:wrap;align-items:flex-start">
                 ${review.feeling ? `<div style="text-align:center"><div style="font-size:1.6rem;line-height:1">${feelingEmojis[review.feeling - 1]}</div><div style="font-size:.62rem;color:var(--text-muted);margin-top:.2rem">Sensação</div></div>` : ''}
                 ${review.perceived_effort ? `<div style="text-align:center"><div style="font-size:1.15rem;font-weight:800;color:var(--accent-soft);line-height:1">${review.perceived_effort}<span style="font-size:.65rem;color:var(--text-muted)">/10</span></div><div style="font-size:.62rem;color:var(--text-muted);margin-top:.2rem">Esforço (PSE)</div></div>` : ''}
-                ${review.notes ? `<div style="flex:1;min-width:120px;font-size:.78rem;color:var(--text-muted);font-style:italic;padding-top:.1rem">"${review.notes}"</div>` : ''}
+                ${review.notes ? `<div style="flex:1;min-width:120px;font-size:.78rem;color:var(--text-muted);font-style:italic;padding-top:.1rem">"${escHtml(review.notes)}"</div>` : ''}
               </div>
             </div>` : ''
 
@@ -4528,7 +4534,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
             <div class="exercise-row-header" style="margin-bottom:0" onclick="toggleExerciseBody('${execUid}')">
               <div style="display:flex;align-items:center;gap:.625rem;min-width:0">
                 <span class="ex-chevron" id="ex-chevron-${execUid}">›</span>
-                <div style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${group.workoutName}</div>
+                <div style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${escHtml(group.workoutName)}</div>
               </div>
               <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
                 <div style="font-size:.75rem;color:var(--text-muted)">${fmtDateTime(group.executedAt)}</div>
@@ -4874,7 +4880,7 @@ async function renderMyWorkout(gen) {
               <div style="display:flex;gap:1.25rem;flex-wrap:wrap;align-items:flex-start">
                 ${review.feeling ? `<div style="text-align:center"><div style="font-size:1.6rem;line-height:1">${feelingEmojis[review.feeling - 1]}</div><div style="font-size:.62rem;color:var(--text-muted);margin-top:.2rem">Sensação</div></div>` : ''}
                 ${review.perceived_effort ? `<div style="text-align:center"><div style="font-size:1.15rem;font-weight:800;color:var(--accent-soft);line-height:1">${review.perceived_effort}<span style="font-size:.65rem;color:var(--text-muted)">/10</span></div><div style="font-size:.62rem;color:var(--text-muted);margin-top:.2rem">Esforço (PSE)</div></div>` : ''}
-                ${review.notes ? `<div style="flex:1;min-width:120px;font-size:.78rem;color:var(--text-muted);font-style:italic;padding-top:.1rem">"${review.notes}"</div>` : ''}
+                ${review.notes ? `<div style="flex:1;min-width:120px;font-size:.78rem;color:var(--text-muted);font-style:italic;padding-top:.1rem">"${escHtml(review.notes)}"</div>` : ''}
               </div>
             </div>` : ''
           const execUid = 'exg' + group.workoutId.replace(/-/g, '')
@@ -4883,7 +4889,7 @@ async function renderMyWorkout(gen) {
             <div class="exercise-row-header" style="margin-bottom:0" onclick="toggleExerciseBody('${execUid}')">
               <div style="display:flex;align-items:center;gap:.625rem;min-width:0">
                 <span class="ex-chevron" id="ex-chevron-${execUid}">›</span>
-                <div style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${group.workoutName}</div>
+                <div style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${escHtml(group.workoutName)}</div>
               </div>
               <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
                 <div style="font-size:.75rem;color:var(--text-muted)">${fmtDateTime(group.executedAt)}</div>
@@ -5288,9 +5294,9 @@ async function saveRoutine(e) {
 
   // Fire-and-forget: notifica o aluno por e-mail apenas na criação
   if (!_editingRoutineId) {
-    fetch(`${SUPA_URL}/functions/v1/notify-new-routine`, {
+    authHeader().then(auth => fetch(`${SUPA_URL}/functions/v1/notify-new-routine`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPA_KEY },
+      headers: { 'Content-Type': 'application/json', 'Authorization': auth },
       body: JSON.stringify({
         student_id:   studentId,
         routine_name: payload.name,
@@ -5298,7 +5304,7 @@ async function saveRoutine(e) {
         end_date:     payload.end_date,
         personal_name: profile.name
       })
-    }).catch(err => console.warn('[notify-new-routine] falhou silenciosamente:', err))
+    })).catch(err => console.warn('[notify-new-routine] falhou silenciosamente:', err))
   }
 
   closeRoutineModal()
@@ -5712,8 +5718,8 @@ async function renderProgress(studentIdOverride) {
         <div class="form-group" style="max-width:300px;margin-bottom:1.5rem">
           <label>Aluno</label>
           <select class="form-control" id="prog-student" onchange="renderProgress(this.value)">
-            <option value="${profile.id}"${profile.id === studentId ? ' selected' : ''}>${profile.name} (Eu)</option>
-            ${students.map(s => `<option value="${s.id}"${s.id === studentId ? ' selected' : ''}>${displayName(s)}</option>`).join('')}
+            <option value="${profile.id}"${profile.id === studentId ? ' selected' : ''}>${escHtml(profile.name)} (Eu)</option>
+            ${students.map(s => `<option value="${s.id}"${s.id === studentId ? ' selected' : ''}>${escHtml(displayName(s))}</option>`).join('')}
           </select>
         </div>`
     } else {
@@ -6063,9 +6069,9 @@ async function restoreWorkoutFormState() {
       if (!students.length) { try { await fetchStudents() } catch {} }
       grp.style.display = 'block'
       sel.innerHTML = '<option value="">Selecione o aluno…</option>' +
-        students.map(s => `<option value="${s.id}">${displayName(s)}</option>`).join('')
+        students.map(s => `<option value="${s.id}">${escHtml(displayName(s))}</option>`).join('')
       if (state.studentId === me.id) {
-        sel.innerHTML = `<option value="${me.id}" selected>${profile.name}</option>` + sel.innerHTML
+        sel.innerHTML = `<option value="${me.id}" selected>${escHtml(profile.name)}</option>` + sel.innerHTML
       } else if (state.studentId && !students.find(s => s.id === state.studentId)) {
         // Aluno salvo não está mais entre os vínculos ativos — mesma defesa de editWorkout:
         // injeta uma option extra e mantém visível, sem travar o formulário (o saveWorkout
@@ -6078,7 +6084,7 @@ async function restoreWorkoutFormState() {
       sel.value = state.studentId || ''
     } else {
       grp.style.display = 'none'
-      sel.innerHTML = `<option value="${profile.id}" selected>${profile.name}</option>`
+      sel.innerHTML = `<option value="${profile.id}" selected>${escHtml(profile.name)}</option>`
     }
     sel.onchange = syncWfStudentInactiveWarning
 
@@ -6176,18 +6182,18 @@ async function setupWorkoutForm(opts = {}) {
     }
     if (opts.prefilledStudentId && (opts.prefilledStudentId === me.id || students.find(s => s.id === opts.prefilledStudentId))) {
       grp.style.display = 'none'
-      sel.innerHTML = `<option value="${opts.prefilledStudentId}" selected>${opts.prefilledStudentName || ''}</option>`
+      sel.innerHTML = `<option value="${opts.prefilledStudentId}" selected>${escHtml(opts.prefilledStudentName || '')}</option>`
       sel.required = true
       document.querySelector('#view-workout .section-label').textContent = `Para: ${opts.prefilledStudentName || ''}`
     } else {
       grp.style.display = 'block'
       sel.innerHTML = '<option value="">Selecione o aluno…</option>' +
-        students.map(s => `<option value="${s.id}">${displayName(s)}</option>`).join('')
+        students.map(s => `<option value="${s.id}">${escHtml(displayName(s))}</option>`).join('')
       sel.required = true
     }
   } else {
     grp.style.display = 'none'
-    sel.innerHTML = `<option value="${profile.id}" selected>${profile.name}</option>`
+    sel.innerHTML = `<option value="${profile.id}" selected>${escHtml(profile.name)}</option>`
     sel.required = false
   }
   sel.onchange = syncWfStudentInactiveWarning
@@ -6403,13 +6409,13 @@ function openDupModal(workoutId) {
     : (currentStudentId === me?.id ? profile.name + ' (Eu)' : 'Aluno atual')
 
   sel.innerHTML =
-    `<option value="${currentStudentId}" selected>${currentName}</option>` +
+    `<option value="${currentStudentId}" selected>${escHtml(currentName)}</option>` +
     (currentStudentId !== me?.id
-      ? `<option value="${me.id}">${profile.name} (Eu)</option>`
+      ? `<option value="${me.id}">${escHtml(profile.name)} (Eu)</option>`
       : '') +
     students
       .filter(s => s.id !== currentStudentId)
-      .map(s => `<option value="${s.id}">${displayName(s)}</option>`)
+      .map(s => `<option value="${s.id}">${escHtml(displayName(s))}</option>`)
       .join('')
 
   // Dia da semana padrão = o do treino original (ou "sem dia definido" se avulso)
@@ -6519,16 +6525,16 @@ async function confirmDupWorkout() {
     const targetName    = targetStudent
       ? displayName(targetStudent)
       : (targetStudentId === me?.id ? profile.name : 'Aluno')
-    fetch(`${SUPA_URL}/functions/v1/notify-new-workout`, {
+    authHeader().then(auth => fetch(`${SUPA_URL}/functions/v1/notify-new-workout`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPA_KEY },
+      headers: { 'Content-Type': 'application/json', 'Authorization': auth },
       body: JSON.stringify({
         student_id:    targetStudentId,
         workout_name:  newWorkout.name || 'Treino sem nome',
         workout_date:  newDate,
         personal_name: profile.name
       })
-    }).catch(err => console.warn('[notify-new-workout] falhou silenciosamente:', err))
+    })).catch(err => console.warn('[notify-new-workout] falhou silenciosamente:', err))
 
     toast(`Treino duplicado para ${targetName} com ${exes.length} exercício(s)!`, 'success')
     closeDupModal()
@@ -7067,11 +7073,11 @@ async function saveWorkout(e) {
       toast('Treino registrado com sucesso!', 'success')
 
       // Fire-and-forget: notifica o aluno por e-mail sem bloquear o fluxo
-      fetch(`${SUPA_URL}/functions/v1/notify-new-workout`, {
+      authHeader().then(auth => fetch(`${SUPA_URL}/functions/v1/notify-new-workout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + SUPA_KEY
+          'Authorization': auth
         },
         body: JSON.stringify({
           student_id:    studentId,
@@ -7079,7 +7085,7 @@ async function saveWorkout(e) {
           workout_date:  date,
           personal_name: profile.name
         })
-      }).catch(err => console.warn('[notify-new-workout] falhou silenciosamente:', err))
+      })).catch(err => console.warn('[notify-new-workout] falhou silenciosamente:', err))
 
       clearWorkoutFormState()
       _redirectAfterWorkoutForm(false)
@@ -7104,8 +7110,8 @@ async function setupCalc() {
       if (!students.length) await fetchStudents()
       grp.style.display = 'block'
       sel.innerHTML = '<option value="">Selecione o aluno…</option>' +
-        `<option value="${profile.id}">${profile.name} (Eu)</option>` +
-        students.map(s => `<option value="${s.id}">${displayName(s)}</option>`).join('')
+        `<option value="${profile.id}">${escHtml(profile.name)} (Eu)</option>` +
+        students.map(s => `<option value="${s.id}">${escHtml(displayName(s))}</option>`).join('')
     } else {
       grp.style.display = 'none'
       sel.innerHTML = `<option value="${profile.id}" selected></option>`
