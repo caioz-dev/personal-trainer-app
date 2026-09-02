@@ -3081,7 +3081,7 @@ function buildSidebar() {
   badge.className   = `role-badge ${isP ? 'role-personal' : 'role-student'}`
 
   const items = isP
-    ? [['students','👥','Alunos'],['my-workout','🏋️','Meu Treino'],['progress','📈','Progresso'],['personal-profile','👤','Meu Perfil']]
+    ? [['students','👥','Alunos'],['my-workout','🏋️','Meu Treino'],['progress','📈','Progresso dos Alunos'],['personal-profile','👤','Meu Perfil']]
     : [['history','📊','Meu Histórico'],['profile','👤','Meu Perfil'],['calculator','🧮','Calculadora'],['progress','📈','Progresso']]
 
   document.getElementById('nav-list').innerHTML = items.map(([id, icon, label]) => `
@@ -3456,6 +3456,13 @@ async function addStudentByEmail() {
       ? await sb.from('personal_students').update({ active: true }).eq('id', existing.id)
       : await sb.from('personal_students').insert({ personal_id: me.id, student_id: found.id })
     if (lErr) throw lErr
+
+    // Fire-and-forget: notifica o personal por e-mail que o aluno foi vinculado
+    authHeader().then(auth => fetch(`${SUPA_URL}/functions/v1/notify-new-student`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': auth },
+      body: JSON.stringify({ student_id: found.id })
+    })).catch(err => console.warn('[notify-new-student] falhou silenciosamente:', err))
 
     toast(`${found.name} vinculado com sucesso!`, 'success')
     input.value = ''
