@@ -2814,17 +2814,21 @@ window.addEventListener('DOMContentLoaded', async () => {
     workoutFormEl.addEventListener('change', _scheduleWorkoutFormSave)
   }
 
-  // Verifica sessão existente ANTES de qualquer outra coisa, para restaurar
-  // direto na tela principal sem piscar a tela de login (#boot-loading cobre a espera)
-  const { data: { session } } = await sb.auth.getSession()
-  if (session) { me = session.user; await boot() }
-  else showAuthSection()
-
+  // Registra o listener ANTES de getSession(): no fluxo de recovery, o supabase-js
+  // processa o token da URL (#access_token=...&type=recovery) e dispara PASSWORD_RECOVERY
+  // já durante a própria chamada getSession() — se o listener for registrado depois,
+  // o evento é perdido e a sessão de recovery acaba abrindo a tela normal do app.
   sb.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN'  && session) { me = session.user; await boot() }
     if (event === 'SIGNED_OUT')            { booted = false; me = null; profile = null; resetAppState(); showAuthSection() }
     if (event === 'PASSWORD_RECOVERY')     { showResetPasswordForm() }
   })
+
+  // Verifica sessão existente ANTES de qualquer outra coisa, para restaurar
+  // direto na tela principal sem piscar a tela de login (#boot-loading cobre a espera)
+  const { data: { session } } = await sb.auth.getSession()
+  if (session) { me = session.user; await boot() }
+  else showAuthSection()
 
   // Check for new columns; log migration SQL if missing
   const { error: colCheck } = await sb.from('workout_exercises').select('cadencia, tempo_descanso').limit(0)
