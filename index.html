@@ -5544,6 +5544,46 @@ async function saveProfile(e) {
   btn.textContent = 'Salvar'; btn.disabled = false
 }
 
+// Redimensiona/comprime a imagem no navegador (canvas) antes do upload, para que fotos
+// de celular (tipicamente 3-8MB) caibam no limite sem exigir ação manual do usuário.
+// Sempre reencoda como JPEG (melhor taxa de compressão p/ fotos; ok perder transparência
+// num avatar). maxBytes é reforçado reduzindo a qualidade em passos.
+async function compressImage(file, { maxDim = 800, maxBytes = 2 * 1024 * 1024, startQuality = 0.85, minQuality = 0.5, qualityStep = 0.1 } = {}) {
+  const objectUrl = URL.createObjectURL(file)
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image()
+      el.onload  = () => resolve(el)
+      el.onerror = () => reject(new Error('Não foi possível ler a imagem.'))
+      el.src = objectUrl
+    })
+
+    let { width, height } = img
+    if (width > maxDim || height > maxDim) {
+      const scale = maxDim / Math.max(width, height)
+      width  = Math.round(width  * scale)
+      height = Math.round(height * scale)
+    }
+
+    const canvas = document.createElement('canvas')
+    canvas.width = width; canvas.height = height
+    canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+
+    let quality = startQuality
+    let blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality))
+    while (blob && blob.size > maxBytes && quality > minQuality) {
+      quality -= qualityStep
+      blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality))
+    }
+    if (!blob) throw new Error('Falha ao processar a imagem.')
+
+    const newName = file.name.replace(/\.[^.]+$/, '') + '.jpg'
+    return new File([blob], newName, { type: 'image/jpeg' })
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
 async function uploadAvatar(input) {
   const file = input.files?.[0]
   if (!file) return
@@ -5552,20 +5592,22 @@ async function uploadAvatar(input) {
     toast('Selecione um arquivo de imagem (JPG, PNG, WEBP…).', 'error')
     input.value = ''; return
   }
-  if (file.size > 2 * 1024 * 1024) {
-    toast('A foto deve ter no máximo 2 MB.', 'error')
-    input.value = ''; return
-  }
 
   const btn = document.getElementById('avatar-upload-btn')
   if (btn) { btn.textContent = '⏳ Enviando…'; btn.disabled = true }
 
   try {
+    const uploadFile = await compressImage(file)
+    if (uploadFile.size > 2 * 1024 * 1024) {
+      toast('A foto deve ter no máximo 2 MB.', 'error')
+      return
+    }
+
     const path = `${profile.id}/avatar`
 
     const { error: upErr } = await sb.storage
       .from('avatars')
-      .upload(path, file, { upsert: true, contentType: file.type })
+      .upload(path, uploadFile, { upsert: true, contentType: uploadFile.type })
     if (upErr) throw upErr
 
     const { data: { publicUrl } } = sb.storage.from('avatars').getPublicUrl(path)
@@ -5662,20 +5704,22 @@ async function uploadPersonalAvatar(input) {
     toast('Selecione um arquivo de imagem (JPG, PNG, WEBP…).', 'error')
     input.value = ''; return
   }
-  if (file.size > 2 * 1024 * 1024) {
-    toast('A foto deve ter no máximo 2 MB.', 'error')
-    input.value = ''; return
-  }
 
   const btn = document.getElementById('personal-avatar-upload-btn')
   if (btn) { btn.textContent = '⏳ Enviando…'; btn.disabled = true }
 
   try {
+    const uploadFile = await compressImage(file)
+    if (uploadFile.size > 2 * 1024 * 1024) {
+      toast('A foto deve ter no máximo 2 MB.', 'error')
+      return
+    }
+
     const path = `${profile.id}/avatar`
 
     const { error: upErr } = await sb.storage
       .from('avatars')
-      .upload(path, file, { upsert: true, contentType: file.type })
+      .upload(path, uploadFile, { upsert: true, contentType: uploadFile.type })
     if (upErr) throw upErr
 
     const { data: { publicUrl } } = sb.storage.from('avatars').getPublicUrl(path)
