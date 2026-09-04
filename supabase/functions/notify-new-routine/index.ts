@@ -153,7 +153,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from:    'PersonalPro <onboarding@resend.dev>',
+        from:    'PersonalPro <aviso@notificacoes.drluangalvao.com.br>',
         to:      [student.email],
         subject: 'Nova rotina de treino disponível — PersonalPro',
         html,

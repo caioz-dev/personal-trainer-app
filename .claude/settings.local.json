@@ -48,7 +48,10 @@
       "mcp__playwright__browser_click",
       "mcp__playwright__browser_take_screenshot",
       "mcp__playwright__browser_console_messages",
-      "mcp__supabase__list_tables"
+      "mcp__supabase__list_tables",
+      "mcp__supabase__query_logs",
+      "Bash(node *)",
+      "mcp__supabase__get_edge_function"
     ]
   },
   "hooks": {
