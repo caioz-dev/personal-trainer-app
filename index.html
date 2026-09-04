@@ -2962,7 +2962,7 @@ function switchTab(t) {
   document.getElementById('login-form').style.display  = t === 'login'  ? 'block' : 'none'
   document.getElementById('signup-form').style.display = t === 'signup' ? 'block' : 'none'
   document.getElementById('forgot-form').style.display = 'none'
-  document.getElementById('auth-tabs').style.display   = ''
+  document.querySelector('.auth-tabs').style.display   = ''
   document.getElementById('tab-login').classList.toggle('active',  t === 'login')
   document.getElementById('tab-signup').classList.toggle('active', t === 'signup')
   setMsg('')
@@ -2972,14 +2972,14 @@ function showForgotPassword() {
   document.getElementById('login-form').style.display  = 'none'
   document.getElementById('signup-form').style.display = 'none'
   document.getElementById('forgot-form').style.display = 'block'
-  document.getElementById('auth-tabs').style.display   = 'none'
+  document.querySelector('.auth-tabs').style.display   = 'none'
   setMsg('')
 }
 
 function hideForgotPassword() {
   document.getElementById('forgot-form').style.display = 'none'
   document.getElementById('login-form').style.display  = 'block'
-  document.getElementById('auth-tabs').style.display   = ''
+  document.querySelector('.auth-tabs').style.display   = ''
   document.getElementById('tab-login').classList.add('active')
   document.getElementById('tab-signup').classList.remove('active')
   setMsg('')
