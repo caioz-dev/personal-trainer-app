@@ -2933,7 +2933,7 @@ async function boot() {
   me = session.user
 
   const { data, error } = await sb.from('profiles').select('*').eq('id', me.id).maybeSingle()
-  if (error || !data) { showAuthSection(); return }
+  if (error || !data) { booted = false; showAuthSection(); return }
   profile = data
   buildSidebar()
   document.getElementById('boot-loading').style.display = 'none'
