@@ -4686,7 +4686,10 @@ async function renderStudentSheet(studentId, studentName, gen) {
           const deleteExecBtn = profile.role === 'personal'
             ? `<button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}','${safeStudentNameExec}')">🗑️ Apagar execução</button>`
             : ''
-          const execUid = 'exg' + group.workoutId.replace(/-/g, '')
+          // Inclui executedAt no uid: o mesmo workoutId pode ter várias execuções em datas
+          // diferentes (grupos separados), e usar só o workoutId gerava ids duplicados no
+          // DOM — getElementById sempre pegava o primeiro card daquele treino-modelo.
+          const execUid = 'exg' + (group.workoutId + group.executedAt).replace(/[^a-zA-Z0-9]/g, '')
 
           const review = reviewsByWorkout[group.workoutId]
           const feelingEmojis = ['😩','😕','😐','🙂','😄']
@@ -5066,7 +5069,10 @@ async function renderMyWorkout(gen) {
                 ${review.notes ? `<div style="flex:1;min-width:120px;font-size:.78rem;color:var(--text-muted);font-style:italic;padding-top:.1rem">"${escHtml(review.notes)}"</div>` : ''}
               </div>
             </div>` : ''
-          const execUid = 'exg' + group.workoutId.replace(/-/g, '')
+          // Inclui executedAt no uid: o mesmo workoutId pode ter várias execuções em datas
+          // diferentes (grupos separados), e usar só o workoutId gerava ids duplicados no
+          // DOM — getElementById sempre pegava o primeiro card daquele treino-modelo.
+          const execUid = 'exg' + (group.workoutId + group.executedAt).replace(/[^a-zA-Z0-9]/g, '')
           return `
           <div style="background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:1rem 1.1rem;margin-bottom:.875rem">
             <div class="exercise-row-header" style="margin-bottom:0" onclick="toggleExerciseBody('${execUid}')">
