@@ -3562,6 +3562,40 @@ async function renderStudents() {
   }
 }
 
+// Registra notificação in-app; se o insert falhar, avisa via toast já que
+// não há canal de fallback para uma falha na própria tabela de notificações.
+function recordInAppNotification(tipo, mensagem) {
+  sb.from('notifications').insert({ personal_id: me.id, tipo, mensagem })
+    .then(({ error }) => {
+      if (error) {
+        console.error('[notifications] falha ao registrar:', error)
+        toast('Ação registrada, mas houve falha ao salvar a notificação interna.', 'info')
+      } else {
+        refreshNotifBadge()
+      }
+    })
+}
+
+// Fire-and-forget para a Edge Function de e-mail — mas checando o status da
+// resposta: uma falha do lado do Resend/edge function não pode ficar invisível.
+// Se o envio falhar (rede OU resposta não-OK), registra um aviso in-app.
+function notifyPersonalEmail(payload) {
+  authHeader().then(auth => fetch(`${SUPA_URL}/functions/v1/notify-new-student`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': auth },
+    body: JSON.stringify(payload)
+  }).then(async res => {
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      console.error('[notify-new-student] resposta não-OK:', res.status, detail)
+      recordInAppNotification('email_falhou', `O e-mail de aviso sobre ${payload.student_id ? 'o novo aluno vinculado' : `a tentativa de vínculo com ${payload.failed_email}`} pode não ter sido entregue. Verifique manualmente.`)
+    }
+  })).catch(err => {
+    console.error('[notify-new-student] falhou (rede):', err)
+    recordInAppNotification('email_falhou', `O e-mail de aviso sobre ${payload.student_id ? 'o novo aluno vinculado' : `a tentativa de vínculo com ${payload.failed_email}`} pode não ter sido entregue. Verifique manualmente.`)
+  })
+}
+
 async function addStudentByEmail() {
   const input = document.getElementById('link-student-email')
   const btn   = document.getElementById('link-student-btn')
@@ -3577,7 +3611,20 @@ async function addStudentByEmail() {
 
     if (fErr) throw fErr
     const found = (results || [])[0]
-    if (!found || found.role !== 'student') { toast('Nenhum aluno encontrado com esse e-mail.', 'error'); return }
+
+    if (!found) {
+      toast('Nenhum aluno encontrado com esse e-mail.', 'error')
+      notifyPersonalEmail({ failed_email: email, reason: 'not_found' })
+      recordInAppNotification('vinculo_falhou', `Tentativa de vincular aluno com o e-mail ${email} falhou — verifique se esse aluno já criou uma conta no PersonalPro.`)
+      return
+    }
+
+    if (found.role !== 'student') {
+      toast('Esse e-mail pertence a uma conta de personal, não de aluno.', 'error')
+      notifyPersonalEmail({ failed_email: email, reason: 'wrong_role' })
+      recordInAppNotification('vinculo_falhou', `O e-mail ${email} pertence a uma conta de personal trainer, não de aluno — não foi possível vincular.`)
+      return
+    }
 
     const { data: existing } = await sb
       .from('personal_students')
@@ -3592,24 +3639,17 @@ async function addStudentByEmail() {
     const { error: lErr } = existing
       ? await sb.from('personal_students').update({ active: true }).eq('id', existing.id)
       : await sb.from('personal_students').insert({ personal_id: me.id, student_id: found.id })
-    if (lErr) throw lErr
 
-    // Fire-and-forget: notifica o personal por e-mail que o aluno foi vinculado
-    authHeader().then(auth => fetch(`${SUPA_URL}/functions/v1/notify-new-student`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': auth },
-      body: JSON.stringify({ student_id: found.id })
-    })).catch(err => console.warn('[notify-new-student] falhou silenciosamente:', err))
+    if (lErr) {
+      toast('Erro ao vincular: ' + lErr.message, 'error')
+      notifyPersonalEmail({ failed_email: found.email, reason: 'link_error' })
+      recordInAppNotification('vinculo_falhou', `Não foi possível concluir o vínculo com o aluno ${found.name} (${found.email}) devido a um erro técnico. Tente novamente.`)
+      return
+    }
 
-    // Notificação in-app: redundância ao e-mail (domínio novo pode cair em spam)
-    sb.from('notifications').insert({
-      personal_id: me.id,
-      tipo:        'novo_aluno',
-      mensagem:    `Aluno ${found.name} se cadastrou com o e-mail ${found.email}`
-    }).then(({ error }) => {
-      if (error) console.warn('[notifications] falhou silenciosamente:', error)
-      else refreshNotifBadge()
-    })
+    // Notifica o personal por e-mail e in-app que o aluno foi vinculado
+    notifyPersonalEmail({ student_id: found.id })
+    recordInAppNotification('novo_aluno', `Aluno ${found.name} se cadastrou com o e-mail ${found.email}`)
 
     toast(`${found.name} vinculado com sucesso!`, 'success')
     input.value = ''
