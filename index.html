@@ -859,6 +859,9 @@
 
     .exercise-row:hover { border-color: rgba(144,158,186,0.2); }
 
+    .exercise-row.wf-row-error { border-color: var(--danger); }
+    .wf-field-error { border-color: var(--danger) !important; box-shadow: 0 0 0 1px var(--danger); }
+
     /* ---- REORDER MODAL ---- */
     .reorder-modal-overlay {
       position: fixed;
@@ -1650,15 +1653,6 @@
 
     .exec-ex-planned { font-size: .8rem; color: var(--text-muted); }
 
-    .exec-ex-result {
-      font-size: .82rem;
-      color: var(--success);
-      font-weight: 600;
-      margin-top: .5rem;
-      padding-top: .5rem;
-      border-top: 1px solid rgba(74,222,128,0.15);
-    }
-
     /* ---- LIVE SET-BY-SET ROWS (registro ao vivo pelo personal) ---- */
     .live-ex-progress {
       font-size: .72rem;
@@ -1715,20 +1709,6 @@
       background: var(--success-a10);
       border-color: var(--success-a22);
       color: var(--success);
-    }
-
-    /* ---- EXERCISE COMPLETION MODAL ---- */
-    .exec-complete-modal-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 9000;
-      background: var(--overlay-a72);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1rem;
     }
 
     /* ---- COMPARISON MODAL ---- */
@@ -1976,7 +1956,6 @@
 
       /* Botões de ação em linha → empilhar */
       .exec-ex-header { flex-wrap: wrap; gap: .5rem; }
-      .exec-complete-btn { width: 100%; justify-content: center; }
 
       /* Comparison modal */
       .comparison-modal-overlay { padding: .5rem; }
@@ -1992,11 +1971,9 @@
       .exec-ex-name { min-width: 0; overflow-wrap: break-word; }
 
       /* Planned / executed text can contain long &nbsp; sequences — force breaks */
-      .exec-ex-planned,
-      .exec-ex-result { overflow-wrap: anywhere; word-break: break-word; }
+      .exec-ex-planned { overflow-wrap: anywhere; word-break: break-word; }
 
       /* Modal overlays: tighter padding on narrow screens so cards don't clip */
-      .exec-complete-modal-overlay,
       .review-modal-overlay { padding: .5rem; }
 
       /* Rest-timer button: never wider than its container */
@@ -2418,7 +2395,7 @@
                 <div class="card-title">Novo Treino</div>
               </div>
             </div>
-            <form id="workout-form" onsubmit="saveWorkout(event)">
+            <form id="workout-form" onsubmit="saveWorkout(event)" novalidate>
               <div class="form-grid">
                 <div class="form-group form-full" id="wf-student-group">
                   <label>Aluno</label>
@@ -2622,35 +2599,6 @@
   </div>
 </div>
 
-<!-- EXERCISE COMPLETION MODAL -->
-<div id="exec-complete-modal" class="exec-complete-modal-overlay" style="display:none">
-  <div class="timer-modal-card" style="max-width:400px;width:calc(100% - 2rem);text-align:left">
-    <div style="font-size:2rem;text-align:center;margin-bottom:.75rem" id="exec-modal-icon">💪</div>
-    <div class="timer-modal-title" id="exec-modal-ex-name" style="text-align:center">Exercício</div>
-    <div class="timer-modal-sub" style="text-align:center">Informe os valores que você executou</div>
-    <!-- Musculação: preenchido dinamicamente por openExerciseCompletionModal -->
-    <div id="exec-modal-musculacao" style="margin-top:1.25rem"></div>
-    <!-- Aeróbico -->
-    <div id="exec-modal-aerobico" style="display:none;margin-top:1.25rem">
-      <div class="form-group">
-        <label>Tempo realizado (minutos)</label>
-        <input id="exec-modal-duration" type="number" class="form-control" placeholder="30" step="0.5" min="0">
-      </div>
-      <div class="form-group">
-        <label>Distância realizada (km)</label>
-        <input id="exec-modal-distance" type="number" class="form-control" placeholder="5.0" step="0.01" min="0">
-      </div>
-      <div class="form-group">
-        <label>Velocidade média (km/h)</label>
-        <input id="exec-modal-speed" type="number" class="form-control" placeholder="10.0" step="0.1" min="0">
-      </div>
-    </div>
-    <div style="display:flex;gap:.75rem;margin-top:1.25rem">
-      <button class="btn btn-outline" style="flex:1" onclick="closeExerciseCompletionModal()">Cancelar</button>
-      <button class="btn btn-success" style="flex:1" onclick="confirmExerciseCompletion()">Confirmar</button>
-    </div>
-  </div>
-</div>
 
 <!-- REVIEW MODAL -->
 <div id="review-modal" class="review-modal-overlay" style="display:none">
@@ -2849,13 +2797,15 @@ let editingWorkoutId = null
 let _wfEditingCreatedBy = null   // workout.created_by do treino sendo editado — usado para revalidar acesso ao restaurar um rascunho
 let _wfSaveDebounceTimer = null
 const WF_STATE_KEY = 'personalpro-wf-state'   // localStorage: rascunho do formulário de criação/edição de treino
+const MANUAL_EXEC_STATE_KEY = 'personalpro-manual-exec-state'   // localStorage: rascunho do modal "Registrar treino retroativo"
+let _manualExecSaveDebounceTimer = null
 let timerInterval = null
 let timerSeconds  = 0
 let currentWorkoutData    = null
 let exerciseExecutions    = {}
 let _execStartTimestamp   = null   // Date.now() de quando a execução guiada começou — usado para recalcular timerSeconds mesmo após reload
+let _execSessionId        = null   // uuid gerado ao iniciar; escopa as séries desta sessão específica (mesmo padrão do Registro ao Vivo do personal — permite repetir o treino em outro dia sem colidir)
 const EXEC_STATE_KEY      = 'personalpro-exec-state'   // localStorage: snapshot do treino guiado em andamento, para retomar após F5/fechamento
-let _completingExerciseId = null
 let restTimers            = {}
 
 // ---- LIVE EXECUTION (registro série-a-série ao vivo, feito pelo personal) ----
@@ -2903,7 +2853,7 @@ function resetAppState() {
   currentWorkoutData      = null
   exerciseExecutions      = {}
   _execStartTimestamp     = null
-  _completingExerciseId   = null
+  _execSessionId          = null
   editingWorkoutId        = null
   _wfEditingCreatedBy     = null
   clearTimeout(_wfSaveDebounceTimer)
@@ -2949,6 +2899,21 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (workoutFormEl) {
     workoutFormEl.addEventListener('input',  _scheduleWorkoutFormSave)
     workoutFormEl.addEventListener('change', _scheduleWorkoutFormSave)
+    // Some que o personal editar um campo marcado em vermelho pela validação de saveWorkout.
+    workoutFormEl.addEventListener('input', (e) => {
+      if (e.target.classList.contains('wf-field-error')) {
+        e.target.classList.remove('wf-field-error')
+        e.target.closest('.exercise-row')?.classList.remove('wf-row-error')
+      }
+    })
+  }
+
+  // Mesmo autosave debounced, agora pro modal "Registrar treino retroativo" — cobre
+  // data/observações digitadas e as séries preenchidas dinamicamente por exercício.
+  const manualExecModalEl = document.getElementById('manual-exec-modal-overlay')
+  if (manualExecModalEl) {
+    manualExecModalEl.addEventListener('input',  _scheduleManualExecutionSave)
+    manualExecModalEl.addEventListener('change', _scheduleManualExecutionSave)
   }
 
   // Registra o listener ANTES de getSession(): no fluxo de recovery, o supabase-js
@@ -3018,6 +2983,9 @@ async function boot() {
   // Se havia um rascunho de criação/edição de treino em andamento (personal), reabre o
   // formulário já preenchido — substitui a navegação inicial acima quando aplicável.
   await restoreWorkoutFormState()
+  // Idem para um rascunho do modal "Registrar treino retroativo" que o personal estava
+  // preenchendo quando a página fechou/recarregou.
+  await restoreManualExecutionState()
   if (profile.role === 'student') await checkNewWorkout()
 }
 
@@ -4095,7 +4063,7 @@ function bindWorkoutRowClicks(container) {
   const tbody = container.querySelector('tbody')
   if (!tbody) return
   tbody.addEventListener('click', function(e) {
-    if (e.target.closest('.edit-btn, .del-btn, .dup-btn, .btn-start-workout, .exec-complete-btn, .workout-checkbox')) return
+    if (e.target.closest('.edit-btn, .del-btn, .dup-btn, .btn-start-workout, .workout-checkbox')) return
     const row = e.target.closest('tr[data-uid]')
     if (!row) return
     toggleWorkoutDetail(row.dataset.uid)
@@ -7322,15 +7290,32 @@ async function saveWorkout(e) {
   const rows      = document.querySelectorAll('#exercise-list .exercise-row')
   const exercises = []
   let totalVolume = 0
-  let allValid    = true
 
-  rows.forEach((row, idx) => {
-    const exName = row.querySelector('.ex-name').value.trim()
+  // Limpa destaques de uma tentativa anterior antes de validar de novo.
+  document.querySelectorAll('.wf-field-error').forEach(el => el.classList.remove('wf-field-error'))
+  document.querySelectorAll('.exercise-row.wf-row-error').forEach(el => el.classList.remove('wf-row-error'))
+
+  // Aponta o campo exato + o exercício onde a validação falhou, em vez de um erro
+  // genérico — evita o personal ter que revisar linha por linha numa lista longa.
+  let firstError = null
+  const flagError = (row, fieldEl, exLabel, fieldLabel) => {
+    if (firstError) return
+    firstError = { row, fieldEl, exLabel, fieldLabel }
+  }
+
+  for (let idx = 0; idx < rows.length; idx++) {
+    const row = rows[idx]
+    const nameEl = row.querySelector('.ex-name')
+    const exName = nameEl.value.trim()
     const exType = row.querySelector('.ex-type')?.value || 'musculacao'
+    const exLabel = exName || `Exercício ${idx + 1}`
+
+    if (!exName) { flagError(row, nameEl, exLabel, 'Nome do exercício'); continue }
 
     if (exType === 'aerobico') {
-      const duration = parseFloat(row.querySelector('.ex-duration')?.value)
-      if (!exName || duration == null || isNaN(duration) || duration < 0) { allValid = false; return }
+      const durationEl = row.querySelector('.ex-duration')
+      const duration = parseFloat(durationEl?.value)
+      if (duration == null || isNaN(duration) || duration < 0) { flagError(row, durationEl, exLabel, 'Duração (min)'); continue }
       exercises.push({
         exercise_name: exName, exercise_type: 'aerobico',
         sets: 1, weight_kg: 0, reps: 0, volume: 0,
@@ -7347,12 +7332,15 @@ async function saveWorkout(e) {
         position: idx
       })
     } else {
-      const sets   = parseInt(row.querySelector('.ex-sets')?.value)
-      const weight = parseFloat(row.querySelector('.ex-weight')?.value)
-      const reps   = parseInt(row.querySelector('.ex-reps')?.value)
-      if (!exName || !sets || isNaN(weight) || weight < 0 || !reps || sets < 1 || reps < 1) {
-        allValid = false; return
-      }
+      const setsEl   = row.querySelector('.ex-sets')
+      const weightEl = row.querySelector('.ex-weight')
+      const repsEl   = row.querySelector('.ex-reps')
+      const sets   = parseInt(setsEl?.value)
+      const weight = parseFloat(weightEl?.value)
+      const reps   = parseInt(repsEl?.value)
+      if (!sets || sets < 1)                    { flagError(row, setsEl,   exLabel, 'Séries');      continue }
+      if (isNaN(weight) || weight < 0)          { flagError(row, weightEl, exLabel, 'Carga (kg)');  continue }
+      if (!reps || reps < 1)                    { flagError(row, repsEl,   exLabel, 'Repetições');  continue }
       const volume   = parseFloat((sets * weight * reps).toFixed(2))
       const cadencia   = row.querySelector('.ex-cadencia').value.trim()      || null
       const descanso   = row.querySelector('.ex-descanso').value
@@ -7370,10 +7358,25 @@ async function saveWorkout(e) {
         position: idx
       })
     }
-  })
+  }
 
-  if (!allValid || exercises.length === 0) {
-    toast('Preencha todos os campos de todos os exercícios.', 'error')
+  if (firstError) {
+    toast(`Confira o campo "${firstError.fieldLabel}" no exercício "${firstError.exLabel}".`, 'error')
+    firstError.row.classList.add('wf-row-error')
+    firstError.fieldEl?.classList.add('wf-field-error')
+    // O exercício pode estar recolhido (acordeão) — expande antes de rolar até o campo,
+    // senão o destaque fica escondido atrás de max-height:0 e o personal não acha nada.
+    const rowId = firstError.row.id.replace(/^ex-/, '')
+    document.getElementById(`ex-body-${rowId}`)?.classList.add('open')
+    document.getElementById(`ex-chevron-${rowId}`)?.classList.add('open')
+    firstError.fieldEl?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    firstError.fieldEl?.focus()
+    btn.textContent = 'Salvar Treino'; btn.disabled = false
+    return
+  }
+
+  if (exercises.length === 0) {
+    toast('Adicione pelo menos um exercício.', 'error')
     btn.textContent = 'Salvar Treino'; btn.disabled = false
     return
   }
@@ -8048,6 +8051,7 @@ function saveExecutionState() {
       currentWorkoutData,
       exerciseExecutions,
       startTimestamp:     _execStartTimestamp,
+      sessionId:          _execSessionId,
       restTimers:         restSnapshot
     }
     localStorage.setItem(EXEC_STATE_KEY, JSON.stringify(state))
@@ -8090,13 +8094,31 @@ function restoreExecutionState() {
     currentWorkoutData  = state.currentWorkoutData
     exerciseExecutions  = state.exerciseExecutions || {}
     _execStartTimestamp = state.startTimestamp
+    // state.sessionId pode faltar num estado salvo antes desta versão — gera um novo pra
+    // não quebrar o restore; séries antigas eventualmente já salvas ficam com o id anterior.
+    _execSessionId      = state.sessionId || (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
     window._workoutsCache = window._workoutsCache || {}
     window._workoutsCache[state.workoutId] = currentWorkoutData
 
     renderExecutionScreen(currentWorkoutData)
-    Object.entries(exerciseExecutions).forEach(([exId, execData]) => {
-      _markExerciseDoneUI(exId, _resultTextFromExecData(execData))
+    Object.entries(exerciseExecutions).forEach(([exId, sets]) => {
+      Object.entries(sets).forEach(([setNum, data]) => {
+        const row = document.getElementById(`exec-set-row-${exId}-${setNum}`)
+        if (!row) return
+        if (data.weight_executed != null) {
+          const wEl = document.getElementById(`exec-w-${exId}-${setNum}`); if (wEl) wEl.value = data.weight_executed
+          const rEl = document.getElementById(`exec-r-${exId}-${setNum}`); if (rEl) rEl.value = data.reps_executed
+        } else {
+          const dEl  = document.getElementById(`exec-dur-${exId}`);   if (dEl)  dEl.value  = data.duration_executed_min ?? ''
+          const diEl = document.getElementById(`exec-dist-${exId}`);  if (diEl) diEl.value = data.distance_executed_km  ?? ''
+          const spEl = document.getElementById(`exec-speed-${exId}`); if (spEl) spEl.value = data.speed_executed_kmh    ?? ''
+        }
+        row.classList.add('live-set-saved')
+        const b = row.querySelector('.btn-live-set-save')
+        if (b) b.textContent = '✓ Salvo'
+      })
+      updateExecExerciseProgress(exId)
     })
 
     document.getElementById('execution-overlay').style.display = 'flex'
@@ -8132,6 +8154,7 @@ async function startWorkoutExecution(workoutId) {
   currentWorkoutData  = workout
   exerciseExecutions  = {}
   _execStartTimestamp = Date.now()
+  _execSessionId      = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
   renderExecutionScreen(workout)
   document.getElementById('execution-overlay').style.display = 'flex'
   document.body.style.overflow = 'hidden'
@@ -8181,16 +8204,33 @@ function renderExecutionScreen(workout) {
                <div class="metronome-indicator" id="metronome-ind-${ex.id}" style="display:none">${_cadPhases.map((phase, i) => `<div class="metronome-phase${phase.duracao === 0 ? ' metronome-phase-skip' : ''}" id="mphase-${ex.id}-${i}"><span class="mphase-label">${phase.nome}</span><span class="mphase-dur">${phase.duracao > 0 ? phase.duracao + 's' : '—'}</span></div>${i < _cadPhases.length - 1 ? '<span class="metronome-sep">›</span>' : ''}`).join('')}</div>
              </div>`
           : ''
+
+        const setsCount = Math.max(1, parseInt(ex.sets) || 1)
+        const rowsHTML = isAero
+          ? `<div class="live-set-row" id="exec-set-row-${ex.id}-1" data-exercise-id="${ex.id}" data-set-number="1">
+               <input type="number" id="exec-dur-${ex.id}" class="form-control" placeholder="Duração (min)" step="0.5" min="0" value="${ex.duration_min ?? ''}" oninput="markExecSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
+               <input type="number" id="exec-dist-${ex.id}" class="form-control" placeholder="Distância (km)" step="0.01" min="0" value="${ex.distance_km ?? ''}" oninput="markExecSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
+               <input type="number" id="exec-speed-${ex.id}" class="form-control" placeholder="Vel. (km/h)" step="0.1" min="0" value="${ex.speed_kmh ?? ''}" oninput="markExecSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
+               <button class="btn-live-set-save" onclick="saveExecSet('${ex.id}',1)">✓ Salvar</button>
+             </div>`
+          : Array.from({length: setsCount}, (_, i) => `
+             <div class="live-set-row" id="exec-set-row-${ex.id}-${i + 1}" data-exercise-id="${ex.id}" data-set-number="${i + 1}">
+               <span class="live-set-label">Série ${i + 1}</span>
+               <input type="number" id="exec-w-${ex.id}-${i + 1}" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${ex.weight_kg ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">
+               <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
+               <input type="number" id="exec-r-${ex.id}-${i + 1}" class="form-control exec-set-reps" placeholder="reps" min="1" value="${ex.reps ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">
+               <button class="btn-live-set-save" onclick="saveExecSet('${ex.id}',${i + 1})">✓ Salvar</button>
+             </div>`).join('')
+
         return `
         <div class="exec-exercise-card" id="exec-ex-${ex.id}">
           <div class="exec-ex-header">
             <div class="exec-ex-name">${isAero ? '🏃 ' : ''}${ex.exercise_name}</div>
-            <button class="btn btn-outline btn-sm exec-complete-btn"
-                    onclick="openExerciseCompletionModal('${ex.id}')">✓ Concluir</button>
+            <span class="live-ex-progress" id="exec-ex-progress-${ex.id}">0/${isAero ? 1 : setsCount} série${(isAero ? 1 : setsCount) > 1 ? 's' : ''}</span>
           </div>
           <div class="exec-ex-planned">${planned || '—'}</div>
           ${!isAero && ex.method_description ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.4rem;padding:.4rem .75rem;background:rgba(86,115,255,0.05);border-radius:var(--radius-md);border-left:2px solid var(--accent-a25)">${ex.method_description}</div>` : ''}
-          <div class="exec-ex-result" id="exec-ex-result-${ex.id}" style="display:none"></div>
+          <div class="live-set-rows">${rowsHTML}</div>
           ${metronomBtn}
           ${restBtn}
         </div>`
@@ -8198,133 +8238,90 @@ function renderExecutionScreen(workout) {
     : '<div class="empty-state" style="padding:2rem"><div class="empty-icon">🏋️</div><p>Nenhum exercício neste treino.</p></div>'
 }
 
-function openExerciseCompletionModal(exerciseId) {
-  const exes = currentWorkoutData?.workout_exercises || []
-  const ex = exes.find(e => e.id === exerciseId)
+function markExecSetDirty(exerciseId, setNumber) {
+  const row = document.getElementById(`exec-set-row-${exerciseId}-${setNumber}`)
+  if (!row) return
+  row.classList.remove('live-set-saved')
+  const btn = row.querySelector('.btn-live-set-save')
+  if (btn) btn.textContent = '✓ Salvar'
+}
+
+// Salva UMA série imediatamente no banco (upsert por session_id+exercise_id+set_number) —
+// mesmo mecanismo do Registro ao Vivo do personal (saveLiveSet), só que aqui quem grava é
+// o próprio aluno (student_id: profile.id) sobre a sessão de "Iniciar Treino".
+async function saveExecSet(exerciseId, setNumber) {
+  const ex = (currentWorkoutData?.workout_exercises || []).find(e => e.id === exerciseId)
   if (!ex) return
-  _completingExerciseId = exerciseId
   const isAero = ex.exercise_type === 'aerobico'
+  const row = document.getElementById(`exec-set-row-${exerciseId}-${setNumber}`)
+  const btn = row?.querySelector('.btn-live-set-save')
 
-  document.getElementById('exec-modal-icon').textContent   = isAero ? '🏃' : '💪'
-  document.getElementById('exec-modal-ex-name').textContent = ex.exercise_name
-  document.getElementById('exec-modal-musculacao').style.display = isAero ? 'none' : 'block'
-  document.getElementById('exec-modal-aerobico').style.display   = isAero ? 'block' : 'none'
-
-  if (isAero) {
-    document.getElementById('exec-modal-duration').value = ex.duration_min ?? ''
-    document.getElementById('exec-modal-distance').value = ex.distance_km  ?? ''
-    document.getElementById('exec-modal-speed').value    = ex.speed_kmh    ?? ''
-  } else {
-    const sets          = Math.max(1, parseInt(ex.sets) || 1)
-    const defaultWeight = ex.weight_kg ?? ''
-    const defaultReps   = ex.reps      ?? ''
-    document.getElementById('exec-modal-musculacao').innerHTML =
-      `<div style="font-size:.7rem;color:var(--text-muted);font-weight:600;margin-bottom:.625rem;text-transform:uppercase;letter-spacing:.06em">Carga (kg) &nbsp;×&nbsp; Reps por série</div>` +
-      Array.from({length: sets}, (_, i) => `
-        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem">
-          <span style="font-size:.72rem;font-weight:700;color:var(--accent-soft);min-width:3.5rem;flex-shrink:0">Série ${i + 1}</span>
-          <input type="number" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${defaultWeight}" style="flex:1;min-width:0;padding:.5rem .75rem">
-          <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
-          <input type="number" class="form-control exec-set-reps" placeholder="reps" min="1" value="${defaultReps}" style="flex:1;min-width:0;padding:.5rem .75rem">
-        </div>`
-      ).join('')
+  const record = {
+    workout_id:  currentWorkoutData.id,
+    exercise_id: exerciseId,
+    student_id:  profile.id,
+    set_number:  setNumber,
+    session_id:  _execSessionId,
+    is_manual:   false,
+    executed_at: new Date().toISOString()
   }
-  document.getElementById('exec-complete-modal').style.display = 'flex'
-  setTimeout(() => {
-    const first = isAero
-      ? document.getElementById('exec-modal-duration')
-      : document.querySelector('#exec-modal-musculacao .exec-set-weight')
-    first?.select()
-  }, 50)
-}
+  let savedData
 
-function closeExerciseCompletionModal() {
-  document.getElementById('exec-complete-modal').style.display = 'none'
-  _completingExerciseId = null
-}
-
-function confirmExerciseCompletion() {
-  const exes   = currentWorkoutData?.workout_exercises || []
-  const ex     = exes.find(e => e.id === _completingExerciseId)
-  const isAero = ex?.exercise_type === 'aerobico'
-
-  let execData, resultText
   if (isAero) {
-    const duration = parseFloat(document.getElementById('exec-modal-duration').value)
+    const duration = parseFloat(document.getElementById(`exec-dur-${exerciseId}`).value)
     if (!duration || duration <= 0) { toast('Informe o tempo realizado.', 'error'); return }
-    const distance = parseFloat(document.getElementById('exec-modal-distance').value) || null
-    const speed    = parseFloat(document.getElementById('exec-modal-speed').value)    || null
-    execData   = { duration_executed_min: duration, distance_executed_km: distance, speed_executed_kmh: speed, weight_executed: null, reps_executed: null }
-    resultText = [
-      `${duration} min`,
-      distance ? `${distance} km` : null,
-      speed    ? `${speed} km/h`  : null
-    ].filter(Boolean).join(' / ')
+    const distance = parseFloat(document.getElementById(`exec-dist-${exerciseId}`).value) || null
+    const speed    = parseFloat(document.getElementById(`exec-speed-${exerciseId}`).value) || null
+    record.duration_executed_min = duration
+    record.distance_executed_km  = distance
+    record.speed_executed_kmh    = speed
+    record.weight_executed       = null
+    record.reps_executed         = null
+    savedData = { duration_executed_min: duration, distance_executed_km: distance, speed_executed_kmh: speed }
   } else {
-    const weightInputs = document.querySelectorAll('#exec-modal-musculacao .exec-set-weight')
-    const repsInputs   = document.querySelectorAll('#exec-modal-musculacao .exec-set-reps')
-    const setsData = []
-    for (let i = 0; i < weightInputs.length; i++) {
-      const weight = parseFloat(weightInputs[i].value)
-      const reps   = parseInt(repsInputs[i].value)
-      if (weight == null || isNaN(weight) || weight < 0) { toast(`Informe a carga da série ${i + 1}.`, 'error'); return }
-      if (!reps   || reps   < 1) { toast(`Informe as reps da série ${i + 1}.`, 'error'); return }
-      setsData.push({ set_number: i + 1, weight_executed: weight, reps_executed: reps })
-    }
-    if (!setsData.length) { toast('Nenhuma série encontrada.', 'error'); return }
-    execData   = { sets: setsData, duration_executed_min: null, distance_executed_km: null, speed_executed_kmh: null }
-    resultText = setsData.map((s, i) => `S${i + 1}: ${s.weight_executed.toLocaleString('pt-BR')} kg×${s.reps_executed}`).join(' · ')
+    const weight = parseFloat(document.getElementById(`exec-w-${exerciseId}-${setNumber}`).value)
+    const reps   = parseInt(document.getElementById(`exec-r-${exerciseId}-${setNumber}`).value)
+    if (isNaN(weight) || weight < 0) { toast(`Informe a carga da série ${setNumber}.`, 'error'); return }
+    if (!reps || reps < 1)           { toast(`Informe as reps da série ${setNumber}.`, 'error'); return }
+    record.weight_executed       = weight
+    record.reps_executed         = reps
+    record.duration_executed_min = null
+    record.distance_executed_km  = null
+    record.speed_executed_kmh    = null
+    savedData = { weight_executed: weight, reps_executed: reps }
   }
 
-  const exerciseId = _completingExerciseId
-  exerciseExecutions[exerciseId] = execData
-  _markExerciseDoneUI(exerciseId, resultText)
-  closeExerciseCompletionModal()
-  saveExecutionState()
-}
-
-// Reconstrói o mesmo texto de resultado exibido em confirmExerciseCompletion, a partir
-// do execData já persistido — usado para redesenhar exercícios já concluídos ao retomar
-// uma execução salva no localStorage.
-function _resultTextFromExecData(execData) {
-  if (execData.sets) {
-    return execData.sets.map((s, i) => `S${i + 1}: ${s.weight_executed.toLocaleString('pt-BR')} kg×${s.reps_executed}`).join(' · ')
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando…' }
+  try {
+    const { error } = await sb.from('workout_executions')
+      .upsert(record, { onConflict: 'session_id,exercise_id,set_number' })
+    if (error) throw error
+    exerciseExecutions[exerciseId] = exerciseExecutions[exerciseId] || {}
+    exerciseExecutions[exerciseId][setNumber] = savedData
+    row?.classList.add('live-set-saved')
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Salvo' }
+    updateExecExerciseProgress(exerciseId)
+    saveExecutionState()
+  } catch (err) {
+    console.error('[saveExecSet] erro:', err?.message || err)
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Salvar' }
+    toast('Não foi possível salvar a série. Verifique sua conexão e tente novamente.', 'error', {
+      actionLabel: 'Tentar novamente',
+      onAction: () => saveExecSet(exerciseId, setNumber)
+    })
   }
-  return [
-    execData.duration_executed_min ? `${execData.duration_executed_min} min` : null,
-    execData.distance_executed_km  ? `${execData.distance_executed_km} km`  : null,
-    execData.speed_executed_kmh    ? `${execData.speed_executed_kmh} km/h`  : null
-  ].filter(Boolean).join(' / ')
 }
 
-function _markExerciseDoneUI(exerciseId, resultText) {
+function updateExecExerciseProgress(exerciseId) {
+  const ex = (currentWorkoutData?.workout_exercises || []).find(e => e.id === exerciseId)
+  if (!ex) return
+  const isAero = ex.exercise_type === 'aerobico'
+  const total  = isAero ? 1 : Math.max(1, parseInt(ex.sets) || 1)
+  const done   = Object.keys(exerciseExecutions[exerciseId] || {}).length
+  const el = document.getElementById(`exec-ex-progress-${exerciseId}`)
+  if (el) el.textContent = `${done}/${total} série${total > 1 ? 's' : ''}`
   const card = document.getElementById(`exec-ex-${exerciseId}`)
-  if (!card) return
-  card.classList.add('done')
-  const btn = card.querySelector('.exec-complete-btn')
-  if (btn) {
-    btn.innerHTML = '↺ Desfazer'
-    btn.disabled = false
-    btn.setAttribute('onclick', `uncompleteExercise('${exerciseId}')`)
-  }
-  const resultEl = document.getElementById(`exec-ex-result-${exerciseId}`)
-  if (resultEl) { resultEl.style.display = 'block'; resultEl.textContent = `Executado: ${resultText}` }
-}
-
-function uncompleteExercise(exerciseId) {
-  delete exerciseExecutions[exerciseId]
-  const card = document.getElementById(`exec-ex-${exerciseId}`)
-  if (!card) return
-  card.classList.remove('done')
-  const btn = card.querySelector('.exec-complete-btn')
-  if (btn) {
-    btn.innerHTML = '✓ Concluir'
-    btn.disabled = false
-    btn.setAttribute('onclick', `openExerciseCompletionModal('${exerciseId}')`)
-  }
-  const resultEl = document.getElementById(`exec-ex-result-${exerciseId}`)
-  if (resultEl) { resultEl.style.display = 'none'; resultEl.textContent = '' }
-  saveExecutionState()
+  if (card) card.classList.toggle('done', done >= total)
 }
 
 function finishWorkout() {
@@ -8425,18 +8422,22 @@ function showComparisonModal(finalTime) {
 
   const rows = exes.map(ex => {
     try {
-      const exec = exerciseExecutions[ex.id]
+      // exerciseExecutions[ex.id] agora é um mapa { setNumber: dadosDaSérie }, preenchido
+      // incrementalmente por saveExecSet — não mais um objeto único por exercício.
+      const execMap = exerciseExecutions[ex.id]
+      const hasExec = execMap && Object.keys(execMap).length > 0
 
       // Detecção robusta: aceita exercise_type='aerobico' OU presença de campos aeróbicos
       // (cobre o caso em que exercise_type chegou null do banco mas os dados aeróbicos existem)
       const isAero = ex.exercise_type === 'aerobico'
         || ex.duration_min != null
         || ex.distance_km  != null
-        || (exec && (exec.duration_executed_min != null || exec.distance_executed_km != null))
+        || (hasExec && (execMap[1]?.duration_executed_min != null || execMap[1]?.distance_executed_km != null))
 
       let plannedCell, execCell, diffCell, planned, executed
 
       if (isAero) {
+        const exec = hasExec ? execMap[1] : null
         const planDur  = parseFloat(ex.duration_min) || 0
         const planDist = parseFloat(ex.distance_km)  || 0
         const planSpd  = parseFloat(ex.speed_kmh)    || 0
@@ -8477,15 +8478,11 @@ function showComparisonModal(finalTime) {
         const weight = parseFloat(ex.weight_kg) || 0
         planned  = sets * reps * weight
 
-        if (exec != null && exec.sets && exec.sets.length > 0) {
-          executed = exec.sets.reduce((sum, s) => sum + (parseFloat(s.weight_executed) || 0) * (s.reps_executed || 0), 0)
-          const setsText = exec.sets.map((s, i) => `S${i + 1}: ${s.weight_executed}×${s.reps_executed}`).join(' · ')
+        if (hasExec) {
+          const setNumbers = Object.keys(execMap).map(Number).sort((a, b) => a - b)
+          executed = setNumbers.reduce((sum, n) => sum + (parseFloat(execMap[n].weight_executed) || 0) * (execMap[n].reps_executed || 0), 0)
+          const setsText = setNumbers.map(n => `S${n}: ${execMap[n].weight_executed}×${execMap[n].reps_executed}`).join(' · ')
           execCell = `<span style="font-size:.78rem">${setsText}</span> = <strong>${executed.toLocaleString('pt-BR')} kg</strong>`
-        } else if (exec != null) {
-          const execWeight = parseFloat(exec.weight_executed) || 0
-          const execReps   = exec.reps_executed || 0
-          executed = sets * execReps * execWeight
-          execCell = `${execWeight.toLocaleString('pt-BR')} kg × ${execReps} reps = <strong>${executed.toLocaleString('pt-BR')} kg</strong>`
         } else {
           executed = null
           execCell = '<span style="color:var(--text-muted)">Não executado</span>'
@@ -8553,58 +8550,30 @@ function dismissComparison() {
   _pendingExecutionsSave  = null
 }
 
+// Cada série já foi salva no banco individualmente (via saveExecSet) assim que o aluno
+// clicou "Salvar" nela — esta função só entra em ação para exercícios que ficaram
+// completamente sem nenhuma série registrada, gravando a linha "Não executado" pra
+// aparecer certo na tela do personal. Não reprocessa o que já foi salvo ao vivo.
 async function saveWorkoutExecutions(workoutId) {
   const exes = currentWorkoutData?.workout_exercises || []
   if (!exes.length) return
 
   const records = []
   for (const ex of exes) {
-    const exec   = exerciseExecutions[ex.id]
-    const isAero = ex.exercise_type === 'aerobico'
-    if (isAero) {
-      records.push({
-        workout_id:            workoutId,
-        exercise_id:           ex.id,
-        student_id:            profile.id,
-        set_number:            1,
-        weight_executed:       null,
-        reps_executed:         null,
-        duration_executed_min: exec?.duration_executed_min ?? null,
-        distance_executed_km:  exec?.distance_executed_km  ?? null,
-        speed_executed_kmh:    exec?.speed_executed_kmh    ?? null
-      })
-    } else {
-      const recordedSets = exec?.sets?.length > 0 ? exec.sets : null
-      if (recordedSets) {
-        for (const s of recordedSets) {
-          records.push({
-            workout_id:            workoutId,
-            exercise_id:           ex.id,
-            student_id:            profile.id,
-            set_number:            s.set_number,
-            weight_executed:       s.weight_executed,
-            reps_executed:         s.reps_executed,
-            duration_executed_min: null,
-            distance_executed_km:  null,
-            speed_executed_kmh:    null
-          })
-        }
-      } else {
-        // Aluno não marcou o exercício como concluído: registra a linha sem dados de
-        // execução (weight/reps null), pra "Não executado" aparecer certo na tela do personal.
-        records.push({
-          workout_id:            workoutId,
-          exercise_id:           ex.id,
-          student_id:            profile.id,
-          set_number:            1,
-          weight_executed:       null,
-          reps_executed:         null,
-          duration_executed_min: null,
-          distance_executed_km:  null,
-          speed_executed_kmh:    null
-        })
-      }
-    }
+    const exec = exerciseExecutions[ex.id]
+    if (exec && Object.keys(exec).length > 0) continue
+
+    records.push({
+      workout_id:            workoutId,
+      exercise_id:           ex.id,
+      student_id:            profile.id,
+      set_number:            1,
+      weight_executed:       null,
+      reps_executed:         null,
+      duration_executed_min: null,
+      distance_executed_km:  null,
+      speed_executed_kmh:    null
+    })
   }
 
   if (!records.length) return
@@ -8687,12 +8656,129 @@ function openManualExecutionModal(studentId, studentName) {
   document.getElementById('manual-exec-workout-sel').innerHTML = buildWorkoutSelectOptionsHTML(ctx)
 
   document.getElementById('manual-exec-modal-overlay').style.display = 'flex'
+
+  _restoreManualExecutionDraftIfAny(studentId)
 }
 
 function closeManualExecutionModal() {
   document.getElementById('manual-exec-modal-overlay').style.display = 'none'
   _manualExecStudentId   = null
   _manualExecStudentName = null
+  clearManualExecutionState()
+}
+
+function _scheduleManualExecutionSave() {
+  clearTimeout(_manualExecSaveDebounceTimer)
+  _manualExecSaveDebounceTimer = setTimeout(saveManualExecutionState, 400)
+}
+
+// Autosave (debounced) do modal "Registrar treino retroativo" — cobre data, observações
+// e as séries de cada exercício, pra não perder o que já foi digitado se a página
+// fechar/recarregar no meio do preenchimento. O salvamento final no banco continua sendo
+// de uma vez só (confirmManualExecution) — isto é só uma rede de segurança local.
+function saveManualExecutionState() {
+  if (profile?.role !== 'personal') return
+  if (!_manualExecStudentId) return
+  const workoutId = document.getElementById('manual-exec-workout-sel')?.value
+  if (!workoutId) return
+  try {
+    const exercises = [...document.querySelectorAll('#manual-exec-exercises .manual-exec-ex')].map(block => ({
+      exerciseId: block.dataset.exerciseId,
+      isAero:     block.dataset.aero === '1',
+      duration:   block.querySelector('.manual-exec-duration')?.value ?? '',
+      distance:   block.querySelector('.manual-exec-distance')?.value ?? '',
+      speed:      block.querySelector('.manual-exec-speed')?.value    ?? '',
+      weights:    [...block.querySelectorAll('.manual-exec-weight')].map(i => i.value),
+      reps:       [...block.querySelectorAll('.manual-exec-reps')].map(i => i.value)
+    }))
+    const state = {
+      personalId:  profile?.id || null,
+      studentId:   _manualExecStudentId,
+      studentName: _manualExecStudentName,
+      workoutId,
+      date:    document.getElementById('manual-exec-date')?.value  || '',
+      notes:   document.getElementById('manual-exec-notes')?.value || '',
+      exercises,
+      savedAt: Date.now()
+    }
+    localStorage.setItem(MANUAL_EXEC_STATE_KEY, JSON.stringify(state))
+  } catch (err) { console.error('[saveManualExecutionState] falhou:', err) }
+}
+
+function clearManualExecutionState() {
+  try { localStorage.removeItem(MANUAL_EXEC_STATE_KEY) } catch {}
+}
+
+// Chamada logo após o modal abrir (seja por clique no botão, seja pelo restore de boot)
+// — se houver um rascunho salvo para este MESMO aluno, repreenche os campos em cima do
+// que openManualExecutionModal acabou de montar. Silenciosa: não avisa nada se não achar
+// rascunho válido, igual aos outros restores do app.
+function _restoreManualExecutionDraftIfAny(studentId) {
+  let raw
+  try { raw = localStorage.getItem(MANUAL_EXEC_STATE_KEY) } catch { return }
+  if (!raw) return
+
+  let state
+  try { state = JSON.parse(raw) } catch { clearManualExecutionState(); return }
+  if (!state || typeof state !== 'object' || state.studentId !== studentId) return
+
+  const MANUAL_EXEC_DRAFT_MAX_AGE_MS = 60 * 60 * 1000 // 1 hora, mesmo limite do rascunho de treino
+  if (!state.savedAt || (Date.now() - state.savedAt) > MANUAL_EXEC_DRAFT_MAX_AGE_MS) { clearManualExecutionState(); return }
+  if (state.personalId && profile?.id && state.personalId !== profile.id) { clearManualExecutionState(); return }
+
+  const sel = document.getElementById('manual-exec-workout-sel')
+  if (!sel || ![...sel.options].some(o => o.value === state.workoutId)) return
+
+  sel.value = state.workoutId
+  renderManualExecutionExercises()
+
+  document.getElementById('manual-exec-date').value  = state.date  || today()
+  document.getElementById('manual-exec-notes').value = state.notes || ''
+
+  for (const exState of (state.exercises || [])) {
+    const block = document.querySelector(`#manual-exec-exercises .manual-exec-ex[data-exercise-id="${exState.exerciseId}"]`)
+    if (!block) continue
+    if (exState.isAero) {
+      const dEl  = block.querySelector('.manual-exec-duration'); if (dEl  && exState.duration) dEl.value  = exState.duration
+      const diEl = block.querySelector('.manual-exec-distance'); if (diEl && exState.distance) diEl.value = exState.distance
+      const spEl = block.querySelector('.manual-exec-speed');    if (spEl && exState.speed)    spEl.value = exState.speed
+    } else {
+      const weightEls = block.querySelectorAll('.manual-exec-weight')
+      const repsEls    = block.querySelectorAll('.manual-exec-reps')
+      ;(exState.weights || []).forEach((v, i) => { if (weightEls[i] && v !== '') weightEls[i].value = v })
+      ;(exState.reps    || []).forEach((v, i) => { if (repsEls[i]   && v !== '') repsEls[i].value   = v })
+    }
+  }
+}
+
+// Chamada no boot, depois que `me`/`profile` já estão resolvidos. Se havia um rascunho do
+// modal "Registrar treino retroativo" em andamento, navega até a ficha do aluno certo
+// (pra popular window._manualExecCtx) e reabre o modal já preenchido.
+async function restoreManualExecutionState() {
+  if (profile?.role !== 'personal') return false
+
+  let raw
+  try { raw = localStorage.getItem(MANUAL_EXEC_STATE_KEY) } catch { return false }
+  if (!raw) return false
+
+  let state
+  try { state = JSON.parse(raw) } catch { clearManualExecutionState(); return false }
+  if (!state || typeof state !== 'object' || !state.studentId || !state.workoutId) { clearManualExecutionState(); return false }
+
+  const MANUAL_EXEC_DRAFT_MAX_AGE_MS = 60 * 60 * 1000
+  if (!state.savedAt || (Date.now() - state.savedAt) > MANUAL_EXEC_DRAFT_MAX_AGE_MS) { clearManualExecutionState(); return false }
+  if (state.personalId && me?.id && state.personalId !== me.id) { clearManualExecutionState(); return false }
+
+  await navigateTo('student-sheet', { studentId: state.studentId, studentName: state.studentName })
+
+  if (!(window._manualExecCtx || {})[state.studentId]) {
+    // Acesso ao aluno não é mais válido (renderStudentSheet já tratou o toast/redirect).
+    clearManualExecutionState()
+    return false
+  }
+
+  openManualExecutionModal(state.studentId, state.studentName)
+  return true
 }
 
 function renderManualExecutionExercises() {
