@@ -2063,8 +2063,12 @@
       font-size: .82rem;
       font-weight: 700;
       font-family: 'Montserrat', system-ui, sans-serif;
+      font-variant-numeric: tabular-nums;
       cursor: pointer;
-      transition: all var(--transition);
+      transition: background var(--transition), border-color var(--transition), color var(--transition);
+      min-width: 10.5rem;
+      text-align: center;
+      box-sizing: border-box;
     }
 
     .btn-rest-timer:hover:not(:disabled) { background: rgba(245,158,11,0.18); border-color: var(--warning-a40); }

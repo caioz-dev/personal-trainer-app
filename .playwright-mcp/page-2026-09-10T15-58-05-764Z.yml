@@ -1,0 +1,19 @@
+- generic [active] [ref=f2e1]:
+  - generic [ref=f2e4]:
+    - generic [ref=f2e5]:
+      - img "PersonalPro" [ref=f2e6]
+      - text: PersonalPro
+      - generic [ref=f2e7]: Gestão Inteligente de Treinos
+    - generic [ref=f2e8]:
+      - button "Login" [ref=f2e9] [cursor=pointer]
+      - button "Cadastrar" [ref=f2e10] [cursor=pointer]
+    - generic [ref=f2e11]:
+      - generic [ref=f2e12]:
+        - generic [ref=f2e13]: Email
+        - textbox "seu@email.com" [ref=f2e14]
+      - generic [ref=f2e15]:
+        - generic [ref=f2e16]: Senha
+        - textbox "••••••••" [ref=f2e17]
+      - button "Entrar" [ref=f2e18] [cursor=pointer]
+      - button "Esqueceu sua senha?" [ref=f2e20] [cursor=pointer]
+  - text: ● ● ● ● ●
