@@ -1141,6 +1141,17 @@
       padding: .1rem .4rem;
       white-space: nowrap;
     }
+    .badge-routine-tag {
+      font-size: .63rem;
+      color: var(--accent-soft);
+      background: var(--accent-a10);
+      border: 1px solid var(--accent-a20);
+      border-radius: 999px;
+      padding: .1rem .45rem;
+      margin-left: .4rem;
+      white-space: nowrap;
+      vertical-align: middle;
+    }
 
     /* ---- COMPARISON CARDS (previsto/executado/diferença — mobile) ---- */
     .comp-cards { display: none; }
@@ -3870,6 +3881,9 @@ async function renderHistory(studentId, gen = 0) {
     workouts.forEach(w => { window._workoutsCache[w.id] = w })
     if (gen && navGen !== gen) return
 
+    const routineNameById = {}
+    ;(routinesRes.data || []).forEach(r => { routineNameById[r.id] = r.name })
+
     let routinesCardsHTML = ''
     if (profile.role === 'student') {
       const todayStr = new Date().toISOString().slice(0, 10)
@@ -3934,7 +3948,7 @@ async function renderHistory(studentId, gen = 0) {
         </div>`
       }
     }
-    body.innerHTML = personalCardHTML + bannerHTML + historyHTML(workouts, profile.name, 'evo-chart', routinesCardsHTML)
+    body.innerHTML = personalCardHTML + bannerHTML + historyHTML(workouts, profile.name, 'evo-chart', routinesCardsHTML, routineNameById)
     if (workouts.length) initChart('evo-chart', [...workouts].reverse())
     bindWorkoutRowClicks(body)
   } catch (err) {
@@ -3946,7 +3960,7 @@ async function renderHistory(studentId, gen = 0) {
   }
 }
 
-function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '') {
+function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', routineNameById = {}) {
   if (!ws.length) return `<div class="empty-state">
     <div class="empty-icon">🏋️</div>
     <p>Nenhum treino registrado ainda para ${name}.<br>
@@ -3961,8 +3975,10 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '') {
   const lastDisp  = allAero ? getWorkoutAeroDistance(last) : getWorkoutVolume(last)
   const volUnit   = allAero ? 'km' : 'kg'
 
-  // Alunos só veem treinos avulsos na tabela; stats e gráfico continuam usando todos os workouts
-  const standAlone = profile.role === 'student' ? ws.filter(w => !w.routine_id) : ws
+  // A tabela lista todos os treinos (avulsos e de rotina); os de rotina ganham uma tag
+  // com o nome da rotina pra não sumir do histórico (antes eram excluídos daqui e só
+  // apareciam dentro do card da rotina — confundia quando o aluno só tinha treinos de rotina).
+  const standAlone = ws
   const rows = standAlone.map((w, i) => {
     const prev    = standAlone[i + 1]
     const vol     = getWorkoutVolume(w)
@@ -4048,12 +4064,15 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '') {
     const dateSub   = w.name
       ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">${dateRange}</div>`
       : w.end_date ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">até ${fmtDate(w.end_date)}</div>` : ''
+    const routineTag = w.routine_id
+      ? `<span class="badge-routine-tag">🔁 ${escHtml(routineNameById[w.routine_id] || 'Rotina')}</span>`
+      : ''
 
     return `
       <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
         <td>
           ${profile.role === 'personal' ? `<div class="workout-row-name-wrap"><input type="checkbox" class="workout-checkbox" data-workout-id="${w.id}" onclick="event.stopPropagation();toggleWorkoutCheckbox('${w.id}',this)" style="margin-top:.2rem"><div>` : ''}
-          <strong>${w.name || fmtDate(w.date)}</strong>
+          <strong>${w.name || fmtDate(w.date)}</strong>${routineTag}
           ${dateSub}
           ${profile.role === 'personal' ? '</div></div>' : ''}
         </td>
@@ -4570,8 +4589,9 @@ async function renderStudentSheet(studentId, studentName, gen) {
     if (_wErr) throw _wErr
     const workouts = _wData || []
 
-    // Separa treinos avulsos (sem rotina) dos treinos vinculados a rotinas
-    const standAloneWorkouts = workouts.filter(w => !w.routine_id)
+    // Agrupa treinos vinculados a rotina — usado pra contar treinos por rotina nos cards
+    // de "Rotinas" (o Histórico de Treinos abaixo agora lista todos os treinos, com ou
+    // sem rotina, marcando os de rotina com uma tag — ver routineTag/routineNameById).
     const workoutsByRoutine  = {}
     for (const w of workouts) {
       if (w.routine_id) {
@@ -4603,6 +4623,8 @@ async function renderStudentSheet(studentId, studentName, gen) {
     }
 
     const routinesData = routinesRes.data || []
+    const routineNameById = {}
+    routinesData.forEach(r => { routineNameById[r.id] = r.name })
 
     window._manualExecCtx = window._manualExecCtx || {}
     window._manualExecCtx[studentId] = { workouts, routinesData }
@@ -4612,7 +4634,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
     const totalDispSheet = allAeroSheet ? workouts.reduce((s, w) => s + getWorkoutAeroDistance(w), 0) : total
     const volUnitSheet   = allAeroSheet ? 'km' : 'kg'
 
-    const rows = standAloneWorkouts.map(w => {
+    const rows = workouts.map(w => {
       const exes = w.workout_exercises || []
       const vol  = getWorkoutVolume(w)
       const uid       = 'sh' + w.id.replace(/-/g, '')
@@ -4620,6 +4642,9 @@ async function renderStudentSheet(studentId, studentName, gen) {
       const dateSub   = w.name
         ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">${dateRange}</div>`
         : w.end_date ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">até ${fmtDate(w.end_date)}</div>` : ''
+      const routineTag = w.routine_id
+        ? `<span class="badge-routine-tag">🔁 ${escHtml(routineNameById[w.routine_id] || 'Rotina')}</span>`
+        : ''
       const exPairs = exes.length
         ? exes.map(ex => {
             const isAero  = ex.exercise_type === 'aerobico'
@@ -4668,7 +4693,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
         <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
           <td>
             ${checkboxOpen}
-            <strong>${w.name || fmtDate(w.date)}</strong>
+            <strong>${w.name || fmtDate(w.date)}</strong>${routineTag}
             ${dateSub}
             ${checkboxClose}
           </td>
@@ -4999,7 +5024,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
         <div id="sheet-calc-out"></div>
       </div>`
 
-    const historyTableHTML = standAloneWorkouts.length
+    const historyTableHTML = workouts.length
       ? `<p style="font-size:.78rem;color:var(--text-muted);margin-bottom:.875rem">Clique em um treino para ver os exercícios.</p>
       ${profile.role === 'personal' ? `<div id="bulk-select-bar" class="bulk-select-bar" style="display:none">
         <label class="bulk-select-all-label">
