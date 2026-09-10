@@ -3142,28 +3142,40 @@ async function doSignup(e) {
   const { data, error } = authResult
   if (error) { setMsg(xlErr(error.message)); btn.textContent = 'Criar Conta'; btn.disabled = false; return }
 
-  const userId = data.user?.id
-  if (userId) {
-    const { error: pe } = await sb.from('profiles').insert({ id: userId, name, role, email })
-    if (pe) { setMsg('Conta criada, mas erro ao salvar perfil: ' + pe.message, 'error') }
-    else {
-      // Fire-and-forget: avisa o personal padrão que um novo aluno se cadastrou,
-      // antes mesmo de qualquer vínculo. A sessão do signUp já está ativa aqui,
-      // então authHeader() tem um token válido do próprio aluno recém-criado.
-      if (role === 'student') {
-        authHeader().then(auth => fetch(`${SUPA_URL}/functions/v1/notify-new-student`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': auth },
-          body: JSON.stringify({ type: 'new_signup', student_email: email, student_name: name })
-        }).then(async res => {
-          if (!res.ok) console.error('[notify-new-student] new_signup resposta não-OK:', res.status, await res.text().catch(() => ''))
-        })).catch(err => console.error('[notify-new-student] new_signup falhou (rede):', err))
-      }
+  // Supabase retorna um user ofuscado (identities: []), sem erro, quando o e-mail já existe
+  // e "Confirm email" está habilitado — proteção anti-enumeração da própria API.
+  if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    setMsg('Este e-mail já está cadastrado.')
+    btn.textContent = 'Criar Conta'; btn.disabled = false
+    return
+  }
 
-      document.getElementById('signup-form').reset()
-      switchTab('login')
-      setMsg('Conta criada com sucesso! Faça login para continuar.', 'success')
+  const userId = data.user?.id
+  if (!userId) {
+    setMsg('Não foi possível concluir o cadastro. Tente novamente.')
+    btn.textContent = 'Criar Conta'; btn.disabled = false
+    return
+  }
+
+  const { error: pe } = await sb.from('profiles').insert({ id: userId, name, role, email })
+  if (pe) { setMsg('Conta criada, mas erro ao salvar perfil: ' + pe.message, 'error') }
+  else {
+    // Fire-and-forget: avisa o personal padrão que um novo aluno se cadastrou,
+    // antes mesmo de qualquer vínculo. A sessão do signUp já está ativa aqui,
+    // então authHeader() tem um token válido do próprio aluno recém-criado.
+    if (role === 'student') {
+      authHeader().then(auth => fetch(`${SUPA_URL}/functions/v1/notify-new-student`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': auth },
+        body: JSON.stringify({ type: 'new_signup', student_email: email, student_name: name })
+      }).then(async res => {
+        if (!res.ok) console.error('[notify-new-student] new_signup resposta não-OK:', res.status, await res.text().catch(() => ''))
+      })).catch(err => console.error('[notify-new-student] new_signup falhou (rede):', err))
     }
+
+    document.getElementById('signup-form').reset()
+    switchTab('login')
+    setMsg('Conta criada com sucesso! Faça login para continuar.', 'success')
   }
   btn.textContent = 'Criar Conta'; btn.disabled = false
 }
