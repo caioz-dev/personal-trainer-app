@@ -6,6 +6,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const APP_URL = 'https://personal-trainer-app-ten.vercel.app'
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -34,7 +36,7 @@ serve(async (req) => {
       })
     }
 
-    const { student_id, workout_name, workout_date, personal_name } = await req.json()
+    const { student_id, workout_id, workout_name, workout_date, personal_name } = await req.json()
 
     if (!student_id) {
       return new Response(JSON.stringify({ error: 'student_id is required' }), {
@@ -89,6 +91,13 @@ serve(async (req) => {
     const dateFormatted = workout_date ? `${d}/${m}/${y}` : '—'
     const wName = workout_name || 'Treino sem nome'
     const pName = personal_name || 'Seu personal trainer'
+    const ctaUrl = workout_id
+      ? `${APP_URL}/?dl=workout&id=${encodeURIComponent(workout_id)}`
+      : APP_URL
+    const ctaButton = `
+      <div style="text-align:center;margin-bottom:1.5rem">
+        <a href="${ctaUrl}" style="display:inline-block;background:#567FFF;color:#fff;font-weight:700;font-size:.9rem;text-decoration:none;padding:.75rem 1.75rem;border-radius:999px">Ver treino no app</a>
+      </div>`
 
     const html = `
 <!DOCTYPE html>
@@ -113,6 +122,7 @@ serve(async (req) => {
         <div style="font-size:1rem;font-weight:700;color:#93AEFF;margin-bottom:.3rem">${wName}</div>
         <div style="font-size:.82rem;color:#8f9ab2">📅 ${dateFormatted}</div>
       </div>
+      ${ctaButton}
       <p style="color:#8f9ab2;line-height:1.7;margin:0;font-size:.88rem">
         Acesse o app para visualizar os exercícios, cadências, cargas e iniciar seu treino.
       </p>

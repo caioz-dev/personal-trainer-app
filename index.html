@@ -3078,6 +3078,40 @@ async function boot() {
   // preenchendo quando a página fechou/recarregou.
   await restoreManualExecutionState()
   if (profile.role === 'student') await checkNewWorkout()
+  await handleDeepLink()
+}
+
+// Links dos e-mails de notificação (workout/routine/aluno) chegam como
+// ?dl=workout|routine|student&id=<uuid> — o app não tinha navegação por URL antes
+// disso; o parâmetro só serve pra esse redirecionamento e é limpo da URL assim que
+// lido, pra um F5 não reabrir o mesmo destino. workout/routine são sempre abertos
+// como o próprio aluno (só ele recebe esses e-mails); student é sempre o personal.
+async function handleDeepLink() {
+  const params = new URLSearchParams(location.search)
+  const dl = params.get('dl')
+  const id = params.get('id')
+  if (!dl || !id) return
+  history.replaceState(null, '', location.pathname)
+
+  try {
+    if (dl === 'student' && profile.role === 'personal') {
+      const { data } = await sb.from('profiles').select('name').eq('id', id).maybeSingle()
+      if (data) openStudentSheet(id, data.name || 'Aluno')
+    } else if (dl === 'routine' && profile.role === 'student') {
+      const { data: r } = await sb.from('routines').select('name').eq('id', id).maybeSingle()
+      if (r) openRoutineDetail(profile.id, profile.name, id, r.name, 'history')
+    } else if (dl === 'workout' && profile.role === 'student') {
+      await navigateTo('history')
+      const uid = id.replace(/-/g, '')
+      const row = document.querySelector(`tr.history-main-row[data-uid="${uid}"]`)
+      if (row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        toggleWorkoutDetail(uid)
+      }
+    }
+  } catch (err) {
+    console.error('[handleDeepLink] falhou:', err)
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -5535,6 +5569,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
           <div style="font-size:1.05rem;font-weight:800;letter-spacing:-0.02em">${escHtml(routine.name)}</div>
         </div>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          ${profile.role === 'personal' ? `<button class="btn btn-outline btn-sm" onclick="openRoutineModal('${studentId}','${snSafe}','${routineId}')" title="Editar nome/data da rotina">✏️ Editar Rotina</button>` : ''}
           ${profile.role === 'personal' ? `<button class="btn btn-primary btn-sm" onclick="openNewWorkoutForRoutine('${studentId}','${snSafe}','${routineId}','${rNameSafe}',historyCtx?.fromView)">➕ Adicionar Treino</button>` : ''}
           <button class="btn btn-outline btn-sm" onclick="closeRoutineDetail('${studentId}','${snSafe}')">← Voltar</button>
         </div>
@@ -5674,13 +5709,21 @@ async function saveRoutine(e) {
     general_instructions: document.getElementById('rf-instructions').value.trim() || null,
   }
 
-  let error
+  if (payload.start_date && payload.end_date && payload.end_date < payload.start_date) {
+    toast('A data de término não pode ser antes da data de início.', 'error')
+    btn.textContent = _editingRoutineId ? 'Salvar Alterações' : 'Salvar Rotina'
+    btn.disabled = false
+    return
+  }
+
+  const editedRoutineId = _editingRoutineId
+  let error, newRoutine
   if (_editingRoutineId) {
     ;({ error } = await sb.from('routines').update(payload).eq('id', _editingRoutineId))
   } else {
     payload.personal_id = profile.id
     payload.student_id  = studentId
-    ;({ error } = await sb.from('routines').insert(payload))
+    ;({ data: newRoutine, error } = await sb.from('routines').insert(payload).select().maybeSingle())
   }
 
   if (error) {
@@ -5699,6 +5742,7 @@ async function saveRoutine(e) {
       headers: { 'Content-Type': 'application/json', 'Authorization': auth },
       body: JSON.stringify({
         student_id:   studentId,
+        routine_id:   newRoutine?.id,
         routine_name: payload.name,
         start_date:   payload.start_date,
         end_date:     payload.end_date,
@@ -5709,6 +5753,8 @@ async function saveRoutine(e) {
 
   closeRoutineModal()
   if (historyCtx?.view === 'my-workout') navigateTo('my-workout')
+  else if (historyCtx?.view === 'routine-detail' && historyCtx.routineId === editedRoutineId)
+    openRoutineDetail(studentId, studentName, editedRoutineId, payload.name, historyCtx.fromView)
   else openStudentSheet(studentId, studentName)
 }
 
@@ -6976,6 +7022,7 @@ async function confirmDupWorkout() {
       headers: { 'Content-Type': 'application/json', 'Authorization': auth },
       body: JSON.stringify({
         student_id:    targetStudentId,
+        workout_id:    newWorkout.id,
         workout_name:  newWorkout.name || 'Treino sem nome',
         workout_date:  newDate,
         personal_name: profile.name
@@ -7562,6 +7609,7 @@ async function saveWorkout(e) {
         },
         body: JSON.stringify({
           student_id:    studentId,
+          workout_id:    workout.id,
           workout_name:  workoutName || 'Treino sem nome',
           workout_date:  date,
           personal_name: profile.name

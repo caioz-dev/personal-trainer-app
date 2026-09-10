@@ -6,6 +6,15 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const APP_URL = 'https://personal-trainer-app-ten.vercel.app'
+
+function ctaButtonHTML(url: string, label: string): string {
+  return `
+      <div style="text-align:center;margin-bottom:1.5rem">
+        <a href="${url}" style="display:inline-block;background:#567FFF;color:#fff;font-weight:700;font-size:.9rem;text-decoration:none;padding:.75rem 1.75rem;border-radius:999px">${label}</a>
+      </div>`
+}
+
 // TODO: remover quando o cadastro de aluno permitir escolher/indicar um personal.
 // Hoje Luan é o único personal real em produção, então toda notificação de novo
 // cadastro (antes de qualquer vínculo) vai fixa para ele.
@@ -136,6 +145,7 @@ serve(async (req) => {
         <div style="font-size:1rem;font-weight:700;color:#93AEFF;margin-bottom:.3rem">${displayName}</div>
         <div style="font-size:.82rem;color:#8f9ab2">✉️ ${student_email}</div>
       </div>
+      ${ctaButtonHTML(APP_URL, 'Abrir o PersonalPro')}
       <p style="color:#8f9ab2;line-height:1.7;margin:0;font-size:.88rem">
         Nenhuma ação necessária ainda — isso é só um aviso de que a conta foi criada. Quando você vincular esse aluno pelo app, um segundo e-mail confirma o vínculo.
       </p>`)
@@ -207,6 +217,7 @@ serve(async (req) => {
         <div style="font-size:1rem;font-weight:700;color:#93AEFF;margin-bottom:.3rem">${studentName}</div>
         <div style="font-size:.82rem;color:#8f9ab2">✉️ ${student.email}</div>
       </div>
+      ${ctaButtonHTML(`${APP_URL}/?dl=student&id=${encodeURIComponent(student_id)}`, 'Ver perfil do aluno')}
       <p style="color:#8f9ab2;line-height:1.7;margin:0;font-size:.88rem">
         Acesse o app para montar a ficha, rotinas e treinos desse aluno.
       </p>`)
@@ -222,6 +233,7 @@ serve(async (req) => {
       <div style="background:rgba(255,107,107,.1);border:1px solid rgba(255,107,107,.28);border-radius:14px;padding:1.1rem 1.25rem;margin-bottom:1.5rem">
         <div style="font-size:.82rem;color:#8f9ab2">✉️ E-mail usado na tentativa: ${failed_email}</div>
       </div>
+      ${ctaButtonHTML(APP_URL, 'Abrir o PersonalPro')}
       <p style="color:#8f9ab2;line-height:1.7;margin:0;font-size:.88rem">
         Confira o e-mail digitado e tente novamente pelo app.
       </p>`)
