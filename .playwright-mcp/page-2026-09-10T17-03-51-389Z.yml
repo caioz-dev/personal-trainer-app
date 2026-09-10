@@ -1,0 +1,129 @@
+- generic [ref=f1e1]:
+  - generic [ref=f1e37]:
+    - navigation [ref=f1e38]:
+      - generic "Voltar para o início" [ref=f1e40] [cursor=pointer]:
+        - img "PersonalPro" [ref=f1e41]
+        - generic [ref=f1e42]:
+          - text: PersonalPro
+          - generic [ref=f1e43]: Personal Trainer
+      - list [ref=f1e44]:
+        - listitem [ref=f1e45]:
+          - button "👥 Alunos" [ref=f1e46] [cursor=pointer]:
+            - generic [ref=f1e47]: 👥
+            - text: Alunos
+        - listitem [ref=f1e48]:
+          - button "🏋️ Meu Treino" [ref=f1e49] [cursor=pointer]:
+            - generic [ref=f1e50]: 🏋️
+            - text: Meu Treino
+        - listitem [ref=f1e51]:
+          - button "📈 Progresso dos Alunos" [ref=f1e52] [cursor=pointer]:
+            - generic [ref=f1e53]: 📈
+            - text: Progresso dos Alunos
+        - listitem [ref=f1e54]:
+          - button "👤 Meu Perfil" [ref=f1e55] [cursor=pointer]:
+            - generic [ref=f1e56]: 👤
+            - text: Meu Perfil
+      - generic [ref=f1e57]:
+        - generic [ref=f1e58]:
+          - generic [ref=f1e59]: Claude Test Personal LiveWF
+          - generic [ref=f1e60]: Personal
+        - generic [ref=f1e61]:
+          - generic [ref=f1e62]: Aparência
+          - button "🌙 Escuro" [ref=f1e63] [cursor=pointer]:
+            - generic [ref=f1e64]: 🌙
+            - generic [ref=f1e65]: Escuro
+        - button "Sair da conta" [ref=f1e66] [cursor=pointer]
+    - generic [ref=f1e67]:
+      - generic [ref=f1e68]:
+        - heading "Claude Test Aluno LiveWF" [level=1] [ref=f1e250]
+        - button "🔔 2" [ref=f1e95] [cursor=pointer]:
+          - text: 🔔
+          - generic [ref=f1e96]: "2"
+      - generic [ref=f1e73]:
+        - text: ● ● ● ●
+        - generic [ref=f1e126]:
+          - generic [ref=f1e251]:
+            - generic [ref=f1e252]:
+              - generic [ref=f1e253]: CT
+              - generic [ref=f1e254]:
+                - generic [ref=f1e255]: ● Ficha do Aluno
+                - generic [ref=f1e256]: Claude Test Aluno LiveWF
+            - generic [ref=f1e257]:
+              - button "➕ Novo Treino" [ref=f1e258] [cursor=pointer]
+              - button "✕ Fechar" [ref=f1e259] [cursor=pointer]
+          - generic [ref=f1e260]:
+            - generic [ref=f1e261]:
+              - generic [ref=f1e262]: "1"
+              - generic [ref=f1e263]: Treinos
+            - generic [ref=f1e264]:
+              - generic [ref=f1e265]: 1.440 kg
+              - generic [ref=f1e266]: Volume acumulado
+            - generic [ref=f1e267]:
+              - generic [ref=f1e268]: "0"
+              - generic [ref=f1e269]: Execuções
+          - generic [ref=f1e270]:
+            - generic [ref=f1e272]:
+              - generic [ref=f1e273]: ● Ferramentas
+              - generic [ref=f1e274]: 🧮 Calculadora de Repetições
+            - paragraph [ref=f1e275]: Informe o exercício e o peso de hoje para descobrir o mínimo de repetições necessárias para superar o volume anterior.
+            - generic [ref=f1e276]:
+              - generic [ref=f1e277]: Exercício
+              - 'combobox "Ex: Supino Reto" [ref=f1e278]'
+            - generic [ref=f1e279]:
+              - generic [ref=f1e280]: Carga de hoje (kg)
+              - 'spinbutton "Ex: 85" [ref=f1e281]'
+            - button "Calcular" [ref=f1e282] [cursor=pointer]
+          - generic [ref=f1e283]:
+            - generic [ref=f1e284]:
+              - generic [ref=f1e285]: ● Rotinas
+              - button "➕ Nova Rotina" [ref=f1e286] [cursor=pointer]
+            - paragraph [ref=f1e287]: Nenhuma rotina criada ainda.
+          - generic [ref=f1e288]:
+            - generic [ref=f1e289]: ● Histórico de Treinos
+            - paragraph [ref=f1e290]: Clique em um treino para ver os exercícios.
+            - table [ref=f1e292]:
+              - rowgroup [ref=f1e293]:
+                - row [ref=f1e294]:
+                  - columnheader "Treino" [ref=f1e295]
+                  - columnheader "Exercícios" [ref=f1e296]
+                  - columnheader "Volume Total" [ref=f1e297]
+                  - columnheader [ref=f1e298]
+                  - columnheader [ref=f1e299]
+              - rowgroup [ref=f1e300]:
+                - row [ref=f1e301] [cursor=pointer]:
+                  - cell "Treino Teste LiveWF 10/09/2026" [ref=f1e302]:
+                    - generic [ref=f1e303]:
+                      - checkbox [ref=f1e304]
+                      - generic [ref=f1e305]:
+                        - strong [ref=f1e306]: Treino Teste LiveWF
+                        - generic [ref=f1e307]: 10/09/2026
+                  - cell "1 exercício" [ref=f1e308]
+                  - cell "1.440 kg" [ref=f1e309]
+                  - cell "▶" [ref=f1e310]
+                  - cell [ref=f1e312]:
+                    - button "✏️" [ref=f1e313]
+                    - button "📋" [ref=f1e314]
+            - generic [ref=f1e315]:
+              - generic [ref=f1e316]:
+                - generic [ref=f1e317]: ● Execuções Realizadas
+                - button "▶ Registrar ao vivo" [active] [ref=f1e318] [cursor=pointer]
+                - button "➕ Registrar retroativo" [ref=f1e319] [cursor=pointer]
+              - generic [ref=f1e320]:
+                - generic [ref=f1e321]: 📊
+                - paragraph [ref=f1e322]: Nenhuma execução registrada ainda.
+  - text: ● ●
+  - generic [ref=f1e324]:
+    - generic [ref=f1e325]:
+      - generic [ref=f1e326]: ▶ Registrar ao Vivo
+      - button "✕" [ref=f1e327] [cursor=pointer]
+    - generic [ref=f1e328]:
+      - paragraph [ref=f1e329]: Escolha o treino que o aluno vai executar agora. Depois é só marcar cada série assim que ela for feita.
+      - generic [ref=f1e330]:
+        - generic [ref=f1e331]: Qual treino
+        - combobox [ref=f1e332] [cursor=pointer]:
+          - option "Selecione um treino…" [selected]
+          - option "Treino Teste LiveWF"
+    - generic [ref=f1e333]:
+      - button "Cancelar" [ref=f1e334] [cursor=pointer]
+      - button "▶ Iniciar registro ao vivo" [ref=f1e335] [cursor=pointer]
+  - text: ●

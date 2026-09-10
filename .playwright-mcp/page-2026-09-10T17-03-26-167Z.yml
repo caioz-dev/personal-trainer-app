@@ -1,0 +1,111 @@
+- generic [ref=f1e1]:
+  - generic [ref=f1e37]:
+    - navigation [ref=f1e38]:
+      - generic "Voltar para o início" [ref=f1e40] [cursor=pointer]:
+        - img "PersonalPro" [ref=f1e41]
+        - generic [ref=f1e42]:
+          - text: PersonalPro
+          - generic [ref=f1e43]: Personal Trainer
+      - list [ref=f1e44]:
+        - listitem [ref=f1e45]:
+          - button "👥 Alunos" [ref=f1e46] [cursor=pointer]:
+            - generic [ref=f1e47]: 👥
+            - text: Alunos
+        - listitem [ref=f1e48]:
+          - button "🏋️ Meu Treino" [ref=f1e49] [cursor=pointer]:
+            - generic [ref=f1e50]: 🏋️
+            - text: Meu Treino
+        - listitem [ref=f1e51]:
+          - button "📈 Progresso dos Alunos" [ref=f1e52] [cursor=pointer]:
+            - generic [ref=f1e53]: 📈
+            - text: Progresso dos Alunos
+        - listitem [ref=f1e54]:
+          - button "👤 Meu Perfil" [ref=f1e55] [cursor=pointer]:
+            - generic [ref=f1e56]: 👤
+            - text: Meu Perfil
+      - generic [ref=f1e57]:
+        - generic [ref=f1e58]:
+          - generic [ref=f1e59]: Claude Test Personal LiveWF
+          - generic [ref=f1e60]: Personal
+        - generic [ref=f1e61]:
+          - generic [ref=f1e62]: Aparência
+          - button "🌙 Escuro" [ref=f1e63] [cursor=pointer]:
+            - generic [ref=f1e64]: 🌙
+            - generic [ref=f1e65]: Escuro
+        - button "Sair da conta" [ref=f1e66] [cursor=pointer]
+    - generic [ref=f1e67]:
+      - generic [ref=f1e68]:
+        - heading "Novo Treino" [level=1] [ref=f1e177]
+        - button "🔔 2" [ref=f1e95] [cursor=pointer]:
+          - text: 🔔
+          - generic [ref=f1e96]: "2"
+      - generic [ref=f1e73]:
+        - text: ● ●
+        - generic [ref=f1e179]:
+          - generic [ref=f1e181]:
+            - generic [ref=f1e182]: "● Para: Claude Test Aluno LiveWF"
+            - generic [ref=f1e183]: Novo Treino
+          - generic [ref=f1e184]:
+            - generic [ref=f1e185]:
+              - generic [ref=f1e186]:
+                - generic [ref=f1e187]: Nome do treino
+                - 'textbox "Ex: Treino A — Peito e Tríceps" [ref=f1e188]'
+              - generic [ref=f1e189]:
+                - generic [ref=f1e190]: Data de início
+                - textbox [ref=f1e191]: 2026-09-10
+              - generic [ref=f1e192]:
+                - generic [ref=f1e193]: Data final (opcional)
+                - textbox [ref=f1e194]
+              - generic [ref=f1e195]:
+                - generic [ref=f1e196]: Observações gerais (opcional)
+                - 'textbox "Ex: foco em força, menor volume" [ref=f1e197]'
+            - generic [ref=f1e198]:
+              - generic [ref=f1e199]: 🏋️ Exercícios
+              - button "+ Adicionar exercício" [ref=f1e201] [cursor=pointer]
+            - generic [ref=f1e203]:
+              - generic [ref=f1e204] [cursor=pointer]:
+                - generic [ref=f1e205]: Exercício 1
+                - generic [ref=f1e206]: ›
+              - generic [ref=f1e208]:
+                - generic [ref=f1e209]:
+                  - generic [ref=f1e210]:
+                    - generic [ref=f1e211]: Nome do exercício
+                    - 'textbox "Ex: Supino Reto" [active] [ref=f1e212]'
+                  - generic [ref=f1e213]:
+                    - generic [ref=f1e214]: Tipo de exercício
+                    - combobox [ref=f1e215] [cursor=pointer]:
+                      - option "🏋️ Musculação" [selected]
+                      - option "🏃 Aeróbico (esteira/corrida)"
+                - generic [ref=f1e216]:
+                  - generic [ref=f1e217]:
+                    - generic [ref=f1e218]: Séries
+                    - spinbutton "4" [ref=f1e219]
+                  - generic [ref=f1e220]:
+                    - generic [ref=f1e221]: Carga (kg)
+                    - spinbutton "80" [ref=f1e222]
+                  - generic [ref=f1e223]:
+                    - generic [ref=f1e224]: Repetições
+                    - spinbutton "12" [ref=f1e225]
+                  - generic [ref=f1e226]:
+                    - generic [ref=f1e227]: Cadência (opcional)
+                    - 'textbox "Ex: 2-1-2" [ref=f1e228]'
+                  - generic [ref=f1e229]:
+                    - generic [ref=f1e230]: Descanso — seg (opcional)
+                    - spinbutton "60" [ref=f1e231]
+                  - generic [ref=f1e232]:
+                    - generic [ref=f1e233]: Volume
+                    - generic [ref=f1e234]: —
+                  - generic [ref=f1e235]:
+                    - generic [ref=f1e236]: Método de treino (opcional)
+                    - 'textbox "Ex: Pirâmide crescente, Drop set, Bi-set" [ref=f1e237]'
+                  - generic [ref=f1e238]:
+                    - generic [ref=f1e239]: Descrição / instrução (opcional)
+                    - 'textbox "Ex: Execute 4 séries aumentando a carga a cada série" [ref=f1e240]'
+            - generic [ref=f1e241]:
+              - generic [ref=f1e242]: Volume Total do Treino
+              - generic [ref=f1e243]: 0 kg
+            - generic [ref=f1e244]:
+              - button "Salvar Treino" [ref=f1e245] [cursor=pointer]
+              - button "Cancelar" [ref=f1e246] [cursor=pointer]
+        - text: ● ● ● ● ● ●
+  - text: ● ● ●

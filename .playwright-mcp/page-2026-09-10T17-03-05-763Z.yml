@@ -1,0 +1,57 @@
+- generic [active] [ref=f1e1]:
+  - generic [ref=f1e37]:
+    - navigation [ref=f1e38]:
+      - generic "Voltar para o início" [ref=f1e40] [cursor=pointer]:
+        - img "PersonalPro" [ref=f1e41]
+        - generic [ref=f1e42]:
+          - text: PersonalPro
+          - generic [ref=f1e43]: Personal Trainer
+      - list [ref=f1e44]:
+        - listitem [ref=f1e45]:
+          - button "👥 Alunos" [ref=f1e46] [cursor=pointer]:
+            - generic [ref=f1e47]: 👥
+            - text: Alunos
+        - listitem [ref=f1e48]:
+          - button "🏋️ Meu Treino" [ref=f1e49] [cursor=pointer]:
+            - generic [ref=f1e50]: 🏋️
+            - text: Meu Treino
+        - listitem [ref=f1e51]:
+          - button "📈 Progresso dos Alunos" [ref=f1e52] [cursor=pointer]:
+            - generic [ref=f1e53]: 📈
+            - text: Progresso dos Alunos
+        - listitem [ref=f1e54]:
+          - button "👤 Meu Perfil" [ref=f1e55] [cursor=pointer]:
+            - generic [ref=f1e56]: 👤
+            - text: Meu Perfil
+      - generic [ref=f1e57]:
+        - generic [ref=f1e58]:
+          - generic [ref=f1e59]: Claude Test Personal LiveWF
+          - generic [ref=f1e60]: Personal
+        - generic [ref=f1e61]:
+          - generic [ref=f1e62]: Aparência
+          - button "🌙 Escuro" [ref=f1e63] [cursor=pointer]:
+            - generic [ref=f1e64]: 🌙
+            - generic [ref=f1e65]: Escuro
+        - button "Sair da conta" [ref=f1e66] [cursor=pointer]
+    - generic [ref=f1e67]:
+      - generic [ref=f1e68]:
+        - heading "Alunos" [level=1] [ref=f1e70]
+        - button "🔔" [ref=f1e72] [cursor=pointer]
+      - generic [ref=f1e73]:
+        - generic [ref=f1e75]:
+          - generic [ref=f1e76]:
+            - generic [ref=f1e78]:
+              - generic [ref=f1e79]: ● Gestão de Acesso
+              - generic [ref=f1e80]: Vincular Aluno
+            - paragraph [ref=f1e81]: Insira o e-mail de um aluno já cadastrado para adicioná-lo à sua lista.
+            - generic [ref=f1e82]:
+              - generic [ref=f1e83]:
+                - generic [ref=f1e84]: E-mail do aluno
+                - textbox "aluno@email.com" [ref=f1e85]
+              - button "Vincular" [ref=f1e86] [cursor=pointer]
+          - generic [ref=f1e87]:
+            - generic [ref=f1e88]: 👤
+            - paragraph [ref=f1e89]: Nenhum aluno vinculado ainda.
+            - paragraph [ref=f1e90]: Use o formulário acima para vincular seus alunos.
+        - text: ● ●
+  - text: ● ● ●

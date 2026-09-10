@@ -1711,6 +1711,82 @@
       color: var(--success);
     }
 
+    /* ---- LIVE EXERCISE EDIT (editar treino durante o registro ao vivo) ---- */
+    .live-ex-edit-notice {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      font-size: .76rem;
+      color: var(--text-muted);
+      background: var(--warning-a10);
+      border: 1px solid rgba(245,158,11,0.22);
+      border-radius: var(--radius-md);
+      padding: .6rem .875rem;
+      margin-bottom: 1rem;
+    }
+
+    .live-ex-header-actions { display: flex; align-items: center; gap: .4rem; flex-shrink: 0; }
+
+    .btn-live-ex-edit {
+      flex-shrink: 0;
+      width: 1.75rem;
+      height: 1.75rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border-subtle);
+      background: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: .85rem;
+      transition: background var(--transition), border-color var(--transition), color var(--transition);
+    }
+
+    .btn-live-ex-edit:hover { background: var(--white-a04); border-color: var(--accent-a28); color: var(--accent-soft); }
+    .btn-live-ex-edit.active { background: var(--accent-a10); border-color: var(--accent-a28); color: var(--accent-soft); }
+
+    .live-ex-edit-panel {
+      margin-top: .75rem;
+      padding: .875rem;
+      border-radius: var(--radius-lg);
+      background: var(--bg-dark-a50);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      gap: .625rem;
+    }
+
+    .live-ex-edit-row { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .live-ex-edit-row .form-control { flex: 1; min-width: 100px; padding: .5rem .75rem; }
+
+    .live-ex-sets-stepper {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      flex: 1;
+      min-width: 140px;
+    }
+
+    .btn-live-sets-step {
+      width: 1.9rem;
+      height: 1.9rem;
+      flex-shrink: 0;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+      background: none;
+      color: var(--text-primary);
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .btn-live-sets-step:hover:not(:disabled) { background: var(--white-a04); border-color: var(--accent-a28); }
+    .btn-live-sets-step:disabled { opacity: .4; cursor: not-allowed; }
+
+    .live-ex-sets-value { font-size: .9rem; font-weight: 700; color: var(--text-primary); min-width: 5.5rem; text-align: center; }
+
+    .live-ex-edit-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+
     /* ---- COMPARISON MODAL ---- */
     .comparison-modal-overlay {
       position: fixed;
@@ -8963,66 +9039,285 @@ function renderLiveExecutionScreen(workout) {
   document.getElementById('live-exec-workout-name').textContent = workout.name || fmtDate(workout.date)
   const exes = workout.workout_exercises || []
   document.getElementById('live-exec-exercise-list').innerHTML = exes.length
-    ? exes.map(ex => {
-        const isAero = ex.exercise_type === 'aerobico'
-        const planned = isAero
-          ? [
-              ex.duration_min ? `${ex.duration_min} min`     : null,
-              ex.distance_km  ? `${ex.distance_km} km`       : null,
-              ex.speed_kmh    ? `${ex.speed_kmh} km/h`       : null,
-              (ex.hr_min || ex.hr_max) ? `❤️ FC: ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : null
-            ].filter(Boolean).join(' &nbsp;·&nbsp; ')
-          : [
-              `${ex.sets} série${ex.sets > 1 ? 's' : ''} × ${ex.reps} reps × ${ex.weight_kg} kg`,
-              ex.cadencia          ? `Cadência: ${ex.cadencia}`         : null,
-              ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null,
-              ex.training_method   ? `Método: ${ex.training_method}`    : null
-            ].filter(Boolean).join(' &nbsp;·&nbsp; ')
-        const restBtn = !isAero && ex.tempo_descanso > 0
-          ? `<div class="rest-timer-wrap" id="rest-timer-${ex.id}">
-               <span style="font-size:.72rem;color:var(--text-muted);font-weight:500">Ao terminar uma série, inicie o descanso</span>
-               <button class="btn-rest-timer" id="rest-btn-${ex.id}" onclick="toggleRestTimer('${ex.id}',${ex.tempo_descanso})">⏱ Descanso (${ex.tempo_descanso}s)</button>
-             </div>`
-          : ''
-        const _cadPhases = !isAero ? parseCadencia(ex.cadencia) : null
-        const metronomBtn = _cadPhases
-          ? `<div class="metronome-wrap">
-               <button class="btn-metronome" id="metronome-btn-${ex.id}" onclick="toggleMetronome('${ex.id}','${ex.cadencia}')">▶ Metrônomo</button>
-               <div class="metronome-indicator" id="metronome-ind-${ex.id}" style="display:none">${_cadPhases.map((phase, i) => `<div class="metronome-phase${phase.duracao === 0 ? ' metronome-phase-skip' : ''}" id="mphase-${ex.id}-${i}"><span class="mphase-label">${phase.nome}</span><span class="mphase-dur">${phase.duracao > 0 ? phase.duracao + 's' : '—'}</span></div>${i < _cadPhases.length - 1 ? '<span class="metronome-sep">›</span>' : ''}`).join('')}</div>
-             </div>`
-          : ''
-
-        const setsCount = Math.max(1, parseInt(ex.sets) || 1)
-        const rowsHTML = isAero
-          ? `<div class="live-set-row" id="live-set-row-${ex.id}-1" data-exercise-id="${ex.id}" data-set-number="1">
-               <input type="number" id="live-dur-${ex.id}" class="form-control" placeholder="Duração (min)" step="0.5" min="0" value="${ex.duration_min ?? ''}" oninput="markLiveSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
-               <input type="number" id="live-dist-${ex.id}" class="form-control" placeholder="Distância (km)" step="0.01" min="0" value="${ex.distance_km ?? ''}" oninput="markLiveSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
-               <input type="number" id="live-speed-${ex.id}" class="form-control" placeholder="Vel. (km/h)" step="0.1" min="0" value="${ex.speed_kmh ?? ''}" oninput="markLiveSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
-               <button class="btn-live-set-save" onclick="saveLiveSet('${ex.id}',1)">✓ Salvar</button>
-             </div>`
-          : Array.from({length: setsCount}, (_, i) => `
-             <div class="live-set-row" id="live-set-row-${ex.id}-${i + 1}" data-exercise-id="${ex.id}" data-set-number="${i + 1}">
-               <span class="live-set-label">Série ${i + 1}</span>
-               <input type="number" id="live-w-${ex.id}-${i + 1}" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${ex.weight_kg ?? ''}" oninput="markLiveSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">
-               <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
-               <input type="number" id="live-r-${ex.id}-${i + 1}" class="form-control exec-set-reps" placeholder="reps" min="1" value="${ex.reps ?? ''}" oninput="markLiveSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">
-               <button class="btn-live-set-save" onclick="saveLiveSet('${ex.id}',${i + 1})">✓ Salvar</button>
-             </div>`).join('')
-
-        return `
-        <div class="exec-exercise-card" id="live-ex-${ex.id}">
-          <div class="exec-ex-header">
-            <div class="exec-ex-name">${isAero ? '🏃 ' : ''}${ex.exercise_name}</div>
-            <span class="live-ex-progress" id="live-ex-progress-${ex.id}">0/${isAero ? 1 : setsCount} série${(isAero ? 1 : setsCount) > 1 ? 's' : ''}</span>
-          </div>
-          <div class="exec-ex-planned">${planned || '—'}</div>
-          ${!isAero && ex.method_description ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.4rem;padding:.4rem .75rem;background:rgba(86,115,255,0.05);border-radius:var(--radius-md);border-left:2px solid var(--accent-a25)">${ex.method_description}</div>` : ''}
-          <div class="live-set-rows">${rowsHTML}</div>
-          ${metronomBtn}
-          ${restBtn}
-        </div>`
-      }).join('')
+    ? exes.map(ex => renderLiveExerciseCardHTML(ex)).join('')
     : '<div class="empty-state" style="padding:2rem"><div class="empty-icon">🏋️</div><p>Nenhum exercício neste treino.</p></div>'
+  loadLiveExerciseCatalog()
+}
+
+// Gera o card de UM exercício — usada tanto na renderização inicial da lista quanto
+// em refreshLiveExerciseCard(), pra atualizar só o exercício editado sem re-renderizar
+// (e perder o estado/valores digitados) dos outros exercícios da tela.
+function renderLiveExerciseCardHTML(ex) {
+  const isAero    = ex.exercise_type === 'aerobico'
+  const setsCount = Math.max(1, parseInt(ex.sets) || 1)
+  const planned = isAero
+    ? [
+        ex.duration_min ? `${ex.duration_min} min`     : null,
+        ex.distance_km  ? `${ex.distance_km} km`       : null,
+        ex.speed_kmh    ? `${ex.speed_kmh} km/h`       : null,
+        (ex.hr_min || ex.hr_max) ? `❤️ FC: ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : null
+      ].filter(Boolean).join(' &nbsp;·&nbsp; ')
+    : [
+        `${setsCount} série${setsCount > 1 ? 's' : ''} × ${ex.reps} reps × ${ex.weight_kg} kg`,
+        ex.cadencia          ? `Cadência: ${ex.cadencia}`         : null,
+        ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null,
+        ex.training_method   ? `Método: ${ex.training_method}`    : null
+      ].filter(Boolean).join(' &nbsp;·&nbsp; ')
+  const restBtn = !isAero && ex.tempo_descanso > 0
+    ? `<div class="rest-timer-wrap" id="rest-timer-${ex.id}">
+         <span style="font-size:.72rem;color:var(--text-muted);font-weight:500">Ao terminar uma série, inicie o descanso</span>
+         <button class="btn-rest-timer" id="rest-btn-${ex.id}" onclick="toggleRestTimer('${ex.id}',${ex.tempo_descanso})">⏱ Descanso (${ex.tempo_descanso}s)</button>
+       </div>`
+    : ''
+  const _cadPhases = !isAero ? parseCadencia(ex.cadencia) : null
+  const metronomBtn = _cadPhases
+    ? `<div class="metronome-wrap">
+         <button class="btn-metronome" id="metronome-btn-${ex.id}" onclick="toggleMetronome('${ex.id}','${ex.cadencia}')">▶ Metrônomo</button>
+         <div class="metronome-indicator" id="metronome-ind-${ex.id}" style="display:none">${_cadPhases.map((phase, i) => `<div class="metronome-phase${phase.duracao === 0 ? ' metronome-phase-skip' : ''}" id="mphase-${ex.id}-${i}"><span class="mphase-label">${phase.nome}</span><span class="mphase-dur">${phase.duracao > 0 ? phase.duracao + 's' : '—'}</span></div>${i < _cadPhases.length - 1 ? '<span class="metronome-sep">›</span>' : ''}`).join('')}</div>
+       </div>`
+    : ''
+
+  const rowsHTML = isAero
+    ? `<div class="live-set-row" id="live-set-row-${ex.id}-1" data-exercise-id="${ex.id}" data-set-number="1">
+         <input type="number" id="live-dur-${ex.id}" class="form-control" placeholder="Duração (min)" step="0.5" min="0" value="${ex.duration_min ?? ''}" oninput="markLiveSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
+         <input type="number" id="live-dist-${ex.id}" class="form-control" placeholder="Distância (km)" step="0.01" min="0" value="${ex.distance_km ?? ''}" oninput="markLiveSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
+         <input type="number" id="live-speed-${ex.id}" class="form-control" placeholder="Vel. (km/h)" step="0.1" min="0" value="${ex.speed_kmh ?? ''}" oninput="markLiveSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
+         <button class="btn-live-set-save" onclick="saveLiveSet('${ex.id}',1)">✓ Salvar</button>
+       </div>`
+    : Array.from({length: setsCount}, (_, i) => `
+       <div class="live-set-row" id="live-set-row-${ex.id}-${i + 1}" data-exercise-id="${ex.id}" data-set-number="${i + 1}">
+         <span class="live-set-label">Série ${i + 1}</span>
+         <input type="number" id="live-w-${ex.id}-${i + 1}" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${ex.weight_kg ?? ''}" oninput="markLiveSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">
+         <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
+         <input type="number" id="live-r-${ex.id}-${i + 1}" class="form-control exec-set-reps" placeholder="reps" min="1" value="${ex.reps ?? ''}" oninput="markLiveSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">
+         <button class="btn-live-set-save" onclick="saveLiveSet('${ex.id}',${i + 1})">✓ Salvar</button>
+       </div>`).join('')
+
+  const setsStepper = !isAero
+    ? `<div class="live-ex-sets-stepper">
+         <button type="button" class="btn-live-sets-step" onclick="liveAdjustSets('${ex.id}',-1)" ${setsCount <= 1 ? 'disabled' : ''}>−</button>
+         <span class="live-ex-sets-value">${setsCount} série${setsCount > 1 ? 's' : ''}</span>
+         <button type="button" class="btn-live-sets-step" onclick="liveAdjustSets('${ex.id}',1)">+</button>
+       </div>`
+    : ''
+
+  const editPanel = isAero
+    ? `<div class="live-ex-edit-panel" id="live-ex-editpanel-${ex.id}" style="display:none">
+         <div class="live-ex-edit-row">
+           <input type="text" class="form-control" id="live-edit-name-${ex.id}" value="${escHtml(ex.exercise_name)}" list="live-exercise-catalog" placeholder="Nome do exercício">
+         </div>
+         <div class="live-ex-edit-actions">
+           <button type="button" class="btn btn-outline btn-sm" onclick="cancelLiveExerciseEdit('${ex.id}')">Cancelar</button>
+           <button type="button" class="btn btn-primary btn-sm" onclick="saveLiveExerciseEdit('${ex.id}')">Salvar alteração</button>
+         </div>
+       </div>`
+    : `<div class="live-ex-edit-panel" id="live-ex-editpanel-${ex.id}" style="display:none">
+         <div class="live-ex-edit-row">
+           <input type="text" class="form-control" id="live-edit-name-${ex.id}" value="${escHtml(ex.exercise_name)}" list="live-exercise-catalog" placeholder="Nome do exercício">
+         </div>
+         <div class="live-ex-edit-row">
+           <input type="number" class="form-control" id="live-edit-weight-${ex.id}" value="${ex.weight_kg ?? ''}" step="0.5" min="0" placeholder="Carga planejada (kg)">
+           <input type="number" class="form-control" id="live-edit-reps-${ex.id}" value="${ex.reps ?? ''}" min="1" placeholder="Reps planejadas">
+           <input type="number" class="form-control" id="live-edit-rest-${ex.id}" value="${ex.tempo_descanso ?? ''}" min="0" placeholder="Descanso (s)">
+         </div>
+         <div class="live-ex-edit-actions">
+           <button type="button" class="btn btn-outline btn-sm" onclick="cancelLiveExerciseEdit('${ex.id}')">Cancelar</button>
+           <button type="button" class="btn btn-primary btn-sm" onclick="saveLiveExerciseEdit('${ex.id}')">Salvar alteração</button>
+         </div>
+       </div>`
+
+  return `
+  <div class="exec-exercise-card" id="live-ex-${ex.id}">
+    <div class="exec-ex-header">
+      <div class="exec-ex-name">${isAero ? '🏃 ' : ''}${escHtml(ex.exercise_name)}</div>
+      <div class="live-ex-header-actions">
+        <span class="live-ex-progress" id="live-ex-progress-${ex.id}">0/${isAero ? 1 : setsCount} série${(isAero ? 1 : setsCount) > 1 ? 's' : ''}</span>
+        <button type="button" class="btn-live-ex-edit" id="live-ex-editbtn-${ex.id}" title="Editar exercício" onclick="toggleLiveExerciseEdit('${ex.id}')">✎</button>
+        <button type="button" class="btn-live-ex-edit" title="Remover exercício" onclick="removeLiveExercise('${ex.id}')">🗑</button>
+      </div>
+    </div>
+    <div class="exec-ex-planned">${planned || '—'}</div>
+    ${setsStepper}
+    ${editPanel}
+    ${!isAero && ex.method_description ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.4rem;padding:.4rem .75rem;background:rgba(86,115,255,0.05);border-radius:var(--radius-md);border-left:2px solid var(--accent-a25)">${escHtml(ex.method_description)}</div>` : ''}
+    <div class="live-set-rows">${rowsHTML}</div>
+    ${metronomBtn}
+    ${restBtn}
+  </div>`
+}
+
+// Re-renderiza só o card do exercício editado (preserva o estado — inputs digitados,
+// metrônomo, descanso — dos outros exercícios da lista) e reaplica o visual de
+// séries já salvas nesta sessão.
+function refreshLiveExerciseCard(exerciseId) {
+  const ex   = (_liveWorkoutData?.workout_exercises || []).find(e => e.id === exerciseId)
+  const card = document.getElementById(`live-ex-${exerciseId}`)
+  if (!ex || !card) return
+  card.outerHTML = renderLiveExerciseCardHTML(ex)
+  hydrateLiveExerciseSavedSets(exerciseId)
+  updateLiveExerciseProgress(exerciseId)
+}
+
+// Reaplica nos inputs/linhas o que já foi salvo em _liveSavedSets pra este exercício —
+// usada tanto ao restaurar a tela inteira após reload quanto ao re-renderizar um card
+// único depois de uma edição (pra não perder o "✓ Salvo" de séries já registradas).
+function hydrateLiveExerciseSavedSets(exerciseId) {
+  const sets = _liveSavedSets[exerciseId]
+  if (!sets) return
+  Object.entries(sets).forEach(([setNum, data]) => {
+    const row = document.getElementById(`live-set-row-${exerciseId}-${setNum}`)
+    if (!row) return
+    if (data.weight_executed != null) {
+      const wEl = document.getElementById(`live-w-${exerciseId}-${setNum}`); if (wEl) wEl.value = data.weight_executed
+      const rEl = document.getElementById(`live-r-${exerciseId}-${setNum}`); if (rEl) rEl.value = data.reps_executed
+    } else {
+      const dEl = document.getElementById(`live-dur-${exerciseId}`);   if (dEl) dEl.value = data.duration_executed_min ?? ''
+      const diEl = document.getElementById(`live-dist-${exerciseId}`); if (diEl) diEl.value = data.distance_executed_km ?? ''
+      const spEl = document.getElementById(`live-speed-${exerciseId}`); if (spEl) spEl.value = data.speed_executed_kmh ?? ''
+    }
+    row.classList.add('live-set-saved')
+    const b = row.querySelector('.btn-live-set-save')
+    if (b) b.textContent = '✓ Salvo'
+  })
+}
+
+// Autocomplete de nomes de exercício ao trocar um exercício — não é um catálogo fixo,
+// é a mesma lista de sugestões (nomes já usados nos treinos deste personal/alunos)
+// já usada na calculadora (calcLoadExerciseNames). Fire-and-forget, não bloqueia a tela.
+async function loadLiveExerciseCatalog() {
+  try {
+    const studentIds = [profile.id, ...students.map(s => s.id)]
+    const { data: wData } = await sb.from('workouts').select('id').in('student_id', studentIds).limit(500)
+    if (!wData?.length) return
+    const { data: exData } = await sb.from('workout_exercises').select('exercise_name').in('workout_id', wData.map(w => w.id))
+    if (!exData?.length) return
+    const names = [...new Set(exData.map(e => e.exercise_name).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }))
+    const dl = document.getElementById('live-exercise-catalog')
+    if (dl) dl.innerHTML = names.map(n => `<option value="${escHtml(n)}">`).join('')
+  } catch {}
+}
+
+function toggleLiveExerciseEdit(exerciseId) {
+  const panel = document.getElementById(`live-ex-editpanel-${exerciseId}`)
+  const btn   = document.getElementById(`live-ex-editbtn-${exerciseId}`)
+  if (!panel) return
+  const opening = panel.style.display === 'none'
+  panel.style.display = opening ? 'flex' : 'none'
+  if (btn) btn.classList.toggle('active', opening)
+}
+
+function cancelLiveExerciseEdit(exerciseId) {
+  const panel = document.getElementById(`live-ex-editpanel-${exerciseId}`)
+  const btn   = document.getElementById(`live-ex-editbtn-${exerciseId}`)
+  if (panel) panel.style.display = 'none'
+  if (btn) btn.classList.remove('active')
+}
+
+// Edita o exercício (nome/carga/reps/descanso planejados) da linha existente via UPDATE
+// pontual — nunca delete+reinsert. É a mesma linha (id preservado), então não dispara o
+// cascade delete que apaga workout_executions (ver saveWorkout(), que usa delete+reinsert
+// e por isso apaga o histórico do treino inteiro a cada edição — bug pré-existente, não
+// replicado aqui de propósito).
+async function saveLiveExerciseEdit(exerciseId) {
+  const ex = (_liveWorkoutData?.workout_exercises || []).find(e => e.id === exerciseId)
+  if (!ex) return
+  const isAero = ex.exercise_type === 'aerobico'
+
+  const nameInput = document.getElementById(`live-edit-name-${exerciseId}`)
+  const name = nameInput.value.trim()
+  if (!name) { toast('Informe o nome do exercício.', 'error'); return }
+
+  const patch = { exercise_name: name }
+  if (!isAero) {
+    const weight = parseFloat(document.getElementById(`live-edit-weight-${exerciseId}`).value)
+    const reps   = parseInt(document.getElementById(`live-edit-reps-${exerciseId}`).value)
+    const restRaw = document.getElementById(`live-edit-rest-${exerciseId}`).value.trim()
+    if (isNaN(weight) || weight < 0) { toast('Informe uma carga planejada válida.', 'error'); return }
+    if (!reps || reps < 1)           { toast('Informe repetições planejadas válidas.', 'error'); return }
+    patch.weight_kg       = weight
+    patch.reps             = reps
+    patch.tempo_descanso   = restRaw === '' ? null : parseInt(restRaw)
+  }
+
+  const panel  = document.getElementById(`live-ex-editpanel-${exerciseId}`)
+  const saveBtn = panel?.querySelector('.btn-primary')
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Salvando…' }
+  try {
+    const { error } = await sb.from('workout_exercises').update(patch).eq('id', exerciseId)
+    if (error) throw error
+    Object.assign(ex, patch)
+    refreshLiveExerciseCard(exerciseId)
+    saveLiveExecutionState()
+    toast('Exercício atualizado — vale também pras próximas vezes que esse treino for usado.', 'success')
+  } catch (err) {
+    console.error('[saveLiveExerciseEdit] erro:', err?.message || err)
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Salvar alteração' }
+    toast('Não foi possível salvar a alteração. Verifique sua conexão e tente novamente.', 'error')
+  }
+}
+
+// +1/-1 série: ajusta só o campo `sets` (não existe uma linha por série no banco —
+// as linhas da tela são geradas a partir desse número). Reduzir não apaga séries já
+// registradas de um set_number maior, só para de exibi-las aqui; avisa antes disso.
+async function liveAdjustSets(exerciseId, delta) {
+  const ex = (_liveWorkoutData?.workout_exercises || []).find(e => e.id === exerciseId)
+  if (!ex) return
+  const current = Math.max(1, parseInt(ex.sets) || 1)
+  const next = current + delta
+  if (next < 1) return
+
+  if (delta < 0 && _liveSavedSets[exerciseId]?.[current]) {
+    if (!confirm(`A série ${current} já tem registro salvo. Remover mesmo assim? O registro salvo não é apagado, só deixa de aparecer aqui.`)) return
+  }
+
+  const stepBtns = document.querySelectorAll(`#live-ex-${exerciseId} .btn-live-sets-step`)
+  stepBtns.forEach(b => b.disabled = true)
+  try {
+    const { error } = await sb.from('workout_exercises').update({ sets: next }).eq('id', exerciseId)
+    if (error) throw error
+    ex.sets = next
+    refreshLiveExerciseCard(exerciseId)
+    saveLiveExecutionState()
+  } catch (err) {
+    console.error('[liveAdjustSets] erro:', err?.message || err)
+    toast('Não foi possível ajustar o número de séries.', 'error')
+    stepBtns.forEach(b => b.disabled = false)
+  }
+}
+
+// Remove o exercício do treino (linha inteira). Ao contrário de editar campos, isso é
+// um DELETE de verdade — mas de UMA linha só (não delete+reinsert do treino inteiro
+// como em saveWorkout()), então só dispara o cascade nas execuções DESSE exercício,
+// nunca nos outros. Ainda assim avisa antes, se já existir histórico.
+async function removeLiveExercise(exerciseId) {
+  const ex = (_liveWorkoutData?.workout_exercises || []).find(e => e.id === exerciseId)
+  if (!ex) return
+
+  let historyCount = 0
+  try {
+    const { count } = await sb.from('workout_executions')
+      .select('id', { count: 'exact', head: true }).eq('exercise_id', exerciseId)
+    historyCount = count || 0
+  } catch {}
+
+  const warnMsg = historyCount > 0
+    ? `"${ex.exercise_name}" já tem ${historyCount} série${historyCount > 1 ? 's' : ''} registrada${historyCount > 1 ? 's' : ''} (de hoje e/ou sessões anteriores). Remover esse exercício apaga esse histórico também, permanentemente. Remover mesmo assim?`
+    : `Remover "${ex.exercise_name}" deste treino?`
+  if (!confirm(warnMsg)) return
+
+  try {
+    const { error } = await sb.from('workout_exercises').delete().eq('id', exerciseId)
+    if (error) throw error
+    _liveWorkoutData.workout_exercises = (_liveWorkoutData.workout_exercises || []).filter(e => e.id !== exerciseId)
+    delete _liveSavedSets[exerciseId]
+    document.getElementById(`live-ex-${exerciseId}`)?.remove()
+    saveLiveExecutionState()
+    toast('Exercício removido do treino.', 'success')
+  } catch (err) {
+    console.error('[removeLiveExercise] erro:', err?.message || err)
+    toast('Não foi possível remover o exercício.', 'error')
+  }
 }
 
 function markLiveSetDirty(exerciseId, setNumber) {
@@ -9159,22 +9454,8 @@ function restoreLiveExecutionState() {
 
     renderLiveExecutionScreen(_liveWorkoutData)
 
-    Object.entries(_liveSavedSets).forEach(([exId, sets]) => {
-      Object.entries(sets).forEach(([setNum, data]) => {
-        const row = document.getElementById(`live-set-row-${exId}-${setNum}`)
-        if (!row) return
-        if (data.weight_executed != null) {
-          const wEl = document.getElementById(`live-w-${exId}-${setNum}`); if (wEl) wEl.value = data.weight_executed
-          const rEl = document.getElementById(`live-r-${exId}-${setNum}`); if (rEl) rEl.value = data.reps_executed
-        } else {
-          const dEl = document.getElementById(`live-dur-${exId}`);   if (dEl) dEl.value = data.duration_executed_min ?? ''
-          const diEl = document.getElementById(`live-dist-${exId}`); if (diEl) diEl.value = data.distance_executed_km ?? ''
-          const spEl = document.getElementById(`live-speed-${exId}`); if (spEl) spEl.value = data.speed_executed_kmh ?? ''
-        }
-        row.classList.add('live-set-saved')
-        const b = row.querySelector('.btn-live-set-save')
-        if (b) b.textContent = '✓ Salvo'
-      })
+    Object.keys(_liveSavedSets).forEach(exId => {
+      hydrateLiveExerciseSavedSets(exId)
       updateLiveExerciseProgress(exId)
     })
 
@@ -9356,6 +9637,8 @@ function finishLiveExecution() {
       </div>
     </div>
     <div class="section-label" style="margin-bottom:1rem">Marque cada série assim que o aluno terminar</div>
+    <div class="live-ex-edit-notice">✎ Toque no lápis pra ajustar um exercício durante o treino — a alteração também vale para as próximas vezes que esse treino for usado.</div>
+    <datalist id="live-exercise-catalog"></datalist>
     <div id="live-exec-exercise-list"></div>
     <div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border-subtle)">
       <button class="btn-finish-workout" style="width:100%;padding:.75rem" onclick="finishLiveExecution()">■ Finalizar Registro</button>

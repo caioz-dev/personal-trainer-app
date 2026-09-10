@@ -1,0 +1,94 @@
+- generic [active] [ref=f1e1]:
+  - generic [ref=f1e37]:
+    - navigation [ref=f1e38]:
+      - generic "Voltar para o início" [ref=f1e40] [cursor=pointer]:
+        - img "PersonalPro" [ref=f1e41]
+        - generic [ref=f1e42]:
+          - text: PersonalPro
+          - generic [ref=f1e43]: Personal Trainer
+      - list [ref=f1e44]:
+        - listitem [ref=f1e45]:
+          - button "👥 Alunos" [ref=f1e46] [cursor=pointer]:
+            - generic [ref=f1e47]: 👥
+            - text: Alunos
+        - listitem [ref=f1e48]:
+          - button "🏋️ Meu Treino" [ref=f1e49] [cursor=pointer]:
+            - generic [ref=f1e50]: 🏋️
+            - text: Meu Treino
+        - listitem [ref=f1e51]:
+          - button "📈 Progresso dos Alunos" [ref=f1e52] [cursor=pointer]:
+            - generic [ref=f1e53]: 📈
+            - text: Progresso dos Alunos
+        - listitem [ref=f1e54]:
+          - button "👤 Meu Perfil" [ref=f1e55] [cursor=pointer]:
+            - generic [ref=f1e56]: 👤
+            - text: Meu Perfil
+      - generic [ref=f1e57]:
+        - generic [ref=f1e58]:
+          - generic [ref=f1e59]: Claude Test Personal LiveWF
+          - generic [ref=f1e60]: Personal
+        - generic [ref=f1e61]:
+          - generic [ref=f1e62]: Aparência
+          - button "🌙 Escuro" [ref=f1e63] [cursor=pointer]:
+            - generic [ref=f1e64]: 🌙
+            - generic [ref=f1e65]: Escuro
+        - button "Sair da conta" [ref=f1e66] [cursor=pointer]
+    - generic [ref=f1e67]:
+      - generic [ref=f1e68]:
+        - heading "Claude Test Aluno LiveWF" [level=1] [ref=f1e124]
+        - button "🔔 2" [ref=f1e95] [cursor=pointer]:
+          - text: 🔔
+          - generic [ref=f1e96]: "2"
+      - generic [ref=f1e73]:
+        - text: ● ● ● ●
+        - generic [ref=f1e126]:
+          - generic [ref=f1e127]:
+            - generic [ref=f1e128]:
+              - generic [ref=f1e129]: CT
+              - generic [ref=f1e130]:
+                - generic [ref=f1e131]: ● Ficha do Aluno
+                - generic [ref=f1e132]: Claude Test Aluno LiveWF
+            - generic [ref=f1e133]:
+              - button "➕ Novo Treino" [ref=f1e134] [cursor=pointer]
+              - button "✕ Fechar" [ref=f1e135] [cursor=pointer]
+          - generic [ref=f1e136]:
+            - generic [ref=f1e137]:
+              - generic [ref=f1e138]: "0"
+              - generic [ref=f1e139]: Treinos
+            - generic [ref=f1e140]:
+              - generic [ref=f1e141]: 0 kg
+              - generic [ref=f1e142]: Volume acumulado
+            - generic [ref=f1e143]:
+              - generic [ref=f1e144]: "0"
+              - generic [ref=f1e145]: Execuções
+          - generic [ref=f1e146]:
+            - generic [ref=f1e148]:
+              - generic [ref=f1e149]: ● Ferramentas
+              - generic [ref=f1e150]: 🧮 Calculadora de Repetições
+            - paragraph [ref=f1e151]: Informe o exercício e o peso de hoje para descobrir o mínimo de repetições necessárias para superar o volume anterior.
+            - generic [ref=f1e152]:
+              - generic [ref=f1e153]: Exercício
+              - 'combobox "Ex: Supino Reto" [ref=f1e154]'
+            - generic [ref=f1e155]:
+              - generic [ref=f1e156]: Carga de hoje (kg)
+              - 'spinbutton "Ex: 85" [ref=f1e157]'
+            - button "Calcular" [ref=f1e158] [cursor=pointer]
+          - generic [ref=f1e159]:
+            - generic [ref=f1e160]:
+              - generic [ref=f1e161]: ● Rotinas
+              - button "➕ Nova Rotina" [ref=f1e162] [cursor=pointer]
+            - paragraph [ref=f1e163]: Nenhuma rotina criada ainda.
+          - generic [ref=f1e164]:
+            - generic [ref=f1e165]: ● Histórico de Treinos
+            - generic [ref=f1e166]:
+              - generic [ref=f1e167]: 🏋️
+              - paragraph [ref=f1e168]: Nenhum treino registrado para Claude Test Aluno LiveWF.
+            - generic [ref=f1e169]:
+              - generic [ref=f1e170]:
+                - generic [ref=f1e171]: ● Execuções Realizadas
+                - button "▶ Registrar ao vivo" [ref=f1e172] [cursor=pointer]
+                - button "➕ Registrar retroativo" [ref=f1e173] [cursor=pointer]
+              - generic [ref=f1e174]:
+                - generic [ref=f1e175]: 📊
+                - paragraph [ref=f1e176]: Nenhuma execução registrada ainda.
+  - text: ● ● ●

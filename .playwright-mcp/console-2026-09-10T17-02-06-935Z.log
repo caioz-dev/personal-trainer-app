@@ -1,0 +1,13 @@
+[      63ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:8765/index.html:0
+[      63ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:8765/index.html:0
+[      63ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "new-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:8765/index.html:0
+[      63ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "new-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:8765/index.html:0
+[   45028ms] [LOG] [restoreExecutionState DEBUG] chamada. timerInterval: null me?.id: d657c61e-3f90-45b1-b483-e08b3238c972 @ http://localhost:8765/index.html:8160
+[   45029ms] [LOG] [restoreExecutionState DEBUG] raw do localStorage: null @ http://localhost:8765/index.html:8165
+[   45029ms] [LOG] [restoreExecutionState DEBUG] nada salvo (raw vazio) — nunca chegou a salvar, ou já foi limpo @ http://localhost:8765/index.html:8166
+[   45029ms] [LOG] [restoreWorkoutFormState DEBUG] chamada. profile?.role: personal me?.id: d657c61e-3f90-45b1-b483-e08b3238c972 @ http://localhost:8765/index.html:6417
+[   45029ms] [LOG] [restoreWorkoutFormState DEBUG] raw do localStorage: null @ http://localhost:8765/index.html:6422
+[   45029ms] [LOG] [restoreWorkoutFormState DEBUG] nada salvo (raw vazio) — nunca chegou a salvar, ou já foi limpo @ http://localhost:8765/index.html:6423
+[   66862ms] [ERROR] Failed to load resource: the server responded with a status of 500 () @ https://kdmcaksypdjsnwufkxng.supabase.co/functions/v1/notify-new-student:0
+[   66862ms] [ERROR] [notify-new-student] resposta não-OK: 500 {"error":"Email send failed","detail":"{\"statusCode\":422,\"name\":\"validation_error\",\"message\":\"Invalid `to` field. Please use our testing email address instead of domains like `example.com`. See our documentation for more information.\"}"} @ http://localhost:8765/index.html:3734
+[   86207ms] [ERROR] Failed to load resource: the server responded with a status of 500 () @ https://kdmcaksypdjsnwufkxng.supabase.co/functions/v1/notify-new-workout:0

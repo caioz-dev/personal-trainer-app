@@ -1,0 +1,20 @@
+- generic [active] [ref=f1e1]:
+  - generic [ref=f1e4]:
+    - generic [ref=f1e5]:
+      - img "PersonalPro" [ref=f1e6]
+      - text: PersonalPro
+      - generic [ref=f1e7]: Gestão Inteligente de Treinos
+    - generic [ref=f1e8]:
+      - button "Login" [ref=f1e9] [cursor=pointer]
+      - button "Cadastrar" [ref=f1e10] [cursor=pointer]
+    - generic [ref=f1e11]:
+      - generic [ref=f1e12]:
+        - generic [ref=f1e13]: Email
+        - textbox "seu@email.com" [ref=f1e14]
+      - generic [ref=f1e15]:
+        - generic [ref=f1e16]: Senha
+        - textbox "••••••••" [ref=f1e17]
+      - button "Entrar" [ref=f1e18] [cursor=pointer]
+      - button "Esqueceu sua senha?" [ref=f1e20] [cursor=pointer]
+    - generic [ref=f1e35]: Conta criada com sucesso! Faça login para continuar.
+  - text: ● ● ● ● ●
