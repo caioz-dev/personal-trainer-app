@@ -4593,7 +4593,9 @@ async function renderStudentSheet(studentId, studentName, gen) {
   if (sheetChart) { sheetChart.destroy(); sheetChart = null }
   const body = document.getElementById('student-sheet-body')
 
-  const studentAvatarUrl = (students.find(s => s.id === studentId) || {}).avatar_url || null
+  const studentRecord   = students.find(s => s.id === studentId) || {}
+  const studentAvatarUrl = studentRecord.avatar_url || null
+  const studentEmail    = studentRecord.email || null
   const safeIdH   = studentId
   const safeNameH = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
   const header = `
@@ -4603,6 +4605,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
         <div>
           <div class="section-label" style="margin-bottom:.25rem">Ficha do Aluno</div>
           <div style="font-size:1.05rem;font-weight:800;letter-spacing:-0.02em">${studentName}</div>
+          ${studentEmail ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.15rem">✉️ ${escHtml(studentEmail)}</div>` : ''}
         </div>
       </div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
