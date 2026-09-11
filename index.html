@@ -9476,6 +9476,118 @@ async function removeLiveExercise(exerciseId) {
   }
 }
 
+// ── Adicionar exercício novo direto na tela de Registrar ao vivo ──
+// Mesma cautela dos outros pontos de edição desta tela: INSERT pontual de UMA linha nova
+// em workout_exercises (nunca delete+reinsert do treino inteiro como em saveWorkout()),
+// então não mexe nas linhas dos outros exercícios nem no histórico já salvo deles.
+function toggleLiveAddExercise() {
+  const panel = document.getElementById('live-add-ex-panel')
+  if (!panel) return
+  const opening = panel.style.display === 'none'
+  panel.style.display = opening ? 'flex' : 'none'
+  if (opening) document.getElementById('live-add-ex-name')?.focus()
+  else _resetLiveAddExerciseForm()
+}
+
+function cancelLiveAddExercise() {
+  const panel = document.getElementById('live-add-ex-panel')
+  if (panel) panel.style.display = 'none'
+  _resetLiveAddExerciseForm()
+}
+
+function _resetLiveAddExerciseForm() {
+  ;['live-add-ex-name', 'live-add-ex-sets', 'live-add-ex-weight', 'live-add-ex-reps', 'live-add-ex-rest',
+    'live-add-ex-duration', 'live-add-ex-distance', 'live-add-ex-speed'].forEach(id => {
+    const el = document.getElementById(id)
+    if (el) el.value = ''
+  })
+  const typeSel = document.getElementById('live-add-ex-type')
+  if (typeSel) typeSel.value = 'musculacao'
+  toggleLiveAddExerciseType()
+}
+
+function toggleLiveAddExerciseType() {
+  const isAero = document.getElementById('live-add-ex-type')?.value === 'aerobico'
+  const muscEl = document.getElementById('live-add-ex-musc')
+  const aeroEl = document.getElementById('live-add-ex-aero')
+  if (muscEl) muscEl.style.display = isAero ? 'none' : 'flex'
+  if (aeroEl) aeroEl.style.display = isAero ? 'flex' : 'none'
+}
+
+async function saveLiveAddExercise() {
+  const workoutId = _liveWorkoutData?.id
+  if (!workoutId) return
+
+  const name = document.getElementById('live-add-ex-name').value.trim()
+  if (!name) { toast('Informe o nome do exercício.', 'error'); return }
+  const isAero = document.getElementById('live-add-ex-type').value === 'aerobico'
+  const position = (_liveWorkoutData.workout_exercises || []).length
+
+  let record
+  if (isAero) {
+    const duration = parseFloat(document.getElementById('live-add-ex-duration').value)
+    if (isNaN(duration) || duration < 0) { toast('Informe a duração (min).', 'error'); return }
+    record = {
+      workout_id: workoutId, exercise_name: name, exercise_type: 'aerobico',
+      sets: 1, weight_kg: 0, reps: 0, volume: 0,
+      cadencia: null, tempo_descanso: null,
+      duration_min: duration,
+      distance_km: parseFloat(document.getElementById('live-add-ex-distance').value) || null,
+      speed_kmh:   parseFloat(document.getElementById('live-add-ex-speed').value)    || null,
+      pace: null, recovery_interval_min: null, recovery_speed_kmh: null,
+      hr_min: null, hr_max: null,
+      training_method: null, method_description: null,
+      position
+    }
+  } else {
+    const sets   = parseInt(document.getElementById('live-add-ex-sets').value)
+    const weight = parseFloat(document.getElementById('live-add-ex-weight').value)
+    const reps   = parseInt(document.getElementById('live-add-ex-reps').value)
+    if (!sets || sets < 1)           { toast('Informe o número de séries.', 'error'); return }
+    if (isNaN(weight) || weight < 0) { toast('Informe a carga planejada (kg).', 'error'); return }
+    if (!reps || reps < 1)           { toast('Informe as repetições planejadas.', 'error'); return }
+    const restRaw = document.getElementById('live-add-ex-rest').value.trim()
+    record = {
+      workout_id: workoutId, exercise_name: name, exercise_type: 'musculacao',
+      sets, weight_kg: weight, reps, volume: parseFloat((sets * weight * reps).toFixed(2)),
+      cadencia: null, tempo_descanso: restRaw === '' ? null : parseInt(restRaw),
+      duration_min: null, distance_km: null, speed_kmh: null, pace: null,
+      recovery_interval_min: null, recovery_speed_kmh: null,
+      hr_min: null, hr_max: null,
+      training_method: null, method_description: null,
+      position
+    }
+  }
+
+  const saveBtn = document.getElementById('live-add-ex-save-btn')
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Adicionando…' }
+  try {
+    const { data, error } = await sb.from('workout_exercises').insert(record).select().maybeSingle()
+    if (error) throw error
+    if (!data) throw new Error('Não foi possível obter o exercício recém-criado.')
+    if (!_liveWorkoutData.workout_exercises) _liveWorkoutData.workout_exercises = []
+    _liveWorkoutData.workout_exercises.push(data)
+    _appendLiveExerciseCard(data)
+    cancelLiveAddExercise()
+    saveLiveExecutionState()
+    toast('Exercício adicionado ao treino.', 'success')
+  } catch (err) {
+    console.error('[saveLiveAddExercise] erro:', err?.message || err)
+    toast('Não foi possível adicionar o exercício. Verifique sua conexão e tente novamente.', 'error')
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '+ Adicionar' }
+  }
+}
+
+// Anexa o card do exercício recém-criado ao final da lista sem re-renderizar os outros —
+// preserva valores já digitados (ainda não salvos) nos demais cards durante a sessão ao vivo.
+function _appendLiveExerciseCard(ex) {
+  const list = document.getElementById('live-exec-exercise-list')
+  if (!list) return
+  if (list.querySelector('.empty-state')) list.innerHTML = ''
+  list.insertAdjacentHTML('beforeend', renderLiveExerciseCardHTML(ex))
+}
+
 function markLiveSetDirty(exerciseId, setNumber) {
   const row = document.getElementById(`live-set-row-${exerciseId}-${setNumber}`)
   if (!row) return
@@ -9796,6 +9908,33 @@ function finishLiveExecution() {
     <div class="live-ex-edit-notice">✎ Toque no lápis pra ajustar um exercício durante o treino — a alteração também vale para as próximas vezes que esse treino for usado.</div>
     <datalist id="live-exercise-catalog"></datalist>
     <div id="live-exec-exercise-list"></div>
+    <div style="margin:1rem 0 .5rem">
+      <button type="button" class="btn btn-outline btn-sm" onclick="toggleLiveAddExercise()">+ Adicionar exercício</button>
+    </div>
+    <div class="live-ex-edit-panel" id="live-add-ex-panel" style="display:none;margin-bottom:1rem">
+      <div class="live-ex-edit-row">
+        <input type="text" class="form-control" id="live-add-ex-name" list="live-exercise-catalog" placeholder="Nome do exercício">
+        <select class="form-control" id="live-add-ex-type" onchange="toggleLiveAddExerciseType()" style="max-width:170px;flex:initial">
+          <option value="musculacao">🏋️ Musculação</option>
+          <option value="aerobico">🏃 Aeróbico</option>
+        </select>
+      </div>
+      <div class="live-ex-edit-row" id="live-add-ex-musc">
+        <input type="number" class="form-control" id="live-add-ex-sets" placeholder="Séries" min="1" value="3">
+        <input type="number" class="form-control" id="live-add-ex-weight" placeholder="Carga (kg)" step="0.5" min="0">
+        <input type="number" class="form-control" id="live-add-ex-reps" placeholder="Reps">
+        <input type="number" class="form-control" id="live-add-ex-rest" placeholder="Descanso (s, opcional)" min="0">
+      </div>
+      <div class="live-ex-edit-row" id="live-add-ex-aero" style="display:none">
+        <input type="number" class="form-control" id="live-add-ex-duration" placeholder="Duração (min)" step="0.5" min="0">
+        <input type="number" class="form-control" id="live-add-ex-distance" placeholder="Distância (km, opcional)" step="0.01" min="0">
+        <input type="number" class="form-control" id="live-add-ex-speed" placeholder="Vel. (km/h, opcional)" step="0.1" min="0">
+      </div>
+      <div class="live-ex-edit-actions">
+        <button type="button" class="btn btn-outline btn-sm" onclick="cancelLiveAddExercise()">Cancelar</button>
+        <button type="button" class="btn btn-primary btn-sm" id="live-add-ex-save-btn" onclick="saveLiveAddExercise()">+ Adicionar</button>
+      </div>
+    </div>
     <div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border-subtle)">
       <button class="btn-finish-workout" style="width:100%;padding:.75rem" onclick="finishLiveExecution()">■ Finalizar Registro</button>
     </div>
