@@ -5903,6 +5903,11 @@ async function renderProfile() {
         </div>
         <form onsubmit="saveProfile(event)">
           <div class="form-group" style="margin-bottom:1rem">
+            <label>E-mail de login</label>
+            <input type="text" class="form-control" value="${escHtml(profile.email || '')}" disabled readonly style="opacity:.7;cursor:not-allowed">
+            <div style="font-size:.75rem;color:var(--text-muted);margin-top:.3rem">E-mail usado para entrar na sua conta. Não pode ser alterado por aqui.</div>
+          </div>
+          <div class="form-group" style="margin-bottom:1rem">
             <label>Nome de usuário</label>
             <input id="prof-username" type="text" class="form-control" placeholder="Ex: caio_fit, João Musculação…" value="${escHtml(profile.username || '')}">
             <div style="font-size:.75rem;color:var(--text-muted);margin-top:.3rem">Aparece para o seu personal no lugar do nome completo. Deixe em branco para usar o nome completo.</div>
