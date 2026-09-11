@@ -2918,6 +2918,7 @@ let _selectedWorkoutIds     = new Set()
 let _editingRoutineId       = null
 let _metronomeToken         = null   // { exId, cancelled }
 let _audioCtx               = null   // reused AudioContext for metronome
+let _audioUnlockWarned      = false  // evita repetir o toast de "não consegui ativar o som"
 let _routineExCache         = {}     // workout_id → workout_exercises[], populated on accordion expand
 
 // Limpa TODO o estado da sessão anterior — chamado no logout e antes de boot de novo usuário
@@ -4754,12 +4755,15 @@ async function renderStudentSheet(studentId, studentName, gen) {
         </tr>`
     }).join('')
 
-    // Agrupa por workout_id + executed_at exato (uma sessão = todas as linhas gravadas no
-    // mesmo insert, mesmo timestamp); só workout_id juntaria sessões diferentes do mesmo
-    // treino-modelo (ex: duas semanas de "Treino A") num único card.
+    // Agrupa por session_id quando existir — é o identificador real de uma sessão do
+    // "Registrar ao vivo", onde cada série é salva com seu próprio executed_at (upsert
+    // série a série), então agrupar por executed_at exato quebrava isso em um card por
+    // série. Execuções antigas/manuais sem session_id caem no fallback por
+    // workout_id + executed_at exato (mesmo insert em lote); só workout_id juntaria
+    // sessões diferentes do mesmo treino-modelo (ex: duas semanas de "Treino A") num único card.
     const execByWorkout = {}
     for (const ex of executions) {
-      const key = ex.workout_id + '|' + ex.executed_at
+      const key = ex.session_id ? `sid:${ex.session_id}` : (ex.workout_id + '|' + ex.executed_at)
       if (!execByWorkout[key]) {
         execByWorkout[key] = {
           workoutId:    ex.workout_id,
@@ -5207,11 +5211,12 @@ async function renderMyWorkout(gen) {
         }).join('')}</div>`
 
     // ── Execution groups ──
-    // Agrupa por workout_id + executed_at exato (ver renderStudentSheet) pra não fundir
-    // sessões diferentes do mesmo treino-modelo num único card.
+    // Agrupa por session_id quando existir (sessão real do "Registrar ao vivo", onde cada
+    // série tem seu próprio executed_at); fallback por workout_id + executed_at exato para
+    // execuções antigas/manuais sem session_id (ver renderStudentSheet).
     const execByWorkout = {}
     for (const ex of executions) {
-      const key = ex.workout_id + '|' + ex.executed_at
+      const key = ex.session_id ? `sid:${ex.session_id}` : (ex.workout_id + '|' + ex.executed_at)
       if (!execByWorkout[key]) {
         execByWorkout[key] = { workoutId: ex.workout_id, workoutName: ex.workouts?.name || (ex.workouts?.date ? fmtDate(ex.workouts.date) : '—'), executedAt: ex.executed_at, exerciseMap: {} }
       }
@@ -8000,6 +8005,12 @@ function toggleRestTimer(exerciseId, totalSeconds) {
 // por padrão começa agora. remaining é sempre recalculado a partir de startedAt,
 // nunca decrementado por tick, para sobreviver a fechamentos/recargas da página.
 function startRestTimer(exerciseId, totalSeconds, startedAt = Date.now()) {
+  // O beep dos últimos 5s (playCountdownBeep) só dispara depois, de dentro do setInterval
+  // abaixo — e iOS Safari não conta resume() chamado de um setInterval/setTimeout como
+  // gesto do usuário, mesmo com await correto. O clique que chama startRestTimer() é o
+  // único gesto direto que temos no fluxo do descanso, então aquecemos o AudioContext aqui.
+  _ensureAudioCtx().catch(() => {})
+
   restTimers[exerciseId] = { intervalId: null, totalSeconds, startedAt }
   const btn = document.getElementById(`rest-btn-${exerciseId}`)
   const initialRemaining = Math.max(0, totalSeconds - Math.floor((Date.now() - startedAt) / 1000))
@@ -8048,49 +8059,93 @@ function resetRestTimerBtn(exerciseId, totalSeconds) {
   btn.style.cssText = ''
 }
 
+// Cria (se preciso) e garante que o _audioCtx global esteja "running" antes de qualquer
+// som ser tocado — usado por playBeep, playCountdownBeep e _metronomeClick, e também pelo
+// "unlock" no primeiro toque na página (ver _primeAudioOnFirstGesture). Loga cada etapa:
+// é o único jeito de diagnosticar remotamente um som que só falha num aparelho específico
+// que não conseguimos reproduzir localmente.
+//
+// Por que isso só afeta alguns usuários: navegadores desktop/Android costumam desbloquear
+// o AudioContext mesmo quando resume() é chamado fora do gesto original (ex: dentro de um
+// setInterval, como o beep do fim do descanso). iOS Safari é muito mais restritivo — se o
+// contexto é criado/retomado fora de um gesto de toque direto, o resume() frequentemente
+// nunca resolve de verdade, mesmo com await. Some ainda o modo silencioso do iPhone, que
+// muda a "categoria" de áudio do Safari e muta o Web Audio API por padrão. Nada disso
+// aparece como erro — a Promise de resume() não rejeita, ela só nunca chega a "running".
+async function _ensureAudioCtx() {
+  if (!_audioCtx || _audioCtx.state === 'closed') {
+    try {
+      _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+      console.log('[audio] AudioContext criado, state inicial:', _audioCtx.state)
+    } catch (err) {
+      console.error('[audio] falha ao criar AudioContext:', err?.message || err)
+      throw err
+    }
+  }
+  if (_audioCtx.state === 'suspended') {
+    try {
+      await _audioCtx.resume()
+      console.log('[audio] resume() concluído, state agora:', _audioCtx.state)
+    } catch (err) {
+      console.error('[audio] resume() rejeitou:', err?.message || err)
+    }
+  }
+  if (_audioCtx.state !== 'running' && !_audioUnlockWarned) {
+    _audioUnlockWarned = true
+    console.warn('[audio] AudioContext continua "' + _audioCtx.state + '" — o som provavelmente não vai tocar (aparelho no modo silencioso, ou o navegador está bloqueando áudio automático)')
+    // Só mostra o aviso dentro do app (profile logado) — evita um toast de áudio confuso
+    // pra quem só tocou na tela de login antes de fazer autenticação.
+    if (profile) toast('Não foi possível ativar o som neste aparelho. Verifique se o celular não está no modo silencioso.', 'error')
+  }
+  return _audioCtx
+}
+
+// Ativa o AudioContext assim que o usuário tocar em qualquer lugar da página, mesmo antes
+// de abrir o metrônomo ou o timer de descanso. Sem isso, se o primeiro som que o app tenta
+// tocar for o beep do descanso (disparado de dentro de um setInterval, não de um clique),
+// o contexto é criado fora de um gesto de usuário — e em iOS Safari isso costuma nunca
+// desbloquear o áudio de verdade. Rodar isso no primeiro toque da página cobre esse caso.
+function _primeAudioOnFirstGesture() {
+  document.removeEventListener('pointerdown', _primeAudioOnFirstGesture)
+  document.removeEventListener('touchend', _primeAudioOnFirstGesture)
+  _ensureAudioCtx().catch(() => {})
+}
+document.addEventListener('pointerdown', _primeAudioOnFirstGesture, { once: true })
+document.addEventListener('touchend', _primeAudioOnFirstGesture, { once: true })
+
 async function playBeep() {
   // Som de fim de descanso: mais grave, mais alto e mais longo que playCountdownBeep(),
   // para se diferenciar claramente dos beeps dos últimos 5 segundos.
-  // Reaproveita o mesmo _audioCtx global (e o mesmo resume() em estado suspenso) que
-  // _metronomeClick já usa — necessário pro som funcionar em mobile, já que esta função
-  // é chamada de dentro de um tick de setInterval, fora do gesto de clique original.
-  // resume() é assíncrono em mobile (só resolve depois de efetivamente desbloquear o
-  // contexto) — sem o await, osc.start() rodava contra um contexto ainda suspenso.
   try {
-    if (!_audioCtx || _audioCtx.state === 'closed') {
-      _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
-    }
-    if (_audioCtx.state === 'suspended') await _audioCtx.resume()
-    const osc  = _audioCtx.createOscillator()
-    const gain = _audioCtx.createGain()
-    osc.connect(gain); gain.connect(_audioCtx.destination)
+    const ctx  = await _ensureAudioCtx()
+    const osc  = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain); gain.connect(ctx.destination)
     osc.type = 'sine'
-    osc.frequency.setValueAtTime(440, _audioCtx.currentTime)
-    gain.gain.setValueAtTime(0.7, _audioCtx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + 0.9)
-    osc.start(_audioCtx.currentTime); osc.stop(_audioCtx.currentTime + 0.9)
-  } catch {}
+    osc.frequency.setValueAtTime(440, ctx.currentTime)
+    gain.gain.setValueAtTime(0.7, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.9)
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.9)
+  } catch (err) {
+    console.error('[audio] playBeep falhou:', err?.message || err)
+  }
 }
 
 async function playCountdownBeep() {
   // Beep curto para os últimos 5 segundos da contagem regressiva de descanso.
-  // Mesmo motivo de playBeep(): reaproveita _audioCtx global com resume() em vez de criar
-  // um AudioContext novo e descartável, e aguarda o resume() resolver antes de tocar,
-  // pro som funcionar em mobile.
   try {
-    if (!_audioCtx || _audioCtx.state === 'closed') {
-      _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
-    }
-    if (_audioCtx.state === 'suspended') await _audioCtx.resume()
-    const osc  = _audioCtx.createOscillator()
-    const gain = _audioCtx.createGain()
-    osc.connect(gain); gain.connect(_audioCtx.destination)
+    const ctx  = await _ensureAudioCtx()
+    const osc  = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain); gain.connect(ctx.destination)
     osc.type = 'sine'
-    osc.frequency.setValueAtTime(740, _audioCtx.currentTime)
-    gain.gain.setValueAtTime(0.35, _audioCtx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + 0.15)
-    osc.start(_audioCtx.currentTime); osc.stop(_audioCtx.currentTime + 0.15)
-  } catch {}
+    osc.frequency.setValueAtTime(740, ctx.currentTime)
+    gain.gain.setValueAtTime(0.35, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15)
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.15)
+  } catch (err) {
+    console.error('[audio] playCountdownBeep falhou:', err?.message || err)
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -8119,22 +8174,25 @@ function stopMetronome() {
   _metronomeToken = null
 }
 
-function _metronomeClick(freq) {
+// Antes chamava _audioCtx.resume() sem "await" (a função nem era async) — se o contexto
+// estivesse suspended nesse instante, o osc.start() abaixo rodava antes do resume() de
+// fato completar, e o clique saía mudo sem nenhum erro. playBeep/playCountdownBeep já
+// aguardavam o resume corretamente; esta função era a exceção.
+async function _metronomeClick(freq) {
   try {
-    if (!_audioCtx || _audioCtx.state === 'closed') {
-      _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
-    }
-    if (_audioCtx.state === 'suspended') _audioCtx.resume()
-    const osc  = _audioCtx.createOscillator()
-    const gain = _audioCtx.createGain()
-    osc.connect(gain); gain.connect(_audioCtx.destination)
+    const ctx  = await _ensureAudioCtx()
+    const osc  = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain); gain.connect(ctx.destination)
     osc.type = 'sine'
-    osc.frequency.setValueAtTime(freq, _audioCtx.currentTime)
-    gain.gain.setValueAtTime(0.4, _audioCtx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + 0.07)
-    osc.start(_audioCtx.currentTime)
-    osc.stop(_audioCtx.currentTime + 0.07)
-  } catch {}
+    osc.frequency.setValueAtTime(freq, ctx.currentTime)
+    gain.gain.setValueAtTime(0.4, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.07)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.07)
+  } catch (err) {
+    console.error('[audio] _metronomeClick falhou:', err?.message || err)
+  }
 }
 
 function _resetMetronomeUI(exId) {
@@ -8723,14 +8781,40 @@ async function saveWorkoutExecutions(workoutId) {
   const exes = currentWorkoutData?.workout_exercises || []
   if (!exes.length) return
 
-  const records = []
-  for (const ex of exes) {
-    const exec = exerciseExecutions[ex.id]
-    if (exec && Object.keys(exec).length > 0) continue
+  const pendingIds = exes
+    .filter(ex => !(exerciseExecutions[ex.id] && Object.keys(exerciseExecutions[ex.id]).length > 0))
+    .map(ex => ex.id)
+  if (!pendingIds.length) return
 
-    records.push({
+  // exerciseExecutions (memória local) pode estar vazio mesmo já havendo séries reais no
+  // banco pra esse exercício — ex: o aluno fechou/reabriu o app no meio do treino e a
+  // execução recomeçou do zero em memória. Sem checar o banco aqui, a linha "Não executado"
+  // era inserida por cima de séries já registradas, duplicando o exercício no histórico
+  // (essa linha não tem session_id, então nunca se agrupa com a sessão real que já existia).
+  //
+  // Restrito ao dia desta execução (a partir de _execStartTimestamp): workoutId é o slot
+  // recorrente do treino (mesmo id toda semana), não uma ocorrência única — sem esse filtro,
+  // uma série real de 3 semanas atrás faria esta função achar (erroneamente) que o exercício
+  // "já foi registrado" e pular o "Não executado" de hoje pra sempre.
+  const dayStart = new Date(_execStartTimestamp)
+  dayStart.setHours(0, 0, 0, 0)
+  const { data: existing, error: existingErr } = await sb.from('workout_executions')
+    .select('exercise_id')
+    .eq('workout_id', workoutId)
+    .eq('student_id', profile.id)
+    .in('exercise_id', pendingIds)
+    .gte('executed_at', dayStart.toISOString())
+  if (existingErr) {
+    console.error('[saveWorkoutExecutions] erro ao checar execuções já existentes, abortando para não duplicar:', existingErr.message)
+    return
+  }
+  const alreadyRecorded = new Set((existing || []).map(r => r.exercise_id))
+
+  const records = pendingIds
+    .filter(id => !alreadyRecorded.has(id))
+    .map(id => ({
       workout_id:            workoutId,
-      exercise_id:           ex.id,
+      exercise_id:           id,
       student_id:            profile.id,
       set_number:            1,
       weight_executed:       null,
@@ -8738,8 +8822,7 @@ async function saveWorkoutExecutions(workoutId) {
       duration_executed_min: null,
       distance_executed_km:  null,
       speed_executed_kmh:    null
-    })
-  }
+    }))
 
   if (!records.length) return
   await insertWorkoutExecutions(records)
