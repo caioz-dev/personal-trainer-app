@@ -947,7 +947,30 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      flex: 1;
     }
+    .reorder-item-moves {
+      display: flex;
+      gap: .3rem;
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+    .reorder-move-btn {
+      width: 1.9rem;
+      height: 1.9rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-dark-a50);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm, 6px);
+      color: var(--text-secondary);
+      font-size: .75rem;
+      cursor: pointer;
+      transition: border-color .15s, opacity .15s;
+    }
+    .reorder-move-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .reorder-move-btn:disabled { opacity: 0.3; cursor: default; }
 
     /* ---- DUPLICATE MODAL ---- */
     .dup-modal-overlay {
@@ -7073,6 +7096,18 @@ function updateReplicateButton() {
   btn.style.display = count >= 2 ? 'inline-flex' : 'none'
 }
 
+function _renumberReorderItems(body) {
+  const items = [...body.querySelectorAll('.reorder-item')]
+  items.forEach((item, i) => {
+    const numEl = item.querySelector('.reorder-item-num')
+    if (numEl) numEl.textContent = i + 1
+    const upBtn   = item.querySelector('.reorder-move-btn[data-dir="up"]')
+    const downBtn = item.querySelector('.reorder-move-btn[data-dir="down"]')
+    if (upBtn)   upBtn.disabled   = i === 0
+    if (downBtn) downBtn.disabled = i === items.length - 1
+  })
+}
+
 function openReorderModal() {
   const body = document.getElementById('reorder-modal-body')
   body.innerHTML = ''
@@ -7086,12 +7121,35 @@ function openReorderModal() {
     item.innerHTML = `
       <span class="reorder-item-num">${i + 1}</span>
       <span class="reorder-item-handle">⠿</span>
-      <span class="reorder-item-name">${escHtml(name)}</span>`
+      <span class="reorder-item-name">${escHtml(name)}</span>
+      <span class="reorder-item-moves">
+        <button type="button" class="reorder-move-btn" data-dir="up" aria-label="Mover para cima">▲</button>
+        <button type="button" class="reorder-move-btn" data-dir="down" aria-label="Mover para baixo">▼</button>
+      </span>`
     body.appendChild(item)
   })
+  _renumberReorderItems(body)
 
   if (!body._dndReady) {
     body._dndReady = true
+
+    // Botões ↑↓: funcionam em qualquer dispositivo (mouse, touch, teclado).
+    // Principal forma de reordenar no mobile, já que a Drag and Drop API
+    // nativa usada abaixo não é acionada por gestos de toque.
+    body.addEventListener('click', e => {
+      const btn = e.target.closest('.reorder-move-btn')
+      if (!btn || btn.disabled) return
+      const item = btn.closest('.reorder-item')
+      if (!item) return
+      if (btn.dataset.dir === 'up') {
+        const prev = item.previousElementSibling
+        if (prev) body.insertBefore(item, prev)
+      } else {
+        const next = item.nextElementSibling
+        if (next) body.insertBefore(next, item)
+      }
+      _renumberReorderItems(body)
+    })
 
     body.addEventListener('dragstart', e => {
       const item = e.target.closest('.reorder-item')
@@ -7127,10 +7185,7 @@ function openReorderModal() {
       } else {
         body.insertBefore(body._dragSrc, target.nextSibling)
       }
-      body.querySelectorAll('.reorder-item').forEach((item, i) => {
-        const numEl = item.querySelector('.reorder-item-num')
-        if (numEl) numEl.textContent = i + 1
-      })
+      _renumberReorderItems(body)
     })
 
     body.addEventListener('dragend', () => {
