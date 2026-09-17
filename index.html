@@ -2561,6 +2561,7 @@
               </div>
 
               <div id="exercise-list" class="exercise-list"></div>
+              <datalist id="wf-exercise-catalog"></datalist>
 
               <div class="total-vol-bar">
                 <span class="total-vol-label">Volume Total do Treino</span>
@@ -6693,6 +6694,48 @@ function _redirectAfterWorkoutForm(wasEditing) {
   }
 }
 
+// ── Catálogo "leve" de nomes de exercício já usados (não é uma tabela fixa,
+// só os valores distintos já digitados pelo personal e seus alunos) — usado
+// pra autocompletar o campo de nome e pra normalizar grafia (maiúscula/
+// minúscula, espaços) na hora de salvar, sem travar o personal num nome fixo.
+// Ver também calcLoadExerciseNames, que faz algo parecido só pra sugestão
+// (sem a etapa de normalização) nas telas de Calculadora/Registro ao vivo.
+async function _loadExerciseCatalog() {
+  try {
+    const studentIds = profile.role === 'personal' ? [profile.id, ...students.map(s => s.id)] : [profile.id]
+    const { data: wData } = await sb.from('workouts').select('id').in('student_id', studentIds).limit(500)
+    if (!wData?.length) return { canonicalByKey: {}, names: [] }
+
+    const { data: exData } = await sb.from('workout_exercises').select('exercise_name').in('workout_id', wData.map(w => w.id))
+    if (!exData?.length) return { canonicalByKey: {}, names: [] }
+
+    // Escolhe a grafia mais usada de cada nome (ignorando maiúscula/minúscula e espaços) como canônica
+    const counts = {}
+    for (const { exercise_name: raw } of exData) {
+      const key = (raw || '').trim().toLowerCase()
+      if (!key) continue
+      counts[key] = counts[key] || {}
+      counts[key][raw] = (counts[key][raw] || 0) + 1
+    }
+    const canonicalByKey = {}
+    for (const key in counts) {
+      canonicalByKey[key] = Object.entries(counts[key]).sort((a, b) => b[1] - a[1])[0][0]
+    }
+    const names = Object.values(canonicalByKey).sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }))
+    return { canonicalByKey, names }
+  } catch {
+    return { canonicalByKey: {}, names: [] }
+  }
+}
+
+// Se o nome digitado bater (ignorando maiúscula/minúscula e espaços) com um já
+// existente no catálogo, devolve a grafia já usada; senão devolve o nome digitado.
+function _resolveExerciseName(rawName, catalog) {
+  const trimmed = (rawName || '').trim()
+  if (!trimmed) return trimmed
+  return catalog?.canonicalByKey?.[trimmed.toLowerCase()] || trimmed
+}
+
 async function setupWorkoutForm(opts = {}) {
   editingWorkoutId    = null
   _wfEditingCreatedBy = null
@@ -6757,6 +6800,15 @@ async function setupWorkoutForm(opts = {}) {
   addExercise()
   refreshTotalVolume()
   saveWorkoutFormState()
+
+  // Carrega o catálogo de nomes já usados pra autocompletar e normalizar grafia ao salvar
+  if (profile.role === 'personal') {
+    _loadExerciseCatalog().then(catalog => {
+      window._wfExerciseCatalog = catalog
+      const dl = document.getElementById('wf-exercise-catalog')
+      if (dl) dl.innerHTML = catalog.names.map(n => `<option value="${escHtml(n)}">`).join('')
+    })
+  }
 }
 
 function addExercise() {
@@ -6781,7 +6833,7 @@ function addExercise() {
       <div class="form-grid">
         <div class="form-group form-full">
           <label>Nome do exercício</label>
-          <input type="text" class="form-control ex-name" placeholder="Ex: Supino Reto" required oninput="updateExerciseHeader(${id})">
+          <input type="text" class="form-control ex-name" list="wf-exercise-catalog" placeholder="Ex: Supino Reto" required oninput="updateExerciseHeader(${id})">
         </div>
         <div class="form-group">
           <label>Tipo de exercício</label>
@@ -7712,7 +7764,7 @@ async function saveWorkout(e) {
   for (let idx = 0; idx < rows.length; idx++) {
     const row = rows[idx]
     const nameEl = row.querySelector('.ex-name')
-    const exName = nameEl.value.trim()
+    const exName = _resolveExerciseName(nameEl.value, window._wfExerciseCatalog)
     const exType = row.querySelector('.ex-type')?.value || 'musculacao'
     const exLabel = exName || `Exercício ${idx + 1}`
 
