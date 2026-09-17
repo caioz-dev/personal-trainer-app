@@ -6952,10 +6952,42 @@ function openDupModal(workoutId) {
   // Data padrão = hoje
   document.getElementById('dup-date').value = new Date().toISOString().slice(0, 10)
 
-  const btn = document.getElementById('dup-confirm-btn')
-  if (btn) { btn.disabled = false; btn.textContent = 'Duplicar' }
+  loadDupRoutineOptions()
 
   document.getElementById('dup-modal-overlay').style.display = 'flex'
+}
+
+// Recarrega as rotinas disponíveis para o aluno selecionado no modal de duplicar.
+// Pré-seleciona a rotina original apenas quando o aluno de destino é o mesmo do
+// treino de origem — pra outro aluno, o personal escolhe explicitamente (ou deixa avulso).
+async function loadDupRoutineOptions() {
+  const studentId  = document.getElementById('dup-student-sel').value
+  const routineSel = document.getElementById('dup-routine-sel')
+  const confirmBtn = document.getElementById('dup-confirm-btn')
+  const workout    = (window._workoutsCache || {})[_dupWorkoutId]
+
+  routineSel.disabled = true
+  if (confirmBtn) confirmBtn.disabled = true
+  routineSel.innerHTML = `<option value="">Carregando…</option>`
+
+  try {
+    const { data, error } = await sb.from('routines')
+      .select('id, name')
+      .eq('student_id', studentId)
+      .order('created_at', { ascending: false })
+    if (error) throw error
+    const routines   = data || []
+    const preselect  = (workout && studentId === workout.student_id) ? (workout.routine_id || '') : ''
+    routineSel.innerHTML =
+      `<option value="">Sem rotina (avulso)</option>` +
+      routines.map(r => `<option value="${r.id}"${r.id === preselect ? ' selected' : ''}>${escHtml(r.name)}</option>`).join('')
+  } catch (err) {
+    routineSel.innerHTML = `<option value="">Sem rotina (avulso)</option>`
+    toast('Erro ao carregar rotinas do aluno: ' + err.message, 'error')
+  } finally {
+    routineSel.disabled = false
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Duplicar' }
+  }
 }
 
 function closeDupModal() {
@@ -6988,10 +7020,9 @@ async function confirmDupWorkout() {
   const btn = document.getElementById('dup-confirm-btn')
   if (btn) { btn.disabled = true; btn.textContent = 'Duplicando…' }
 
-  // A rotina de origem pertence ao aluno original; se o destino for outro aluno,
-  // não faz sentido vincular o duplicado a uma rotina que não é dele — vira treino avulso.
-  const sameStudent  = targetStudentId === workout.student_id
-  const newRoutineId = sameStudent ? (workout.routine_id ?? null) : null
+  // Rotina de destino escolhida explicitamente no modal (pode ser diferente da
+  // rotina de origem, inclusive quando o aluno de destino também é diferente).
+  const newRoutineId = document.getElementById('dup-routine-sel').value || null
 
   try {
     const finalDayOfWeek = newRoutineId ? newDayOfWeek : null
@@ -9839,7 +9870,11 @@ function finishLiveExecution() {
     <div class="dup-modal-subtitle" id="dup-modal-subtitle">Copia todos os exercícios para um novo treino.</div>
     <div class="form-group" style="margin-bottom:1rem">
       <label style="font-size:.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Para qual aluno</label>
-      <select id="dup-student-sel" class="form-control"></select>
+      <select id="dup-student-sel" class="form-control" onchange="loadDupRoutineOptions()"></select>
+    </div>
+    <div class="form-group" style="margin-bottom:1rem">
+      <label style="font-size:.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Vincular à rotina</label>
+      <select id="dup-routine-sel" class="form-control"><option value="">Sem rotina (avulso)</option></select>
     </div>
     <div class="form-group" style="margin-bottom:1rem">
       <label style="font-size:.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Dia da semana</label>
