@@ -9487,6 +9487,9 @@ function renderLiveExecutionScreen(workout) {
     ? exes.map(ex => renderLiveExerciseCardHTML(ex)).join('')
     : '<div class="empty-state" style="padding:2rem"><div class="empty-icon">🏋️</div><p>Nenhum exercício neste treino.</p></div>'
   loadLiveExerciseCatalog()
+  // Mesmo catálogo usado pra normalizar grafia no Novo/Editar Treino (ver setupWorkoutForm) —
+  // aqui só pra resolver o nome ao salvar; a sugestão em si continua vindo de loadLiveExerciseCatalog().
+  _loadExerciseCatalog().then(catalog => { window._liveExerciseCatalog = catalog })
 }
 
 // Gera o card de UM exercício — usada tanto na renderização inicial da lista quanto
@@ -9670,7 +9673,7 @@ async function saveLiveExerciseEdit(exerciseId) {
   const isAero = ex.exercise_type === 'aerobico'
 
   const nameInput = document.getElementById(`live-edit-name-${exerciseId}`)
-  const name = nameInput.value.trim()
+  const name = _resolveExerciseName(nameInput.value, window._liveExerciseCatalog)
   if (!name) { toast('Informe o nome do exercício.', 'error'); return }
 
   const patch = { exercise_name: name }
@@ -9807,7 +9810,7 @@ async function saveLiveAddExercise() {
   const workoutId = _liveWorkoutData?.id
   if (!workoutId) return
 
-  const name = document.getElementById('live-add-ex-name').value.trim()
+  const name = _resolveExerciseName(document.getElementById('live-add-ex-name').value, window._liveExerciseCatalog)
   if (!name) { toast('Informe o nome do exercício.', 'error'); return }
   const isAero = document.getElementById('live-add-ex-type').value === 'aerobico'
   const position = (_liveWorkoutData.workout_exercises || []).length
