@@ -2644,6 +2644,11 @@
           <div id="my-workout-body"></div>
         </div>
 
+        <!-- VIEW: Renovação de Treinos (personal) -->
+        <div id="view-renewals" class="view" style="display:none">
+          <div id="renewals-body"></div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -3368,7 +3373,7 @@ function buildSidebar() {
   badge.className   = `role-badge ${isP ? 'role-personal' : 'role-student'}`
 
   const items = isP
-    ? [['students','👥','Alunos'],['my-workout','🏋️','Meu Treino'],['progress','📈','Progresso dos Alunos'],['personal-profile','👤','Meu Perfil']]
+    ? [['students','👥','Alunos'],['my-workout','🏋️','Meu Treino'],['progress','📈','Progresso dos Alunos'],['renewals','🔄','Renovação de Treinos'],['personal-profile','👤','Meu Perfil']]
     : [['history','📊','Meu Histórico'],['profile','👤','Meu Perfil'],['calculator','🧮','Calculadora'],['progress','📈','Progresso']]
 
   document.getElementById('nav-list').innerHTML = items.map(([id, icon, label]) => `
@@ -3463,7 +3468,7 @@ const VIEW_TITLES = {
   students: 'Alunos', 'my-workout': 'Meu Treino', workout: 'Novo Treino',
   calculator: 'Calculadora', history: 'Meu Histórico',
   progress: 'Dashboard de Progresso', profile: 'Meu Perfil', 'personal-profile': 'Meu Perfil',
-  'student-sheet': 'Ficha do Aluno', 'routine-detail': 'Rotina'
+  'student-sheet': 'Ficha do Aluno', 'routine-detail': 'Rotina', renewals: 'Renovação de Treinos'
 }
 
 async function navigateTo(view, opts = {}) {
@@ -3515,6 +3520,7 @@ async function navigateTo(view, opts = {}) {
     else if (view === 'calculator')     await setupCalc()
     else if (view === 'history')        await renderHistory(profile.id, gen)
     else if (view === 'progress')       await renderProgress()
+    else if (view === 'renewals')       await renderRenewals(gen)
     else if (view === 'profile')        await renderProfile()
     else if (view === 'personal-profile') await renderPersonalProfile()
   } catch { /* each render fn already handles its own errors */ }
@@ -3775,6 +3781,139 @@ async function renderStudents() {
       <p>Erro ao carregar alunos.</p>
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
               onclick="renderStudents()">Tentar novamente</button></div>`
+  }
+}
+
+// ─────────────────────────────────────────────
+// VIEW: RENOVAÇÃO DE TREINOS (personal)
+// ─────────────────────────────────────────────
+
+// Dentre as rotinas de um aluno, escolhe a mais relevante para acompanhamento
+// de vencimento: a vigente hoje (mais recente, se houver mais de uma); na
+// ausência de vigente, a vencida mais recentemente; por fim, como último
+// recurso (só rotinas futuras ainda não iniciadas), a criada mais recentemente.
+function pickRelevantRoutine(routines, todayStr) {
+  if (!routines.length) return null
+  const vigentes = routines.filter(r =>
+    (!r.start_date || todayStr >= r.start_date) && (!r.end_date || todayStr <= r.end_date))
+  if (vigentes.length) {
+    return [...vigentes].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))[0]
+  }
+  const vencidas = routines.filter(r => r.end_date && r.end_date < todayStr)
+  if (vencidas.length) {
+    return [...vencidas].sort((a, b) => b.end_date.localeCompare(a.end_date))[0]
+  }
+  return [...routines].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))[0]
+}
+
+function renewalStatus(endDate, todayStr) {
+  const diffDays = Math.round((new Date(endDate + 'T00:00:00') - new Date(todayStr + 'T00:00:00')) / 864e5)
+  const level = diffDays <= 3 ? 'danger' : diffDays <= 7 ? 'warning' : 'normal'
+  return { level, diffDays }
+}
+
+async function renderRenewals(gen = 0) {
+  const body = document.getElementById('renewals-body')
+  body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando…</div>'
+
+  try {
+    await fetchStudents()
+    if (gen && navGen !== gen) return
+
+    if (!students.length) {
+      body.innerHTML = `<div class="empty-state"><div class="empty-icon">🔄</div>
+        <p>Nenhum aluno vinculado ainda.</p></div>`
+      return
+    }
+
+    const todayStr = new Date().toISOString().slice(0, 10)
+
+    const rows = await Promise.all(students.map(async s => {
+      const { data: routines, error } = await sb.from('routines')
+        .select('id, name, start_date, end_date, created_at')
+        .eq('student_id', s.id)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return { student: s, routine: pickRelevantRoutine(routines || [], todayStr) }
+    }))
+    if (gen && navGen !== gen) return
+
+    // Ordena: urgente (vencida/≤3d) primeiro, depois atenção (≤7d), normal e por fim sem rotina.
+    const order = { danger: 0, warning: 1, normal: 2, none: 3 }
+    const statusOf = ({ routine }) =>
+      !routine ? 'none' : !routine.end_date ? 'normal' : renewalStatus(routine.end_date, todayStr).level
+    rows.sort((a, b) => {
+      const diff = order[statusOf(a)] - order[statusOf(b)]
+      return diff !== 0 ? diff : displayName(a.student).localeCompare(displayName(b.student))
+    })
+
+    const rowsHTML = rows.map(({ student: s, routine: r }) => {
+      const dName    = displayName(s)
+      const nameCell = `<div style="display:flex;align-items:center;gap:.6rem">
+          ${avatarEl(dName, s.avatar_url || null, 32)}
+          <span style="font-weight:600;color:var(--text-primary)">${escHtml(dName)}</span>
+        </div>`
+
+      if (!r) {
+        return `<tr>
+          <td>${nameCell}</td>
+          <td colspan="2" style="font-style:italic;color:var(--text-muted)">Sem rotina cadastrada</td>
+        </tr>`
+      }
+
+      const createdStr = r.created_at ? fmtDate(r.created_at.slice(0, 10)) : '—'
+
+      let endCell
+      if (!r.end_date) {
+        endCell = `<span style="color:var(--text-muted)">Sem data de vencimento</span>`
+      } else {
+        const { level, diffDays } = renewalStatus(r.end_date, todayStr)
+        const color  = level === 'danger' ? 'var(--danger)' : level === 'warning' ? 'var(--warning)' : 'var(--text-secondary)'
+        const weight = level === 'normal' ? '400' : '700'
+        const note   = diffDays < 0
+          ? ` <span style="font-size:.74rem">(vencida há ${Math.abs(diffDays)} dia${Math.abs(diffDays) !== 1 ? 's' : ''})</span>`
+          : diffDays === 0
+            ? ` <span style="font-size:.74rem">(vence hoje)</span>`
+            : level !== 'normal'
+              ? ` <span style="font-size:.74rem">(em ${diffDays} dia${diffDays !== 1 ? 's' : ''})</span>`
+              : ''
+        endCell = `<span style="color:${color};font-weight:${weight}">${fmtDate(r.end_date)}</span>${note}`
+      }
+
+      return `<tr>
+        <td>${nameCell}</td>
+        <td style="white-space:nowrap">${createdStr}</td>
+        <td style="white-space:nowrap">${endCell}</td>
+      </tr>`
+    }).join('')
+
+    body.innerHTML = `
+      <div class="section-label reveal">Visão Geral</div>
+      <p style="font-size:.82rem;color:var(--text-muted);margin:.25rem 0 1rem">
+        Acompanhe o vencimento das rotinas dos seus alunos —
+        <span style="color:var(--warning);font-weight:700">atenção</span> a partir de 7 dias,
+        <span style="color:var(--danger);font-weight:700">urgente</span> a partir de 3 dias ou já vencida.
+      </p>
+      <div class="card reveal" style="padding:0;overflow:hidden">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Aluno</th>
+                <th>Criada em</th>
+                <th>Vence em</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHTML}</tbody>
+          </table>
+        </div>
+      </div>`
+  } catch (err) {
+    console.error('[renderRenewals]', err)
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <p>Erro ao carregar renovações.</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
+              onclick="renderRenewals()">Tentar novamente</button></div>`
   }
 }
 
