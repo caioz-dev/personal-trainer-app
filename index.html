@@ -1201,6 +1201,28 @@
     .comp-summary-block:last-child { margin-bottom: 0; }
     .comp-summary-title { font-weight: 700; font-size: .82rem; color: var(--text-primary); margin-bottom: .3rem; }
 
+    .comp-view-toggle {
+      display: inline-flex;
+      background: var(--bg-dark-a50);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-pill);
+      padding: 3px;
+      margin-bottom: .75rem;
+    }
+    .comp-view-tab {
+      padding: .35rem .85rem;
+      border: none;
+      background: none;
+      border-radius: var(--radius-pill);
+      cursor: pointer;
+      font-size: .76rem;
+      font-weight: 600;
+      font-family: 'Montserrat', system-ui, sans-serif;
+      color: var(--text-muted);
+      transition: all var(--transition);
+    }
+    .comp-view-tab.active { background: var(--accent-a15); color: var(--accent-soft); border: 1px solid var(--accent-a25); }
+
     /* ---- CALCULATOR ---- */
     .calc-wrap { max-width: 520px; }
 
@@ -2907,6 +2929,7 @@ async function authHeader() {
 }
 
 let sb, me, profile, students = [], chart = null, sheetChart = null, progressChart = null
+let compCharts = {} // Chart.js instances do toggle Tabela/Gráfico nas execuções (Previsto × Executado), por execUid
 let exerciseCounter = 0
 let _dupWorkoutId = null
 let _dupRoutineId = null
@@ -5017,7 +5040,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
                 <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--success);font-weight:600">${executedTxt}</span></div>
                 <div class="comp-card-row"><span class="label">Diferença</span><span>${diffCell}</span></div>
               </div>`
-              return { row, card }
+              return { row, card, chart: null }
             } else {
               const planSets   = we?.sets || 0
               const planWeight = parseFloat(we?.weight_kg) || 0
@@ -5057,11 +5080,12 @@ async function renderStudentSheet(studentId, studentName, gen) {
                 <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--success);font-weight:600">${executedTxt}</span></div>
                 <div class="comp-card-row"><span class="label">Diferença</span><span>${diffCell}</span></div>
               </div>`
-              return { row, card }
+              return { row, card, chart: { name: we?.exercise_name || '—', planned, executed } }
             }
           })
-          const exRows  = exItems.map(i => i.row).join('')
-          const exCards = exItems.map(i => i.card).join('')
+          const exRows     = exItems.map(i => i.row).join('')
+          const exCards    = exItems.map(i => i.card).join('')
+          const chartItems = exItems.map(i => i.chart).filter(Boolean)
 
           const footerRows = []
           const footerCards = []
@@ -5106,6 +5130,16 @@ async function renderStudentSheet(studentId, studentName, gen) {
           // DOM — getElementById sempre pegava o primeiro card daquele treino-modelo.
           const execUid = 'exg' + (group.workoutId + group.executedAt).replace(/[^a-zA-Z0-9]/g, '')
 
+          window._compChartData = window._compChartData || {}
+          window._compChartData[execUid] = chartItems
+          const compViewToggle = chartItems.length ? `
+            <div class="comp-view-toggle">
+              <button class="comp-view-tab active" id="comp-view-tablebtn-${execUid}"
+                      onclick="event.stopPropagation();setCompView('${execUid}','table')">📋 Tabela</button>
+              <button class="comp-view-tab" id="comp-view-chartbtn-${execUid}"
+                      onclick="event.stopPropagation();setCompView('${execUid}','chart')">📈 Gráfico</button>
+            </div>` : ''
+
           const review = reviewsByWorkout[group.workoutId]
           const feelingEmojis = ['😩','😕','😐','🙂','😄']
           const reviewHTML = review ? `
@@ -5137,19 +5171,27 @@ async function renderStudentSheet(studentId, studentName, gen) {
               </div>
             </div>
             <div class="ex-body" id="ex-body-${execUid}">
-              <div class="table-wrap comp-table" style="margin-top:.75rem">
-                <table>
-                  <thead><tr>
-                    <th>Exercício</th><th>Previsto</th><th>Executado</th><th>Diferença</th>
-                  </tr></thead>
-                  <tbody>${exRows}</tbody>
-                  <tfoot>${footerRows.join('')}</tfoot>
-                </table>
+              ${compViewToggle}
+              <div id="comp-table-view-${execUid}">
+                <div class="table-wrap comp-table" style="margin-top:.75rem">
+                  <table>
+                    <thead><tr>
+                      <th>Exercício</th><th>Previsto</th><th>Executado</th><th>Diferença</th>
+                    </tr></thead>
+                    <tbody>${exRows}</tbody>
+                    <tfoot>${footerRows.join('')}</tfoot>
+                  </table>
+                </div>
+                <div class="comp-cards">
+                  ${exCards}
+                  ${footerCards.length ? `<div class="comp-summary">${footerCards.join('')}</div>` : ''}
+                </div>
               </div>
-              <div class="comp-cards">
-                ${exCards}
-                ${footerCards.length ? `<div class="comp-summary">${footerCards.join('')}</div>` : ''}
-              </div>
+              ${chartItems.length ? `
+              <div id="comp-chart-view-${execUid}" style="display:none">
+                <div class="chart-container" style="height:260px;margin-top:.75rem"><canvas id="comp-chart-${execUid}"></canvas></div>
+                ${(totalPlannedAero > 0 || totalExecutedAero > 0) ? `<p style="font-size:.72rem;color:var(--text-muted);margin-top:.5rem;font-style:italic">Exercícios aeróbicos não entram no gráfico (unidade diferente de kg) — veja-os na tabela.</p>` : ''}
+              </div>` : ''}
               ${reviewHTML}
               ${manualNotesHTML}
             </div>
@@ -5429,7 +5471,7 @@ async function renderMyWorkout(gen) {
                 <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--success);font-weight:600">${executedTxt}</span></div>
                 <div class="comp-card-row"><span class="label">Diferença</span><span>${diffCell}</span></div>
               </div>`
-              return { row, card }
+              return { row, card, chart: null }
             } else {
               const planSets = we?.sets || 0, planWeight = parseFloat(we?.weight_kg) || 0, planReps = we?.reps || 0, planned = planSets * planReps * planWeight
               totalPlannedMusc += planned
@@ -5448,11 +5490,12 @@ async function renderMyWorkout(gen) {
                 <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--success);font-weight:600">${executedTxt}</span></div>
                 <div class="comp-card-row"><span class="label">Diferença</span><span>${diffCell}</span></div>
               </div>`
-              return { row, card }
+              return { row, card, chart: { name: we?.exercise_name || '—', planned, executed } }
             }
           })
-          const exRows  = exItems.map(i => i.row).join('')
-          const exCards = exItems.map(i => i.card).join('')
+          const exRows     = exItems.map(i => i.row).join('')
+          const exCards    = exItems.map(i => i.card).join('')
+          const chartItems = exItems.map(i => i.chart).filter(Boolean)
           const footerRows = []
           const footerCards = []
           if (totalPlannedMusc > 0 || totalExecutedMusc > 0) {
@@ -5492,6 +5535,17 @@ async function renderMyWorkout(gen) {
           // diferentes (grupos separados), e usar só o workoutId gerava ids duplicados no
           // DOM — getElementById sempre pegava o primeiro card daquele treino-modelo.
           const execUid = 'exg' + (group.workoutId + group.executedAt).replace(/[^a-zA-Z0-9]/g, '')
+
+          window._compChartData = window._compChartData || {}
+          window._compChartData[execUid] = chartItems
+          const compViewToggle = chartItems.length ? `
+            <div class="comp-view-toggle">
+              <button class="comp-view-tab active" id="comp-view-tablebtn-${execUid}"
+                      onclick="event.stopPropagation();setCompView('${execUid}','table')">📋 Tabela</button>
+              <button class="comp-view-tab" id="comp-view-chartbtn-${execUid}"
+                      onclick="event.stopPropagation();setCompView('${execUid}','chart')">📈 Gráfico</button>
+            </div>` : ''
+
           return `
           <div style="background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:1rem 1.1rem;margin-bottom:.875rem">
             <div class="exercise-row-header" style="margin-bottom:0" onclick="toggleExerciseBody('${execUid}')">
@@ -5505,14 +5559,22 @@ async function renderMyWorkout(gen) {
               </div>
             </div>
             <div class="ex-body" id="ex-body-${execUid}">
-            <div class="table-wrap comp-table" style="margin-top:.75rem">
-              <table><thead><tr><th>Exercício</th><th>Previsto</th><th>Executado</th><th>Diferença</th></tr></thead>
-              <tbody>${exRows}</tbody><tfoot>${footerRows.join('')}</tfoot></table>
+            ${compViewToggle}
+            <div id="comp-table-view-${execUid}">
+              <div class="table-wrap comp-table" style="margin-top:.75rem">
+                <table><thead><tr><th>Exercício</th><th>Previsto</th><th>Executado</th><th>Diferença</th></tr></thead>
+                <tbody>${exRows}</tbody><tfoot>${footerRows.join('')}</tfoot></table>
+              </div>
+              <div class="comp-cards">
+                ${exCards}
+                ${footerCards.length ? `<div class="comp-summary">${footerCards.join('')}</div>` : ''}
+              </div>
             </div>
-            <div class="comp-cards">
-              ${exCards}
-              ${footerCards.length ? `<div class="comp-summary">${footerCards.join('')}</div>` : ''}
-            </div>
+            ${chartItems.length ? `
+            <div id="comp-chart-view-${execUid}" style="display:none">
+              <div class="chart-container" style="height:260px;margin-top:.75rem"><canvas id="comp-chart-${execUid}"></canvas></div>
+              ${(totalPlannedAero > 0 || totalExecutedAero > 0) ? `<p style="font-size:.72rem;color:var(--text-muted);margin-top:.5rem;font-style:italic">Exercícios aeróbicos não entram no gráfico (unidade diferente de kg) — veja-os na tabela.</p>` : ''}
+            </div>` : ''}
             ${reviewHTML}
             </div>
           </div>`
@@ -6364,6 +6426,73 @@ function initChart(canvasId, ws) {
         x: { grid: { color: 'rgba(144,158,186,0.06)' }, ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)', maxRotation: 45 } },
         y: { grid: { color: 'rgba(144,158,186,0.06)' }, ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)',
                callback: v => v.toLocaleString('pt-BR') + ' kg' } }
+      }
+    }
+  })
+}
+
+// ─────────────────────────────────────────────
+// TOGGLE TABELA/GRÁFICO — comparação Previsto × Executado (execuções)
+// ─────────────────────────────────────────────
+
+// Alterna entre a visão em tabela/cards (já existente) e um gráfico de linha,
+// por execUid. Só exercícios de musculação entram no gráfico (eixo Y é peso em
+// kg — aeróbico usa km/min, unidade incompatível), por isso o botão de gráfico
+// só é exibido quando há ao menos um exercício de musculação na execução.
+function setCompView(execUid, view) {
+  const tableView = document.getElementById('comp-table-view-' + execUid)
+  const chartView = document.getElementById('comp-chart-view-' + execUid)
+  const tableBtn  = document.getElementById('comp-view-tablebtn-' + execUid)
+  const chartBtn  = document.getElementById('comp-view-chartbtn-' + execUid)
+  if (!tableView || !chartView) return
+
+  const toChart = view === 'chart'
+  tableView.style.display = toChart ? 'none'  : ''
+  chartView.style.display = toChart ? 'block' : 'none'
+  tableBtn?.classList.toggle('active', !toChart)
+  chartBtn?.classList.toggle('active', toChart)
+
+  if (toChart) renderCompChart(execUid)
+}
+
+function renderCompChart(execUid) {
+  const data   = (window._compChartData || {})[execUid]
+  const canvas = document.getElementById('comp-chart-' + execUid)
+  if (!data || !canvas) return
+
+  if (compCharts[execUid]) { try { compCharts[execUid].destroy() } catch {} ; delete compCharts[execUid] }
+
+  compCharts[execUid] = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: data.map(d => d.name),
+      datasets: [
+        {
+          label: 'Previsto', data: data.map(d => d.planned),
+          borderColor: '#567FFF', backgroundColor: 'rgba(86,115,255,0.07)',
+          borderWidth: 2, pointBackgroundColor: '#567FFF', pointRadius: 4, pointHoverRadius: 7,
+          fill: false, tension: 0.3
+        },
+        {
+          label: 'Executado', data: data.map(d => d.executed),
+          borderColor: '#4ADE80', backgroundColor: 'rgba(74,222,128,0.07)',
+          borderWidth: 2, pointBackgroundColor: '#4ADE80', pointRadius: 4, pointHoverRadius: 7,
+          fill: false, tension: 0.3
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend:  { display: true, labels: { color: 'rgb(143,154,178)', font: { size: 11, family: 'Montserrat' } } },
+        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${c.parsed.y.toLocaleString('pt-BR')} kg` } }
+      },
+      scales: {
+        x: { grid: { color: 'rgba(144,158,186,0.06)' }, ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)', maxRotation: 45 } },
+        y: { grid: { color: 'rgba(144,158,186,0.06)' }, beginAtZero: true,
+             ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)',
+                      callback: v => v.toLocaleString('pt-BR') + ' kg' } }
       }
     }
   })
