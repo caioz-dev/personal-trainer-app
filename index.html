@@ -1017,7 +1017,7 @@
 
     .ex-chevron {
       display: inline-flex; align-items: center; justify-content: center;
-      width: 1.5rem; height: 1.5rem; font-size: .8rem;
+      width: 1.5rem; height: 1.5rem; font-size: .95rem;
       color: var(--text-muted); border-radius: var(--radius-sm);
       transition: transform .25s ease; flex-shrink: 0;
     }
@@ -1077,6 +1077,11 @@
 
     /* ---- TABLE ---- */
     .table-wrap { overflow-x: auto; }
+
+    /* Renovação: nome do aluno nunca quebra letra a letra (regra global td{word-break}) —
+       a coluna ganha largura mínima e, se faltar espaço, o .table-wrap rola na horizontal */
+    .renewals-table td:first-child { min-width: 10rem; }
+    .renewals-table .renewal-name { white-space: nowrap; word-break: normal; overflow-wrap: normal; }
     table { width: 100%; border-collapse: collapse; }
     thead { background: rgba(10,16,33,0.45); }
 
@@ -3981,7 +3986,7 @@ async function renderRenewals(gen = 0) {
       const dName    = displayName(s)
       const nameCell = `<div style="display:flex;align-items:center;gap:.6rem">
           ${avatarEl(dName, s.avatar_url || null, 32)}
-          <span style="font-weight:600;color:var(--text-primary)">${escHtml(dName)}</span>
+          <span class="renewal-name" style="font-weight:600;color:var(--text-primary)">${escHtml(dName)}</span>
         </div>`
 
       if (!r) {
@@ -4026,7 +4031,7 @@ async function renderRenewals(gen = 0) {
       </p>
       <div class="card reveal" style="padding:0;overflow:hidden">
         <div class="table-wrap">
-          <table>
+          <table class="renewals-table">
             <thead>
               <tr>
                 <th>Aluno</th>
@@ -5269,7 +5274,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
           <div style="background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:1rem 1.1rem;margin-bottom:.875rem">
             <div class="exercise-row-header" style="margin-bottom:0" onclick="toggleExerciseBody('${execUid}')">
               <div style="display:flex;align-items:center;gap:.625rem;min-width:0">
-                <span class="ex-chevron" id="ex-chevron-${execUid}">›</span>
+                <span class="ex-chevron" id="ex-chevron-${execUid}">${icon('chevron-right')}</span>
                 <div style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${escHtml(group.workoutName)}</div>
               </div>
               <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
@@ -5657,7 +5662,7 @@ async function renderMyWorkout(gen) {
           <div style="background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:1rem 1.1rem;margin-bottom:.875rem">
             <div class="exercise-row-header" style="margin-bottom:0" onclick="toggleExerciseBody('${execUid}')">
               <div style="display:flex;align-items:center;gap:.625rem;min-width:0">
-                <span class="ex-chevron" id="ex-chevron-${execUid}">›</span>
+                <span class="ex-chevron" id="ex-chevron-${execUid}">${icon('chevron-right')}</span>
                 <div style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${escHtml(group.workoutName)}</div>
               </div>
               <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
@@ -6008,9 +6013,13 @@ async function openRoutineModal(studentId, studentName, routineId = null) {
   document.getElementById('rf-student-id').value   = studentId
   document.getElementById('rf-student-name').value = studentName
 
+  // Restaura rótulo E estado do botão — saveRoutine o desabilita durante o envio
+  const rfBtn = document.getElementById('rf-btn')
+  rfBtn.textContent = routineId ? 'Salvar Alterações' : 'Salvar Rotina'
+  rfBtn.disabled = false
+
   if (routineId) {
     document.getElementById('routine-modal-title').textContent = 'Editar Rotina'
-    document.getElementById('rf-btn').textContent = 'Salvar Alterações'
     const { data, error } = await sb.from('routines').select('*').eq('id', routineId).single()
     if (error || !data) { toast('Erro ao carregar rotina.', 'error'); return }
     document.getElementById('rf-name').value           = data.name || ''
@@ -6021,7 +6030,6 @@ async function openRoutineModal(studentId, studentName, routineId = null) {
     document.getElementById('rf-instructions').value  = data.general_instructions || ''
   } else {
     document.getElementById('routine-modal-title').textContent = 'Nova Rotina'
-    document.getElementById('rf-btn').textContent = 'Salvar Rotina'
   }
 
   modal.style.display = 'flex'
@@ -6077,6 +6085,8 @@ async function saveRoutine(e) {
   }
 
   toast(_editingRoutineId ? 'Rotina atualizada!' : 'Rotina criada!', 'success')
+  btn.textContent = _editingRoutineId ? 'Salvar Alterações' : 'Salvar Rotina'
+  btn.disabled = false
 
   // Fire-and-forget: notifica o aluno por e-mail apenas na criação
   if (!_editingRoutineId) {
@@ -7201,7 +7211,7 @@ function addExercise() {
       <div class="ex-header-right">
         <button type="button" class="btn btn-sm btn-ghost-danger remove-ex-btn"
                 onclick="event.stopPropagation();removeExercise(${id})" style="display:none">${icon('x')} Remover</button>
-        <span class="ex-chevron open" id="ex-chevron-${id}">›</span>
+        <span class="ex-chevron open" id="ex-chevron-${id}">${icon('chevron-right')}</span>
       </div>
     </div>
     <div class="ex-body open" id="ex-body-${id}">
