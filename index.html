@@ -1117,7 +1117,7 @@
     .badge-down { background: var(--danger-a10);    color: #FCA5A5;        border: 1px solid var(--danger-a20); }
     .badge-same { background: var(--neutral-a07); color: var(--text-muted); border: 1px solid var(--border-subtle); }
 
-    .expand-icon { display: inline-block; transition: transform .22s; color: var(--text-muted); font-size: .72rem; }
+    .expand-icon { display: inline-block; transition: transform .22s; color: var(--text-muted); font-size: .95rem; line-height: 1; }
     .history-main-row { cursor: pointer; }
     .history-main-row:hover td { background: rgba(255,255,255,0.015); }
 
@@ -2447,7 +2447,7 @@
           <button id="fp-btn" type="submit" class="btn btn-primary btn-block">Enviar link de recuperação</button>
         </form>
         <div style="text-align:center;margin-top:.875rem">
-          <button class="auth-link" onclick="hideForgotPassword()">← Voltar ao login</button>
+          <button class="auth-link" onclick="hideForgotPassword()"><span data-icon="arrow-left"></span> Voltar ao login</button>
         </div>
       </div>
 
@@ -2477,7 +2477,7 @@
       </form>
 
       <div id="auth-slow-msg" style="display:none;text-align:center;font-size:.82rem;color:var(--text-muted);margin-top:.875rem">
-        ⏳ Conectando ao servidor, aguarde…
+        <span data-icon="loader-circle" data-icon-class="ico-spin"></span> Conectando ao servidor, aguarde…
       </div>
       <div id="auth-msg" class="msg"></div>
     </div>
@@ -2598,8 +2598,8 @@
               <div class="add-ex-bar">
                 <span class="add-ex-title"><span data-icon="dumbbell"></span> Exercícios</span>
                 <div style="display:flex;gap:.5rem;align-items:center">
-                  <button type="button" id="reorder-ex-btn" class="btn btn-outline btn-sm" onclick="openReorderModal()" style="display:none">☰ Reordenar</button>
-                  <button type="button" id="replicate-ex-btn" class="btn btn-outline btn-sm" onclick="openReplicateModal()" style="display:none">📐 Replicar configuração</button>
+                  <button type="button" id="reorder-ex-btn" class="btn btn-outline btn-sm" onclick="openReorderModal()" style="display:none"><span data-icon="arrow-up-down"></span> Reordenar</button>
+                  <button type="button" id="replicate-ex-btn" class="btn btn-outline btn-sm" onclick="openReplicateModal()" style="display:none"><span data-icon="copy-check"></span> Replicar configuração</button>
                   <button type="button" class="btn btn-outline btn-sm" onclick="addExercise()">+ Adicionar exercício</button>
                 </div>
               </div>
@@ -2704,7 +2704,7 @@
     <span class="timer-dot"></span>Treino em andamento
   </div>
   <div class="timer-display" id="timer-display">00:00:00</div>
-  <button class="btn-finish-workout" onclick="stopWorkoutTimer()">■ Finalizar Treino</button>
+  <button class="btn-finish-workout" onclick="stopWorkoutTimer()"><span data-icon="square"></span> Finalizar Treino</button>
 </div>
 
 <!-- TIMER COMPLETION MODAL -->
@@ -2758,7 +2758,7 @@
     <div class="section-label" style="margin-bottom:1rem">Exercícios do Treino</div>
     <div id="exec-exercise-list"></div>
     <div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border-subtle)">
-      <button class="btn-finish-workout" style="width:100%;padding:.75rem" onclick="finishWorkout()">■ Finalizar Treino</button>
+      <button class="btn-finish-workout" style="width:100%;padding:.75rem" onclick="finishWorkout()"><span data-icon="square"></span> Finalizar Treino</button>
     </div>
   </div>
 </div>
@@ -2813,7 +2813,7 @@
                 placeholder="Ex: senti dor no ombro, precisei reduzir a carga…"></textarea>
     </div>
 
-    <button class="btn btn-success btn-block" style="margin-top:1.25rem" onclick="submitReview()">Continuar →</button>
+    <button class="btn btn-success btn-block" style="margin-top:1.25rem" onclick="submitReview()">Continuar <span data-icon="arrow-right"></span></button>
     <div style="text-align:center;margin-top:.75rem">
       <button class="auth-link" onclick="skipReview()">Pular avaliação</button>
     </div>
@@ -2970,6 +2970,7 @@ const ICONS = {
   'eye': '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
   'footprints': '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>',
   'gauge': '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+  'grip-vertical': '<circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/>',
   'heart-pulse': '<path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"/><path d="M3.22 13H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/>',
   'info': '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
   'loader-circle': '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
@@ -3008,6 +3009,18 @@ function hydrateIcons(root = document) {
   root.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon, el.dataset.iconClass || '') })
 }
 document.addEventListener('DOMContentLoaded', () => hydrateIcons())
+
+// Troca ícone + rótulo de um botão de uma vez (estados raros: Salvar/Salvo, Iniciar/Em andamento…).
+// O texto fica num <span class="btn-label"> próprio, então atualizações frequentes (ex: contagem
+// do descanso) mexem só nele via setBtnText(), sem recriar o SVG a cada tick.
+function setBtnLabel(btn, text, iconName = null, iconCls = '') {
+  btn.innerHTML = `${iconName ? icon(iconName, iconCls) + ' ' : ''}<span class="btn-label">${escHtml(text)}</span>`
+}
+function setBtnText(btn, text) {
+  const lbl = btn.querySelector('.btn-label')
+  if (lbl) lbl.textContent = text
+  else btn.textContent = text
+}
 
 // ─────────────────────────────────────────────
 // CONFIG
@@ -3882,7 +3895,7 @@ async function renderStudents() {
           return `<div class="student-card stagger-item" data-student-id="${s.id}" style="--stagger-index:${i}"
               onclick="openStudentSheet('${s.id}','${nameSafe}')">
             <button class="student-unlink-btn" title="Desvincular aluno"
-                onclick="event.stopPropagation();confirmUnlinkStudent('${s.id}','${nameSafe}')">✕</button>
+                onclick="event.stopPropagation();confirmUnlinkStudent('${s.id}','${nameSafe}')" aria-label="Desvincular aluno">${icon('x')}</button>
             ${avatarEl(dName, s.avatar_url || null, 48, 'margin-bottom:.875rem')}
             <div class="student-name">${escHtml(dName)}</div>
             <div class="student-meta">
@@ -4161,7 +4174,7 @@ async function renderDetail(studentId, studentName, gen = 0) {
     workouts.forEach(w => { window._workoutsCache[w.id] = w })
     if (gen && navGen !== gen) return
     body.innerHTML = `
-      <button class="back-btn" onclick="navigateTo('students')">← Voltar para Alunos</button>
+      <button class="back-btn" onclick="navigateTo('students')">${icon('arrow-left')} Voltar para Alunos</button>
       ${historyHTML(workouts, studentName)}`
     if (workouts.length) initChart('evo-chart', [...workouts].reverse())
     bindWorkoutRowClicks(body)
@@ -4395,7 +4408,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
         <td style="color:var(--text-muted);font-size:.83rem">${exLabel}</td>
         <td class="vol-cell">${workoutVolumeDisplay(w)}</td>
         <td>${badge}</td>
-        <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">▶</span></td>
+        <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">${icon('chevron-right')}</span></td>
         <td style="text-align:center;white-space:nowrap">${profile.role === 'personal' ? `<button class="edit-btn" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar treino" aria-label="Editar treino">${icon('pencil')}</button><button class="dup-btn" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar treino" aria-label="Duplicar treino">${icon('copy')}</button><button class="del-btn" onclick="event.stopPropagation();deleteWorkout('${w.id}')" title="Excluir treino" aria-label="Excluir treino">${icon('trash-2')}</button>` : ''}</td>
       </tr>
       <tr id="wd-${uid}" style="display:none" class="history-detail-row">
@@ -4413,7 +4426,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
               <tbody>${exDetailRows}</tbody>
             </table>
             <div class="ex-detail-cards">${exDetailCards}</div>
-            ${profile.role === 'student' ? `<div style="padding:.75rem 1rem .875rem;border-top:1px solid var(--neutral-a06)"><button class="btn-start-workout workout-timer-btn" style="font-size:.8rem;padding:.5rem 1.25rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar Treino'}</button></div>` : ''}
+            ${profile.role === 'student' ? `<div style="padding:.75rem 1rem .875rem;border-top:1px solid var(--neutral-a06)"><button class="btn-start-workout workout-timer-btn" style="font-size:.8rem;padding:.5rem 1.25rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? icon('timer') + ' Em andamento…' : icon('play') + ' Iniciar Treino'}</button></div>` : ''}
             ${profile.role === 'personal' ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid var(--neutral-a06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkout('${w.id}')">${icon('trash-2')} Excluir Treino</button></div>` : ''}
           </div>
         </td>
@@ -4891,7 +4904,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
       </div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" onclick="openNewWorkoutForStudent('${safeIdH}','${safeNameH}')">${icon('plus')} Novo Treino</button>
-        <button class="btn btn-outline btn-sm" onclick="closeStudentSheet()">✕ Fechar</button>
+        <button class="btn btn-outline btn-sm" onclick="closeStudentSheet()">${icon('x')} Fechar</button>
       </div>
     </div>`
 
@@ -5018,7 +5031,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
           </td>
           <td style="color:var(--text-muted);font-size:.83rem">${exes.length} exercício${exes.length !== 1 ? 's' : ''}</td>
           <td class="vol-cell">${workoutVolumeDisplay(w)}</td>
-          <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">▶</span></td>
+          <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">${icon('chevron-right')}</span></td>
           <td style="text-align:center">${editBtn}</td>
         </tr>
         <tr id="wd-${uid}" style="display:none" class="history-detail-row">
@@ -5413,7 +5426,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
       <div style="margin-top:1.75rem;padding-top:1.5rem;border-top:1px solid var(--border-subtle)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.875rem;flex-wrap:wrap;gap:.5rem">
           <div class="section-label" style="margin-bottom:0">Execuções Realizadas</div>
-          <button class="btn btn-primary btn-sm" onclick="openLiveExecutionPicker('${safeIdH}','${safeNameH}')" ${_liveTimerInterval ? 'disabled' : ''}>${_liveTimerInterval ? '⏱ Registro ao vivo em andamento…' : '▶ Registrar ao vivo'}</button>
+          <button class="btn btn-primary btn-sm" onclick="openLiveExecutionPicker('${safeIdH}','${safeNameH}')" ${_liveTimerInterval ? 'disabled' : ''}>${_liveTimerInterval ? icon('timer') + ' Registro ao vivo em andamento…' : icon('play') + ' Registrar ao vivo'}</button>
           <button class="btn btn-outline btn-sm" onclick="openManualExecutionModal('${safeIdH}','${safeNameH}')">${icon('plus')} Registrar retroativo</button>
         </div>
         ${execSectionHTML}
@@ -5699,9 +5712,9 @@ async function renderMyWorkout(gen) {
           <td><strong>${w.name || fmtDate(w.date)}</strong>${dateSub}</td>
           <td style="color:var(--text-muted);font-size:.83rem">${exes.length} exercício${exes.length !== 1 ? 's' : ''}</td>
           <td class="vol-cell">${workoutVolumeDisplay(w)}</td>
-          <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">▶</span></td>
+          <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">${icon('chevron-right')}</span></td>
           <td style="text-align:center;white-space:nowrap">
-            <button class="btn-start-workout workout-timer-btn" style="font-size:.75rem;padding:.35rem .85rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar'}</button>
+            <button class="btn-start-workout workout-timer-btn" style="font-size:.75rem;padding:.35rem .85rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? icon('timer') + ' Em andamento…' : icon('play') + ' Iniciar'}</button>
             <button class="edit-btn" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar" aria-label="Editar">${icon('pencil')}</button>
             <button class="del-btn" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}','${snSafe}')" title="Excluir" aria-label="Excluir">${icon('trash-2')}</button>
           </td>
@@ -5714,7 +5727,7 @@ async function renderMyWorkout(gen) {
             </table>
             <div class="ex-detail-cards">${exCards}</div>
             <div style="padding:.625rem 1rem .875rem;border-top:1px solid var(--neutral-a06)">
-              <button class="btn-start-workout workout-timer-btn" style="font-size:.8rem;padding:.5rem 1.25rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar Treino'}</button>
+              <button class="btn-start-workout workout-timer-btn" style="font-size:.8rem;padding:.5rem 1.25rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? icon('timer') + ' Em andamento…' : icon('play') + ' Iniciar Treino'}</button>
             </div>
           </div></td>
         </tr>`
@@ -5844,7 +5857,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
 
       const showStartBtn = profile.role === 'student' || opts.fromView === 'my-workout'
       const startBtnHTML = showStartBtn
-        ? `<div style="display:flex;justify-content:flex-end;padding-right:.5rem;padding-bottom:.5rem"><button class="btn-start-workout workout-timer-btn" style="font-size:.7rem;padding:.25rem .65rem;background:transparent;border-color:var(--success-a22)" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar Treino'}</button></div>`
+        ? `<div style="display:flex;justify-content:flex-end;padding-right:.5rem;padding-bottom:.5rem"><button class="btn-start-workout workout-timer-btn" style="font-size:.7rem;padding:.25rem .65rem;background:transparent;border-color:var(--success-a22)" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? icon('timer') + ' Em andamento…' : icon('play') + ' Iniciar Treino'}</button></div>`
         : ''
 
       return `
@@ -5863,7 +5876,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
                      <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar" aria-label="Duplicar">${icon('copy')}</button>
                      <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromRoutine('${w.id}','${studentId}','${snSafe}','${routineId}','${rNameSafe}')" title="Excluir" aria-label="Excluir">${icon('trash-2')}</button>`
                   : ''}
-                <span id="rdi-${uid}" class="routine-expand-icon" style="margin-left:.25rem">▶</span>
+                <span id="rdi-${uid}" class="routine-expand-icon" style="margin-left:.25rem">${icon('chevron-right')}</span>
               </div>
             </div>
             ${startBtnHTML}
@@ -5901,7 +5914,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
           ${profile.role === 'personal' ? `<button class="btn btn-outline btn-sm" onclick="openRoutineModal('${studentId}','${snSafe}','${routineId}')" title="Editar nome/data da rotina">${icon('pencil')} Editar Rotina</button>` : ''}
           ${profile.role === 'personal' ? `<button class="btn btn-primary btn-sm" onclick="openNewWorkoutForRoutine('${studentId}','${snSafe}','${routineId}','${rNameSafe}',historyCtx?.fromView)">${icon('plus')} Adicionar Treino</button>` : ''}
-          <button class="btn btn-outline btn-sm" onclick="closeRoutineDetail('${studentId}','${snSafe}')">← Voltar</button>
+          <button class="btn btn-outline btn-sm" onclick="closeRoutineDetail('${studentId}','${snSafe}')">${icon('arrow-left')} Voltar</button>
         </div>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.25rem">
@@ -6221,7 +6234,7 @@ async function renderProfile() {
           </div>
           <input type="file" id="avatar-input" accept="image/*" style="display:none" onchange="uploadAvatar(this)">
           <button type="button" id="avatar-upload-btn" class="btn btn-outline btn-sm"
-                  onclick="document.getElementById('avatar-input').click()">📷 Alterar foto</button>
+                  onclick="document.getElementById('avatar-input').click()">${icon('camera')} <span class="btn-label">Alterar foto</span></button>
         </div>
         <form onsubmit="saveProfile(event)">
           <div class="form-group" style="margin-bottom:1rem">
@@ -6335,7 +6348,7 @@ async function uploadAvatar(input) {
   }
 
   const btn = document.getElementById('avatar-upload-btn')
-  if (btn) { btn.textContent = '⏳ Enviando…'; btn.disabled = true }
+  if (btn) { setBtnLabel(btn, 'Enviando…', 'loader-circle', 'ico-spin'); btn.disabled = true }
 
   try {
     const uploadFile = await compressImage(file)
@@ -6368,7 +6381,7 @@ async function uploadAvatar(input) {
   } catch (err) {
     toast('Erro ao enviar foto: ' + err.message, 'error')
   } finally {
-    if (btn) { btn.textContent = '📷 Alterar foto'; btn.disabled = false }
+    if (btn) { setBtnLabel(btn, 'Alterar foto', 'camera'); btn.disabled = false }
     input.value = ''
   }
 }
@@ -6397,7 +6410,7 @@ async function renderPersonalProfile() {
           </div>
           <input type="file" id="personal-avatar-input" accept="image/*" style="display:none" onchange="uploadPersonalAvatar(this)">
           <button type="button" id="personal-avatar-upload-btn" class="btn btn-outline btn-sm"
-                  onclick="document.getElementById('personal-avatar-input').click()">📷 Alterar foto</button>
+                  onclick="document.getElementById('personal-avatar-input').click()">${icon('camera')} <span class="btn-label">Alterar foto</span></button>
         </div>
         <div class="form-group" style="margin-bottom:1rem">
           <label>Nome completo</label>
@@ -6447,7 +6460,7 @@ async function uploadPersonalAvatar(input) {
   }
 
   const btn = document.getElementById('personal-avatar-upload-btn')
-  if (btn) { btn.textContent = '⏳ Enviando…'; btn.disabled = true }
+  if (btn) { setBtnLabel(btn, 'Enviando…', 'loader-circle', 'ico-spin'); btn.disabled = true }
 
   try {
     const uploadFile = await compressImage(file)
@@ -6480,7 +6493,7 @@ async function uploadPersonalAvatar(input) {
   } catch (err) {
     toast('Erro ao enviar foto: ' + err.message, 'error')
   } finally {
-    if (btn) { btn.textContent = '📷 Alterar foto'; btn.disabled = false }
+    if (btn) { setBtnLabel(btn, 'Alterar foto', 'camera'); btn.disabled = false }
     input.value = ''
   }
 }
@@ -7187,7 +7200,7 @@ function addExercise() {
       <span class="exercise-num-label" id="ex-num-${id}" data-default="Exercício ${num}">Exercício ${num}</span>
       <div class="ex-header-right">
         <button type="button" class="btn btn-sm btn-ghost-danger remove-ex-btn"
-                onclick="event.stopPropagation();removeExercise(${id})" style="display:none">✕ Remover</button>
+                onclick="event.stopPropagation();removeExercise(${id})" style="display:none">${icon('x')} Remover</button>
         <span class="ex-chevron open" id="ex-chevron-${id}">›</span>
       </div>
     </div>
@@ -7200,8 +7213,8 @@ function addExercise() {
         <div class="form-group">
           <label>Tipo de exercício</label>
           <select class="form-control ex-type" onchange="toggleExerciseType(${id})">
-            <option value="musculacao">🏋️ Musculação</option>
-            <option value="aerobico">🏃 Aeróbico (esteira/corrida)</option>
+            <option value="musculacao">Musculação</option>
+            <option value="aerobico">Aeróbico (esteira/corrida)</option>
           </select>
         </div>
       </div>
@@ -7708,11 +7721,11 @@ function openReorderModal() {
     item.dataset.rowId = row.id
     item.innerHTML = `
       <span class="reorder-item-num">${i + 1}</span>
-      <span class="reorder-item-handle">⠿</span>
+      <span class="reorder-item-handle">${icon('grip-vertical')}</span>
       <span class="reorder-item-name">${escHtml(name)}</span>
       <span class="reorder-item-moves">
-        <button type="button" class="reorder-move-btn" data-dir="up" aria-label="Mover para cima">▲</button>
-        <button type="button" class="reorder-move-btn" data-dir="down" aria-label="Mover para baixo">▼</button>
+        <button type="button" class="reorder-move-btn" data-dir="up" aria-label="Mover para cima">${icon('chevron-up')}</button>
+        <button type="button" class="reorder-move-btn" data-dir="down" aria-label="Mover para baixo">${icon('chevron-down')}</button>
       </span>`
     body.appendChild(item)
   })
@@ -7817,7 +7830,7 @@ async function saveReorderModal() {
     } catch {
       toast('Erro ao salvar ordem.', 'error')
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = '✓ Salvar ordem' }
+      if (btn) { btn.disabled = false; setBtnLabel(btn, 'Salvar ordem', 'check') }
     }
   }
 
@@ -7833,8 +7846,7 @@ function openReplicateModal() {
   const modelSel = document.getElementById('replicate-model-sel')
   modelSel.innerHTML = rows.map(row => {
     const name = row.querySelector('.ex-name')?.value.trim() || 'Exercício sem nome'
-    const typeMark = (row.querySelector('.ex-type')?.value || 'musculacao') === 'aerobico' ? '🏃' : '🏋️'
-    return `<option value="${row.id}">${typeMark} ${escHtml(name)}</option>`
+    return `<option value="${row.id}">${escHtml(name)}</option>`
   }).join('')
   modelSel.value = rows[0].id
 
@@ -8625,7 +8637,7 @@ function syncTimerButtons() {
   const running = !!timerInterval
   document.querySelectorAll('.workout-timer-btn').forEach(btn => {
     btn.disabled = running
-    btn.textContent = running ? '⏱ Em andamento…' : '▶ Iniciar Treino'
+    setBtnLabel(btn, running ? 'Em andamento…' : 'Iniciar Treino', running ? 'timer' : 'play')
   })
 }
 
@@ -8665,7 +8677,7 @@ function startRestTimer(exerciseId, totalSeconds, startedAt = Date.now()) {
   restTimers[exerciseId] = { intervalId: null, totalSeconds, startedAt }
   const btn = document.getElementById(`rest-btn-${exerciseId}`)
   const initialRemaining = Math.max(0, totalSeconds - Math.floor((Date.now() - startedAt) / 1000))
-  if (btn) { btn.textContent = `⏱ ${initialRemaining}s`; btn.classList.add('running') }
+  if (btn) { setBtnLabel(btn, `${initialRemaining}s`, 'timer'); btn.classList.add('running') }
 
   restTimers[exerciseId].intervalId = setInterval(() => {
     if (!restTimers[exerciseId]) return
@@ -8679,7 +8691,7 @@ function startRestTimer(exerciseId, totalSeconds, startedAt = Date.now()) {
       delete restTimers[exerciseId]
       playBeep()
       if (btn2) {
-        btn2.innerHTML = `${icon('check')} Descansou!`
+        setBtnLabel(btn2, 'Descansou!', 'check')
         btn2.classList.remove('running')
         btn2.disabled = true
         btn2.style.cssText = 'background:var(--success-a10);border-color:var(--success-a22);color:var(--success)'
@@ -8687,7 +8699,7 @@ function startRestTimer(exerciseId, totalSeconds, startedAt = Date.now()) {
       setTimeout(() => {
         const btn3 = document.getElementById(`rest-btn-${exerciseId}`)
         if (btn3) {
-          btn3.textContent = `⏱ Descanso (${totalSeconds}s)`
+          setBtnLabel(btn3, `Descanso (${totalSeconds}s)`, 'timer')
           btn3.classList.remove('running')
           btn3.disabled = false
           btn3.style.cssText = ''
@@ -8696,7 +8708,7 @@ function startRestTimer(exerciseId, totalSeconds, startedAt = Date.now()) {
       saveExecutionState()
       return
     }
-    if (btn2) btn2.textContent = `⏱ ${remaining}s`
+    if (btn2) setBtnText(btn2, `${remaining}s`)
   }, 1000)
   saveExecutionState()
 }
@@ -8704,7 +8716,7 @@ function startRestTimer(exerciseId, totalSeconds, startedAt = Date.now()) {
 function resetRestTimerBtn(exerciseId, totalSeconds) {
   const btn = document.getElementById(`rest-btn-${exerciseId}`)
   if (!btn) return
-  btn.textContent = `⏱ Descanso (${totalSeconds}s)`
+  setBtnLabel(btn, `Descanso (${totalSeconds}s)`, 'timer')
   btn.classList.remove('running')
   btn.disabled = false
   btn.style.cssText = ''
@@ -8853,7 +8865,7 @@ function _resetMetronomeUI(exId) {
     ind.style.display = 'none'
   }
   const btn = document.getElementById(`metronome-btn-${exId}`)
-  if (btn) { btn.innerHTML = '▶ Metrônomo'; btn.classList.remove('running') }
+  if (btn) { setBtnLabel(btn, 'Metrônomo', 'play'); btn.classList.remove('running') }
 }
 
 function toggleMetronome(exId, cadStr) {
@@ -8871,7 +8883,7 @@ function toggleMetronome(exId, cadStr) {
   if (!phases) return
   const btn = document.getElementById(`metronome-btn-${exId}`)
   const ind = document.getElementById(`metronome-ind-${exId}`)
-  if (btn) { btn.innerHTML = '■ Parar'; btn.classList.add('running') }
+  if (btn) { setBtnLabel(btn, 'Parar', 'square'); btn.classList.add('running') }
   if (ind) ind.style.display = 'flex'
   const token = { exId, cancelled: false }
   _metronomeToken = token
@@ -8990,7 +9002,7 @@ function restoreExecutionState() {
         }
         row.classList.add('live-set-saved')
         const b = row.querySelector('.btn-live-set-save')
-        if (b) b.textContent = '✓ Salvo'
+        if (b) setBtnLabel(b, 'Salvo', 'check')
       })
       updateExecExerciseProgress(exId)
     })
@@ -9068,13 +9080,13 @@ function renderExecutionScreen(workout) {
         const restBtn = !isAero && ex.tempo_descanso > 0
           ? `<div class="rest-timer-wrap" id="rest-timer-${ex.id}">
                <span style="font-size:.72rem;color:var(--text-muted);font-weight:500">Ao terminar uma série, inicie o descanso</span>
-               <button class="btn-rest-timer" id="rest-btn-${ex.id}" onclick="toggleRestTimer('${ex.id}',${ex.tempo_descanso})">⏱ Descanso (${ex.tempo_descanso}s)</button>
+               <button class="btn-rest-timer" id="rest-btn-${ex.id}" onclick="toggleRestTimer('${ex.id}',${ex.tempo_descanso})">${icon('timer')} <span class="btn-label">Descanso (${ex.tempo_descanso}s)</span></button>
              </div>`
           : ''
         const _cadPhases = !isAero ? parseCadencia(ex.cadencia) : null
         const metronomBtn = _cadPhases
           ? `<div class="metronome-wrap">
-               <button class="btn-metronome" id="metronome-btn-${ex.id}" onclick="toggleMetronome('${ex.id}','${ex.cadencia}')">▶ Metrônomo</button>
+               <button class="btn-metronome" id="metronome-btn-${ex.id}" onclick="toggleMetronome('${ex.id}','${ex.cadencia}')">${icon('play')} <span class="btn-label">Metrônomo</span></button>
                <div class="metronome-indicator" id="metronome-ind-${ex.id}" style="display:none">${_cadPhases.map((phase, i) => `<div class="metronome-phase${phase.duracao === 0 ? ' metronome-phase-skip' : ''}" id="mphase-${ex.id}-${i}"><span class="mphase-label">${phase.nome}</span><span class="mphase-dur">${phase.duracao > 0 ? phase.duracao + 's' : '—'}</span></div>${i < _cadPhases.length - 1 ? '<span class="metronome-sep">›</span>' : ''}`).join('')}</div>
              </div>`
           : ''
@@ -9085,7 +9097,7 @@ function renderExecutionScreen(workout) {
                <input type="number" id="exec-dur-${ex.id}" class="form-control" placeholder="Duração (min)" step="0.5" min="0" value="${ex.duration_min ?? ''}" oninput="markExecSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
                <input type="number" id="exec-dist-${ex.id}" class="form-control" placeholder="Distância (km)" step="0.01" min="0" value="${ex.distance_km ?? ''}" oninput="markExecSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
                <input type="number" id="exec-speed-${ex.id}" class="form-control" placeholder="Vel. (km/h)" step="0.1" min="0" value="${ex.speed_kmh ?? ''}" oninput="markExecSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
-               <button class="btn-live-set-save" onclick="saveExecSet('${ex.id}',1)">✓ Salvar</button>
+               <button class="btn-live-set-save" onclick="saveExecSet('${ex.id}',1)">${icon('check')} <span class="btn-label">Salvar</span></button>
              </div>`
           : Array.from({length: setsCount}, (_, i) => `
              <div class="live-set-row" id="exec-set-row-${ex.id}-${i + 1}" data-exercise-id="${ex.id}" data-set-number="${i + 1}">
@@ -9093,7 +9105,7 @@ function renderExecutionScreen(workout) {
                <input type="number" id="exec-w-${ex.id}-${i + 1}" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${ex.weight_kg ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">
                <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
                <input type="number" id="exec-r-${ex.id}-${i + 1}" class="form-control exec-set-reps" placeholder="reps" min="1" value="${ex.reps ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">
-               <button class="btn-live-set-save" onclick="saveExecSet('${ex.id}',${i + 1})">✓ Salvar</button>
+               <button class="btn-live-set-save" onclick="saveExecSet('${ex.id}',${i + 1})">${icon('check')} <span class="btn-label">Salvar</span></button>
              </div>`).join('')
 
         return `
@@ -9117,7 +9129,7 @@ function markExecSetDirty(exerciseId, setNumber) {
   if (!row) return
   row.classList.remove('live-set-saved')
   const btn = row.querySelector('.btn-live-set-save')
-  if (btn) btn.textContent = '✓ Salvar'
+  if (btn) setBtnLabel(btn, 'Salvar', 'check')
 }
 
 // Salva UMA série imediatamente no banco (upsert por session_id+exercise_id+set_number) —
@@ -9173,12 +9185,12 @@ async function saveExecSet(exerciseId, setNumber) {
     exerciseExecutions[exerciseId] = exerciseExecutions[exerciseId] || {}
     exerciseExecutions[exerciseId][setNumber] = savedData
     row?.classList.add('live-set-saved')
-    if (btn) { btn.disabled = false; btn.textContent = '✓ Salvo' }
+    if (btn) { btn.disabled = false; setBtnLabel(btn, 'Salvo', 'check') }
     updateExecExerciseProgress(exerciseId)
     saveExecutionState()
   } catch (err) {
     console.error('[saveExecSet] erro:', err?.message || err)
-    if (btn) { btn.disabled = false; btn.textContent = '✓ Salvar' }
+    if (btn) { btn.disabled = false; setBtnLabel(btn, 'Salvar', 'check') }
     toast('Não foi possível salvar a série. Verifique sua conexão e tente novamente.', 'error', {
       actionLabel: 'Tentar novamente',
       onAction: () => saveExecSet(exerciseId, setNumber)
@@ -9782,7 +9794,7 @@ async function confirmManualExecution() {
     openStudentSheet(studentId, studentName)
   } finally {
     btn.disabled = false
-    btn.textContent = '✓ Registrar treino'
+    setBtnLabel(btn, 'Registrar treino', 'check')
   }
 }
 
@@ -9876,13 +9888,13 @@ function renderLiveExerciseCardHTML(ex) {
   const restBtn = !isAero && ex.tempo_descanso > 0
     ? `<div class="rest-timer-wrap" id="rest-timer-${ex.id}">
          <span style="font-size:.72rem;color:var(--text-muted);font-weight:500">Ao terminar uma série, inicie o descanso</span>
-         <button class="btn-rest-timer" id="rest-btn-${ex.id}" onclick="toggleRestTimer('${ex.id}',${ex.tempo_descanso})">⏱ Descanso (${ex.tempo_descanso}s)</button>
+         <button class="btn-rest-timer" id="rest-btn-${ex.id}" onclick="toggleRestTimer('${ex.id}',${ex.tempo_descanso})">${icon('timer')} <span class="btn-label">Descanso (${ex.tempo_descanso}s)</span></button>
        </div>`
     : ''
   const _cadPhases = !isAero ? parseCadencia(ex.cadencia) : null
   const metronomBtn = _cadPhases
     ? `<div class="metronome-wrap">
-         <button class="btn-metronome" id="metronome-btn-${ex.id}" onclick="toggleMetronome('${ex.id}','${ex.cadencia}')">▶ Metrônomo</button>
+         <button class="btn-metronome" id="metronome-btn-${ex.id}" onclick="toggleMetronome('${ex.id}','${ex.cadencia}')">${icon('play')} <span class="btn-label">Metrônomo</span></button>
          <div class="metronome-indicator" id="metronome-ind-${ex.id}" style="display:none">${_cadPhases.map((phase, i) => `<div class="metronome-phase${phase.duracao === 0 ? ' metronome-phase-skip' : ''}" id="mphase-${ex.id}-${i}"><span class="mphase-label">${phase.nome}</span><span class="mphase-dur">${phase.duracao > 0 ? phase.duracao + 's' : '—'}</span></div>${i < _cadPhases.length - 1 ? '<span class="metronome-sep">›</span>' : ''}`).join('')}</div>
        </div>`
     : ''
@@ -9892,7 +9904,7 @@ function renderLiveExerciseCardHTML(ex) {
          <input type="number" id="live-dur-${ex.id}" class="form-control" placeholder="Duração (min)" step="0.5" min="0" value="${ex.duration_min ?? ''}" oninput="markLiveSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
          <input type="number" id="live-dist-${ex.id}" class="form-control" placeholder="Distância (km)" step="0.01" min="0" value="${ex.distance_km ?? ''}" oninput="markLiveSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
          <input type="number" id="live-speed-${ex.id}" class="form-control" placeholder="Vel. (km/h)" step="0.1" min="0" value="${ex.speed_kmh ?? ''}" oninput="markLiveSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
-         <button class="btn-live-set-save" onclick="saveLiveSet('${ex.id}',1)">✓ Salvar</button>
+         <button class="btn-live-set-save" onclick="saveLiveSet('${ex.id}',1)">${icon('check')} <span class="btn-label">Salvar</span></button>
        </div>`
     : Array.from({length: setsCount}, (_, i) => `
        <div class="live-set-row" id="live-set-row-${ex.id}-${i + 1}" data-exercise-id="${ex.id}" data-set-number="${i + 1}">
@@ -9900,14 +9912,14 @@ function renderLiveExerciseCardHTML(ex) {
          <input type="number" id="live-w-${ex.id}-${i + 1}" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${ex.weight_kg ?? ''}" oninput="markLiveSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">
          <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
          <input type="number" id="live-r-${ex.id}-${i + 1}" class="form-control exec-set-reps" placeholder="reps" min="1" value="${ex.reps ?? ''}" oninput="markLiveSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">
-         <button class="btn-live-set-save" onclick="saveLiveSet('${ex.id}',${i + 1})">✓ Salvar</button>
+         <button class="btn-live-set-save" onclick="saveLiveSet('${ex.id}',${i + 1})">${icon('check')} <span class="btn-label">Salvar</span></button>
        </div>`).join('')
 
   const setsStepper = !isAero
     ? `<div class="live-ex-sets-stepper">
-         <button type="button" class="btn-live-sets-step" onclick="liveAdjustSets('${ex.id}',-1)" ${setsCount <= 1 ? 'disabled' : ''}>−</button>
+         <button type="button" class="btn-live-sets-step" aria-label="Remover série" title="Remover série" onclick="liveAdjustSets('${ex.id}',-1)" ${setsCount <= 1 ? 'disabled' : ''}>−</button>
          <span class="live-ex-sets-value">${setsCount} série${setsCount > 1 ? 's' : ''}</span>
-         <button type="button" class="btn-live-sets-step" onclick="liveAdjustSets('${ex.id}',1)">+</button>
+         <button type="button" class="btn-live-sets-step" aria-label="Adicionar série" title="Adicionar série" onclick="liveAdjustSets('${ex.id}',1)">+</button>
        </div>`
     : ''
 
@@ -9987,7 +9999,7 @@ function hydrateLiveExerciseSavedSets(exerciseId) {
     }
     row.classList.add('live-set-saved')
     const b = row.querySelector('.btn-live-set-save')
-    if (b) b.textContent = '✓ Salvo'
+    if (b) setBtnLabel(b, 'Salvo', 'check')
   })
 }
 
@@ -10247,7 +10259,7 @@ function markLiveSetDirty(exerciseId, setNumber) {
   if (!row) return
   row.classList.remove('live-set-saved')
   const btn = row.querySelector('.btn-live-set-save')
-  if (btn) btn.textContent = '✓ Salvar'
+  if (btn) setBtnLabel(btn, 'Salvar', 'check')
 }
 
 async function saveLiveSet(exerciseId, setNumber) {
@@ -10300,12 +10312,12 @@ async function saveLiveSet(exerciseId, setNumber) {
     _liveSavedSets[exerciseId] = _liveSavedSets[exerciseId] || {}
     _liveSavedSets[exerciseId][setNumber] = savedData
     row?.classList.add('live-set-saved')
-    if (btn) { btn.disabled = false; btn.textContent = '✓ Salvo' }
+    if (btn) { btn.disabled = false; setBtnLabel(btn, 'Salvo', 'check') }
     updateLiveExerciseProgress(exerciseId)
     saveLiveExecutionState()
   } catch (err) {
     console.error('[saveLiveSet] erro:', err?.message || err)
-    if (btn) { btn.disabled = false; btn.textContent = '✓ Salvar' }
+    if (btn) { btn.disabled = false; setBtnLabel(btn, 'Salvar', 'check') }
     toast('Não foi possível salvar a série. Verifique sua conexão e tente novamente.', 'error', {
       actionLabel: 'Tentar novamente',
       onAction: () => saveLiveSet(exerciseId, setNumber)
@@ -10493,12 +10505,12 @@ function finishLiveExecution() {
   <div class="reorder-modal-card">
     <div class="reorder-modal-header">
       <span style="font-weight:700;font-size:.95rem;color:var(--text-primary)"><span data-icon="arrow-up-down"></span> Reordenar Exercícios</span>
-      <button class="btn btn-outline btn-sm" onclick="closeReorderModal()" style="padding:.2rem .6rem">✕</button>
+      <button class="btn btn-outline btn-sm" onclick="closeReorderModal()" style="padding:.2rem .6rem" aria-label="Fechar" title="Fechar"><span data-icon="x"></span></button>
     </div>
     <div id="reorder-modal-body" class="reorder-modal-body"></div>
     <div class="reorder-modal-footer">
       <button class="btn btn-outline btn-sm" onclick="closeReorderModal()">Cancelar</button>
-      <button class="btn btn-primary btn-sm" id="reorder-save-btn" onclick="saveReorderModal()">✓ Salvar ordem</button>
+      <button class="btn btn-primary btn-sm" id="reorder-save-btn" onclick="saveReorderModal()"><span data-icon="check"></span> Salvar ordem</button>
     </div>
   </div>
 </div>
@@ -10508,7 +10520,7 @@ function finishLiveExecution() {
   <div class="reorder-modal-card">
     <div class="reorder-modal-header">
       <span style="font-weight:700;font-size:.95rem;color:var(--text-primary)"><span data-icon="copy-check"></span> Replicar Configuração</span>
-      <button class="btn btn-outline btn-sm" onclick="closeReplicateModal()" style="padding:.2rem .6rem">✕</button>
+      <button class="btn btn-outline btn-sm" onclick="closeReplicateModal()" style="padding:.2rem .6rem" aria-label="Fechar" title="Fechar"><span data-icon="x"></span></button>
     </div>
     <div class="reorder-modal-body">
       <p style="font-size:.78rem;color:var(--text-muted);margin:0 0 .625rem">Escolha o exercício modelo e marque para quais outros exercícios (do mesmo tipo) aplicar a mesma configuração. Nada é salvo até você clicar em "Salvar/Atualizar Treino".</p>
@@ -10520,7 +10532,7 @@ function finishLiveExecution() {
     </div>
     <div class="reorder-modal-footer">
       <button class="btn btn-outline btn-sm" onclick="closeReplicateModal()">Cancelar</button>
-      <button class="btn btn-primary btn-sm" onclick="confirmReplicate()">✓ Aplicar</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmReplicate()"><span data-icon="check"></span> Aplicar</button>
     </div>
   </div>
 </div>
@@ -10530,7 +10542,7 @@ function finishLiveExecution() {
   <div class="reorder-modal-card">
     <div class="reorder-modal-header">
       <span style="font-weight:700;font-size:.95rem;color:var(--text-primary)"><span data-icon="plus"></span> Registrar Treino Retroativo</span>
-      <button class="btn btn-outline btn-sm" onclick="closeManualExecutionModal()" style="padding:.2rem .6rem">✕</button>
+      <button class="btn btn-outline btn-sm" onclick="closeManualExecutionModal()" style="padding:.2rem .6rem" aria-label="Fechar" title="Fechar"><span data-icon="x"></span></button>
     </div>
     <div class="reorder-modal-body">
       <p style="font-size:.78rem;color:var(--text-muted);margin:0 0 .875rem">Use quando o treino já foi realizado presencialmente e não pôde ser marcado ao vivo. O registro entra direto como concluído no histórico do aluno.</p>
@@ -10550,7 +10562,7 @@ function finishLiveExecution() {
     </div>
     <div class="reorder-modal-footer">
       <button class="btn btn-outline btn-sm" onclick="closeManualExecutionModal()">Cancelar</button>
-      <button class="btn btn-primary btn-sm" id="manual-exec-save-btn" onclick="confirmManualExecution()">✓ Registrar treino</button>
+      <button class="btn btn-primary btn-sm" id="manual-exec-save-btn" onclick="confirmManualExecution()"><span data-icon="check"></span> Registrar treino</button>
     </div>
   </div>
 </div>
@@ -10560,7 +10572,7 @@ function finishLiveExecution() {
   <div class="reorder-modal-card">
     <div class="reorder-modal-header">
       <span style="font-weight:700;font-size:.95rem;color:var(--text-primary)"><span data-icon="play"></span> Registrar ao Vivo</span>
-      <button class="btn btn-outline btn-sm" onclick="closeLiveExecutionPicker()" style="padding:.2rem .6rem">✕</button>
+      <button class="btn btn-outline btn-sm" onclick="closeLiveExecutionPicker()" style="padding:.2rem .6rem" aria-label="Fechar" title="Fechar"><span data-icon="x"></span></button>
     </div>
     <div class="reorder-modal-body">
       <p style="font-size:.78rem;color:var(--text-muted);margin:0 0 .875rem">Escolha o treino que o aluno vai executar agora. Depois é só marcar cada série assim que ela for feita.</p>
@@ -10571,7 +10583,7 @@ function finishLiveExecution() {
     </div>
     <div class="reorder-modal-footer">
       <button class="btn btn-outline btn-sm" onclick="closeLiveExecutionPicker()">Cancelar</button>
-      <button class="btn btn-primary btn-sm" onclick="startLiveExecution()">▶ Iniciar registro ao vivo</button>
+      <button class="btn btn-primary btn-sm" onclick="startLiveExecution()"><span data-icon="play"></span> Iniciar registro ao vivo</button>
     </div>
   </div>
 </div>
@@ -10601,8 +10613,8 @@ function finishLiveExecution() {
       <div class="live-ex-edit-row">
         <input type="text" class="form-control" id="live-add-ex-name" list="live-exercise-catalog" placeholder="Nome do exercício">
         <select class="form-control" id="live-add-ex-type" onchange="toggleLiveAddExerciseType()" style="max-width:170px;flex:initial">
-          <option value="musculacao">🏋️ Musculação</option>
-          <option value="aerobico">🏃 Aeróbico</option>
+          <option value="musculacao">Musculação</option>
+          <option value="aerobico">Aeróbico</option>
         </select>
       </div>
       <div class="live-ex-edit-row" id="live-add-ex-musc">
@@ -10622,7 +10634,7 @@ function finishLiveExecution() {
       </div>
     </div>
     <div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border-subtle)">
-      <button class="btn-finish-workout" style="width:100%;padding:.75rem" onclick="finishLiveExecution()">■ Finalizar Registro</button>
+      <button class="btn-finish-workout" style="width:100%;padding:.75rem" onclick="finishLiveExecution()"><span data-icon="square"></span> Finalizar Registro</button>
     </div>
   </div>
 </div>
