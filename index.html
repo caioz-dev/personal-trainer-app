@@ -1282,7 +1282,8 @@
     .back-btn:hover { background: var(--neutral-a10); color: var(--text-primary); border-color: var(--neutral-a22); }
 
     .empty-state { text-align: center; padding: 3.5rem 2rem; color: var(--text-muted); }
-    .empty-icon  { font-size: 2.5rem; margin-bottom: .75rem; opacity: 0.6; }
+    .empty-icon  { font-size: 2.5rem; margin-bottom: .75rem; opacity: 0.6; line-height: 1; }
+    .empty-icon .ico, .timer-modal-icon .ico { stroke-width: 1.5; }
 
     .loading { text-align: center; padding: 3rem; color: var(--text-muted); }
 
@@ -1631,7 +1632,7 @@
       to   { transform: scale(1);  opacity: 1; }
     }
 
-    .timer-modal-icon  { font-size: 3rem; margin-bottom: .75rem; line-height: 1; }
+    .timer-modal-icon  { font-size: 3rem; margin-bottom: .75rem; line-height: 1; color: var(--warning); }
     .timer-modal-title { font-size: 1.2rem; font-weight: 800; color: var(--text-primary); margin-bottom: .35rem; letter-spacing: -0.02em; }
     .timer-modal-sub   { font-size: .82rem; color: var(--text-muted); margin-bottom: 1.25rem; }
     .timer-modal-time  { font-size: 3.8rem; font-weight: 900; color: var(--success); letter-spacing: -0.04em; line-height: 1; margin-bottom: 1.75rem; font-variant-numeric: tabular-nums; }
@@ -2558,7 +2559,7 @@
                   <label>Aluno</label>
                   <select id="wf-student" class="form-control"></select>
                   <div id="wf-student-inactive-warning" style="display:none;color:var(--danger);font-size:.78rem;margin-top:.4rem">
-                    ⚠️ Este aluno foi desvinculado da sua conta. Reative o vínculo ou selecione outro aluno antes de salvar.
+                    <span data-icon="triangle-alert"></span> Este aluno foi desvinculado da sua conta. Reative o vínculo ou selecione outro aluno antes de salvar.
                   </div>
                 </div>
                 <div class="form-group form-full">
@@ -2595,7 +2596,7 @@
               </div>
 
               <div class="add-ex-bar">
-                <span class="add-ex-title">🏋️ Exercícios</span>
+                <span class="add-ex-title"><span data-icon="dumbbell"></span> Exercícios</span>
                 <div style="display:flex;gap:.5rem;align-items:center">
                   <button type="button" id="reorder-ex-btn" class="btn btn-outline btn-sm" onclick="openReorderModal()" style="display:none">☰ Reordenar</button>
                   <button type="button" id="replicate-ex-btn" class="btn btn-outline btn-sm" onclick="openReplicateModal()" style="display:none">📐 Replicar configuração</button>
@@ -2625,7 +2626,7 @@
             <div class="card-header">
               <div>
                 <div class="section-label">Ferramentas</div>
-                <div class="card-title">🧮 Calculadora de Repetições</div>
+                <div class="card-title"><span data-icon="calculator"></span> Calculadora de Repetições</div>
               </div>
             </div>
             <p style="font-size:.875rem;color:var(--text-muted);margin-bottom:1.25rem">
@@ -2709,7 +2710,7 @@
 <!-- TIMER COMPLETION MODAL -->
 <div id="timer-modal-overlay" class="timer-modal-overlay" style="display:none">
   <div class="timer-modal-card">
-    <div class="timer-modal-icon">🏆</div>
+    <div class="timer-modal-icon"><span data-icon="trophy"></span></div>
     <div class="timer-modal-title">Treino Concluído!</div>
     <div class="timer-modal-sub">Tempo total de treino</div>
     <div class="timer-modal-time" id="timer-modal-time">00:00:00</div>
@@ -2722,7 +2723,7 @@
 <div id="password-reset-overlay" class="password-reset-overlay" style="display:none">
   <div class="auth-card" style="animation: scaleIn .3s cubic-bezier(0.22,1,0.36,1)">
     <div class="auth-logo">
-      🔐 Nova Senha
+      <span data-icon="lock-keyhole"></span> Nova Senha
       <small>PersonalPro</small>
     </div>
     <form onsubmit="doResetPassword(event)">
@@ -2766,7 +2767,7 @@
 <!-- REVIEW MODAL -->
 <div id="review-modal" class="review-modal-overlay" style="display:none">
   <div class="timer-modal-card" style="max-width:420px;width:calc(100% - 2rem);text-align:left;max-height:90vh;overflow-y:auto">
-    <div style="font-size:2rem;text-align:center;margin-bottom:.5rem">⭐</div>
+    <div style="font-size:2rem;text-align:center;margin-bottom:.5rem;color:var(--warning);line-height:1"><span data-icon="star"></span></div>
     <div class="timer-modal-title" style="text-align:center;margin-bottom:.2rem">Autoavaliação</div>
     <div class="timer-modal-sub" style="text-align:center;margin-bottom:1.5rem">Como foi o seu treino hoje?</div>
 
@@ -2825,7 +2826,7 @@
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.75rem">
       <div>
         <div class="section-label" style="margin-bottom:.35rem">Resumo do Treino</div>
-        <div style="font-size:1.15rem;font-weight:800;letter-spacing:-0.02em">📊 Comparativo de Execução</div>
+        <div style="font-size:1.15rem;font-weight:800;letter-spacing:-0.02em"><span data-icon="chart-column"></span> Comparativo de Execução</div>
       </div>
       <div style="text-align:right">
         <div style="font-size:.72rem;color:var(--text-muted);font-weight:600;letter-spacing:.08em;text-transform:uppercase">Tempo total</div>
@@ -2917,7 +2918,7 @@
 <div id="notif-panel-overlay" class="routine-modal-overlay" style="display:none" onclick="if(event.target===this)closeNotifPanel()">
   <div class="routine-modal-card" style="max-width:440px;max-height:80vh;display:flex;flex-direction:column">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-      <div style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em">🔔 Notificações</div>
+      <div style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em"><span data-icon="bell"></span> Notificações</div>
       <button type="button" class="btn btn-outline btn-sm" onclick="closeNotifPanel()">Fechar</button>
     </div>
     <div id="notif-panel-list" style="overflow-y:auto"></div>
@@ -3816,7 +3817,7 @@ async function renderStudents() {
 
     if (!students.length) {
       body.innerHTML = `${linkForm}
-        <div class="empty-state"><div class="empty-icon">👤</div>
+        <div class="empty-state"><div class="empty-icon">${icon('user-round')}</div>
         <p>Nenhum aluno vinculado ainda.</p>
         <p style="font-size:.82rem;margin-top:.5rem">Use o formulário acima para vincular seus alunos.</p></div>`
       return
@@ -3893,7 +3894,7 @@ async function renderStudents() {
       </div>`
   } catch (err) {
     console.error('[renderStudents]', err)
-    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
       <p>Erro ao carregar alunos.</p>
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
               onclick="renderStudents()">Tentar novamente</button></div>`
@@ -3937,7 +3938,7 @@ async function renderRenewals(gen = 0) {
     if (gen && navGen !== gen) return
 
     if (!students.length) {
-      body.innerHTML = `<div class="empty-state"><div class="empty-icon">🔄</div>
+      body.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('refresh-cw')}</div>
         <p>Nenhum aluno vinculado ainda.</p></div>`
       return
     }
@@ -4026,7 +4027,7 @@ async function renderRenewals(gen = 0) {
       </div>`
   } catch (err) {
     console.error('[renderRenewals]', err)
-    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
       <p>Erro ao carregar renovações.</p>
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
               onclick="renderRenewals()">Tentar novamente</button></div>`
@@ -4166,7 +4167,7 @@ async function renderDetail(studentId, studentName, gen = 0) {
     bindWorkoutRowClicks(body)
   } catch (err) {
     if (gen && navGen !== gen) return
-    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
       <p>Erro ao carregar treinos.</p>
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
               onclick="renderDetail('${studentId}','${studentName}')">Tentar novamente</button></div>`
@@ -4219,7 +4220,7 @@ async function renderHistory(studentId, gen = 0) {
         }
         const cards = visibleRoutines.map(r => {
           const period    = r.start_date || r.end_date
-            ? `📅 ${r.start_date ? fmtDate(r.start_date) : '—'} → ${r.end_date ? fmtDate(r.end_date) : '—'}`
+            ? `${icon('calendar')} ${r.start_date ? fmtDate(r.start_date) : '—'} → ${r.end_date ? fmtDate(r.end_date) : '—'}`
             : null
           const wCount    = (workoutsByRoutine[r.id] || []).length
           const rNameSafe = r.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
@@ -4268,7 +4269,7 @@ async function renderHistory(studentId, gen = 0) {
     bindWorkoutRowClicks(body)
   } catch (err) {
     if (gen && navGen !== gen) return
-    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
       <p>Erro ao carregar histórico.</p>
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
               onclick="renderHistory('${studentId}')">Tentar novamente</button></div>`
@@ -4277,7 +4278,7 @@ async function renderHistory(studentId, gen = 0) {
 
 function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', routineNameById = {}) {
   if (!ws.length) return `<div class="empty-state">
-    <div class="empty-icon">🏋️</div>
+    <div class="empty-icon">${icon('dumbbell')}</div>
     <p>Nenhum treino registrado ainda para ${name}.<br>
     Use "Novo Treino" para registrar o primeiro!</p></div>`
 
@@ -4302,8 +4303,8 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
     let badge = '<span style="color:var(--text-muted)">—</span>'
     if (prevVol !== null) {
       const diff = (vol - prevVol).toFixed(0)
-      if (vol > prevVol)      badge = `<span class="badge badge-up">↑ ${diff} kg</span>`
-      else if (vol < prevVol) badge = `<span class="badge badge-down">↓ ${Math.abs(diff)} kg</span>`
+      if (vol > prevVol)      badge = `<span class="badge badge-up">${icon('arrow-up')} ${diff} kg</span>`
+      else if (vol < prevVol) badge = `<span class="badge badge-down">${icon('arrow-down')} ${Math.abs(diff)} kg</span>`
       else                    badge = `<span class="badge badge-same">= 0 kg</span>`
     }
 
@@ -4323,13 +4324,13 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
             const row = `<tr>
               <td style="padding-left:2rem;font-weight:500;color:var(--text-secondary)">
                 ${ex.exercise_name}
-                <span style="font-size:.63rem;background:var(--warning-a10);color:var(--warning);border:1px solid var(--warning-a20);border-radius:999px;padding:.1rem .45rem;margin-left:.3rem;vertical-align:middle">🏃 Aeróbico</span>
+                <span style="font-size:.63rem;background:var(--warning-a10);color:var(--warning);border:1px solid var(--warning-a20);border-radius:999px;padding:.1rem .45rem;margin-left:.3rem;vertical-align:middle;white-space:nowrap">${icon('footprints')} Aeróbico</span>
               </td>
               <td>—</td>
               <td style="color:var(--text-secondary)">${parts || '—'}</td>
               <td>${ex.speed_kmh ? ex.speed_kmh + ' km/h' : '—'}</td>
               <td>${ex.pace ? ex.pace + ' /km' : '—'}</td>
-              <td style="color:var(--text-muted)">${(ex.hr_min || ex.hr_max) ? `❤️ ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : '—'}</td>
+              <td style="color:var(--text-muted)">${(ex.hr_min || ex.hr_max) ? `${icon('heart-pulse')} ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : '—'}</td>
             </tr>`
             const aeroParts = [
               ex.duration_min ? `${ex.duration_min} min` : null,
@@ -4338,16 +4339,16 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
               ex.pace         ? `Ritmo: ${ex.pace}/km`  : null
             ].filter(Boolean).join(' · ')
             const card = `<div class="ex-card">
-              <div class="ex-card-name">${ex.exercise_name}<span class="ex-badge-aero">🏃 Aeróbico</span></div>
+              <div class="ex-card-name">${ex.exercise_name}<span class="ex-badge-aero">${icon('footprints')} Aeróbico</span></div>
               ${aeroParts ? `<div class="ex-card-detail">${aeroParts}</div>` : ''}
-              ${(ex.hr_min || ex.hr_max) ? `<div class="ex-card-sub">❤️ FC: ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm</div>` : ''}
+              ${(ex.hr_min || ex.hr_max) ? `<div class="ex-card-sub">${icon('heart-pulse')} FC: ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm</div>` : ''}
             </div>`
             return { row, card }
           }
           const row = `<tr>
             <td style="padding-left:2rem;font-weight:500;color:var(--text-secondary)">
               ${ex.exercise_name}
-              ${ex.training_method ? `<div style="font-size:.7rem;color:var(--accent-soft);margin-top:.15rem">⚡ ${ex.training_method}</div>` : ''}
+              ${ex.training_method ? `<div style="font-size:.7rem;color:var(--accent-soft);margin-top:.15rem">${icon('zap')} ${ex.training_method}</div>` : ''}
               ${ex.method_description ? `<div style="font-size:.68rem;color:var(--text-muted);margin-top:.1rem;font-style:italic">${ex.method_description}</div>` : ''}
             </td>
             <td>${ex.sets} série${ex.sets > 1 ? 's' : ''}</td>
@@ -4362,7 +4363,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
             ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null
           ].filter(Boolean).join(' · ')
           const card = `<div class="ex-card">
-            <div class="ex-card-name">${ex.exercise_name}${ex.training_method ? `<span class="ex-badge-method">⚡ ${ex.training_method}</span>` : ''}</div>
+            <div class="ex-card-name">${ex.exercise_name}${ex.training_method ? `<span class="ex-badge-method">${icon('zap')} ${ex.training_method}</span>` : ''}</div>
             <div class="ex-card-detail">${detailLine}</div>
             ${subParts ? `<div class="ex-card-sub">${subParts}</div>` : ''}
             ${ex.method_description ? `<div class="ex-card-method">${ex.method_description}</div>` : ''}
@@ -4380,7 +4381,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
       ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">${dateRange}</div>`
       : w.end_date ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">até ${fmtDate(w.end_date)}</div>` : ''
     const routineTag = w.routine_id
-      ? `<span class="badge-routine-tag">🔁 ${escHtml(routineNameById[w.routine_id] || 'Rotina')}</span>`
+      ? `<span class="badge-routine-tag">${icon('repeat')} ${escHtml(routineNameById[w.routine_id] || 'Rotina')}</span>`
       : ''
 
     return `
@@ -4443,24 +4444,24 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
     ${routinesCardsHTML
       ? `<div class="section-grid reveal">
           <div class="card">
-            <div class="card-header"><div class="card-title">📈 Evolução do Volume</div></div>
+            <div class="card-header"><div class="card-title">${icon('trending-up')} Evolução do Volume</div></div>
             <div class="chart-container"><canvas id="${canvasId}"></canvas></div>
           </div>
           <div class="card">
-            <div class="card-header"><div class="card-title">📅 Minhas Rotinas</div></div>
+            <div class="card-header"><div class="card-title">${icon('calendar')} Minhas Rotinas</div></div>
             ${routinesCardsHTML}
           </div>
         </div>`
       : `<div class="reveal chart-only-block">
           <div class="card">
-            <div class="card-header"><div class="card-title">📈 Evolução do Volume</div></div>
+            <div class="card-header"><div class="card-title">${icon('trending-up')} Evolução do Volume</div></div>
             <div class="chart-container"><canvas id="${canvasId}"></canvas></div>
           </div>
         </div>`}
 
     ${standAlone.length > 0
       ? `<div class="card reveal history-table-card" style="margin-top:1.5rem">
-          <div class="card-header"><div class="card-title">📋 Histórico de Treinos</div></div>
+          <div class="card-header"><div class="card-title">${icon('clipboard-list')} Histórico de Treinos</div></div>
           <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:1rem">Clique em um treino para ver os exercícios.</p>
           ${profile.role === 'personal' ? `<div id="bulk-select-bar" class="bulk-select-bar" style="display:none">
             <label class="bulk-select-all-label">
@@ -4619,7 +4620,7 @@ function showBulkDeleteConfirm() {
   if (!modal || !bodyEl) return
   const plural = count === 1
   bodyEl.innerHTML = `Você está prestes a excluir <strong>${count} treino${plural ? '' : 's'}</strong>.<br><br>
-    <span style="color:var(--danger)">⚠️ Esta ação é irreversível.</span><br>
+    <span style="color:var(--danger)">${icon('triangle-alert')} Esta ação é irreversível.</span><br>
     Todas as execuções e avaliações relacionadas ${plural ? 'a este treino' : 'a estes treinos'} também serão apagadas.`
   modal.style.display = 'flex'
   document.body.style.overflow = 'hidden'
@@ -4885,7 +4886,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
         <div>
           <div class="section-label" style="margin-bottom:.25rem">Ficha do Aluno</div>
           <div style="font-size:1.05rem;font-weight:800;letter-spacing:-0.02em">${studentName}</div>
-          ${studentEmail ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.15rem">✉️ ${escHtml(studentEmail)}</div>` : ''}
+          ${studentEmail ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.15rem">${icon('mail')} ${escHtml(studentEmail)}</div>` : ''}
         </div>
       </div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
@@ -4961,13 +4962,13 @@ async function renderStudentSheet(studentId, studentName, gen) {
         ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">${dateRange}</div>`
         : w.end_date ? `<div style="font-size:.74rem;color:var(--text-muted);margin-top:.15rem">até ${fmtDate(w.end_date)}</div>` : ''
       const routineTag = w.routine_id
-        ? `<span class="badge-routine-tag">🔁 ${escHtml(routineNameById[w.routine_id] || 'Rotina')}</span>`
+        ? `<span class="badge-routine-tag">${icon('repeat')} ${escHtml(routineNameById[w.routine_id] || 'Rotina')}</span>`
         : ''
       const exPairs = exes.length
         ? exes.map(ex => {
             const isAero  = ex.exercise_type === 'aerobico'
             const nameSub = !isAero && ex.training_method
-              ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">⚡ ${ex.training_method}</div>`
+              ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">${icon('zap')} ${ex.training_method}</div>`
               : ''
             const detail  = isAero
               ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—'
@@ -4983,11 +4984,11 @@ async function renderStudentSheet(studentId, studentName, gen) {
               </tr>`
             const card = isAero
               ? `<div class="ex-card">
-                  <div class="ex-card-name">${ex.exercise_name}<span class="ex-badge-aero">🏃 Aeróbico</span></div>
+                  <div class="ex-card-name">${ex.exercise_name}<span class="ex-badge-aero">${icon('footprints')} Aeróbico</span></div>
                   <div class="ex-card-detail">${detail}</div>
                 </div>`
               : `<div class="ex-card">
-                  <div class="ex-card-name">${ex.exercise_name}${ex.training_method ? `<span class="ex-badge-method">⚡ ${ex.training_method}</span>` : ''}</div>
+                  <div class="ex-card-name">${ex.exercise_name}${ex.training_method ? `<span class="ex-badge-method">${icon('zap')} ${ex.training_method}</span>` : ''}</div>
                   <div class="ex-card-detail">${detail} — Vol: ${volCell}</div>
                 </div>`
             return { row, card }
@@ -5111,7 +5112,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
               totalPlannedAero  += planned
               if (!notExecuted) totalExecutedAero += executed
 
-              const plannedTxt  = [planDur > 0 ? planDur + ' min' : null, planDist > 0 ? planDist + ' km' : null, planSpd > 0 ? planSpd + ' km/h' : null, (we?.hr_min || we?.hr_max) ? `❤️ FC: ${we.hr_min || '?'}–${we.hr_max || '?'} bpm` : null].filter(Boolean).join(' · ') || '—'
+              const plannedTxt  = [planDur > 0 ? planDur + ' min' : null, planDist > 0 ? planDist + ' km' : null, planSpd > 0 ? planSpd + ' km/h' : null, (we?.hr_min || we?.hr_max) ? `${icon('heart-pulse')} FC: ${we.hr_min || '?'}–${we.hr_max || '?'} bpm` : null].filter(Boolean).join(' · ') || '—'
               const executedTxt = notExecuted
                 ? '<span style="color:var(--text-muted)">Não executado</span>'
                 : [execDur > 0 ? execDur.toLocaleString('pt-BR') + ' min' : null, execDist > 0 ? execDist.toLocaleString('pt-BR') + ' km' : null, execSpd > 0 ? execSpd.toLocaleString('pt-BR') + ' km/h' : null].filter(Boolean).join(' · ') || '—'
@@ -5119,7 +5120,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
                 : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>`
                 : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} ${unit}</span>`
                 :             `<span style="color:var(--text-muted)">= 0 ${unit}</span>`
-              const exName = `🏃 ${we?.exercise_name || '—'}`
+              const exName = `${icon('footprints')} ${we?.exercise_name || '—'}`
 
               const row = `<tr>
                 <td style="font-weight:500;color:var(--text-secondary)">${exName}</td>
@@ -5156,7 +5157,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
                 : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>`
                 : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>`
                 :             `<span style="color:var(--text-muted)">= 0 kg</span>`
-              const methodTag = we?.training_method ? `⚡ ${we.training_method}` : ''
+              const methodTag = we?.training_method ? `${icon('zap')} ${we.training_method}` : ''
 
               const row = `<tr>
                 <td style="font-weight:500;color:var(--text-secondary)">
@@ -5228,9 +5229,9 @@ async function renderStudentSheet(studentId, studentName, gen) {
           const compViewToggle = chartItems.length ? `
             <div class="comp-view-toggle">
               <button class="comp-view-tab active" id="comp-view-tablebtn-${execUid}"
-                      onclick="event.stopPropagation();setCompView('${execUid}','table')">📋 Tabela</button>
+                      onclick="event.stopPropagation();setCompView('${execUid}','table')">${icon('table-2')} Tabela</button>
               <button class="comp-view-tab" id="comp-view-chartbtn-${execUid}"
-                      onclick="event.stopPropagation();setCompView('${execUid}','chart')">📈 Gráfico</button>
+                      onclick="event.stopPropagation();setCompView('${execUid}','chart')">${icon('chart-line')} Gráfico</button>
             </div>` : ''
 
           const review = reviewsByWorkout[group.workoutId]
@@ -5290,14 +5291,14 @@ async function renderStudentSheet(studentId, studentName, gen) {
             </div>
           </div>`
         }).join('')
-      : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">📊</div><p>Nenhuma execução registrada ainda.</p></div>`
+      : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">${icon('chart-column')}</div><p>Nenhuma execução registrada ainda.</p></div>`
 
     const snSafe = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
     const routineCardsHTML = routinesData.length === 0
       ? `<p style="font-size:.82rem;color:var(--text-muted);padding:.5rem 0 .25rem">Nenhuma rotina criada ainda.</p>`
       : `<div class="routines-grid">${routinesData.map(r => {
           const period    = r.start_date || r.end_date
-            ? `📅 ${r.start_date ? fmtDate(r.start_date) : '—'} → ${r.end_date ? fmtDate(r.end_date) : '—'}`
+            ? `${icon('calendar')} ${r.start_date ? fmtDate(r.start_date) : '—'} → ${r.end_date ? fmtDate(r.end_date) : '—'}`
             : null
           const rWorkouts = workoutsByRoutine[r.id] || []
           const wCount    = rWorkouts.length
@@ -5307,8 +5308,8 @@ async function renderStudentSheet(studentId, studentName, gen) {
             <div class="routine-card-name">${escHtml(r.name)}</div>
             <div class="routine-card-meta">
               ${period ? `<span>${period}</span>` : `<span style="font-style:italic">Sem período definido</span>`}
-              <span>👁 ${r.show_to_student === 'sempre' ? 'Sempre visível ao aluno' : 'Visível só na vigência'}</span>
-              ${r.auto_archive ? `<span>📦 Arquivamento automático</span>` : ''}
+              <span>${icon('eye')} ${r.show_to_student === 'sempre' ? 'Sempre visível ao aluno' : 'Visível só na vigência'}</span>
+              ${r.auto_archive ? `<span>${icon('archive')} Arquivamento automático</span>` : ''}
             </div>
             <div class="routine-card-footer">
               <span class="routine-count-badge">${wCount} treino${wCount !== 1 ? 's' : ''}</span>
@@ -5343,7 +5344,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
         <div class="card-header">
           <div>
             <div class="section-label">Ferramentas</div>
-            <div class="card-title">🧮 Calculadora de Repetições</div>
+            <div class="card-title">${icon('calculator')} Calculadora de Repetições</div>
           </div>
         </div>
         <p style="font-size:.875rem;color:var(--text-muted);margin-bottom:1.25rem">
@@ -5386,7 +5387,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
           <tbody>${rows}</tbody>
         </table>
       </div>`
-      : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon">🏋️</div><p>Nenhum treino registrado para ${studentName}.</p></div>`
+      : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon">${icon('dumbbell')}</div><p>Nenhum treino registrado para ${studentName}.</p></div>`
 
     body.innerHTML = `${header}
       ${profileStatsHTML}
@@ -5421,7 +5422,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
     bindWorkoutRowClicks(body)
     setupSheetCalc(studentId)
   } catch (err) {
-    body.innerHTML = `${header}<div class="empty-state"><div class="empty-icon">⚠️</div>
+    body.innerHTML = `${header}<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
       <p>Erro ao carregar histórico.</p>
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
               onclick="openStudentSheet('${studentId}','${studentName.replace(/'/g, "\\'")}')">Tentar novamente</button></div>`
@@ -5493,7 +5494,7 @@ async function renderMyWorkout(gen) {
       ? `<p style="font-size:.82rem;color:var(--text-muted);padding:.5rem 0 .25rem">Nenhuma rotina criada ainda.</p>`
       : `<div class="routines-grid">${routinesData.map(r => {
           const period    = r.start_date || r.end_date
-            ? `📅 ${r.start_date ? fmtDate(r.start_date) : '—'} → ${r.end_date ? fmtDate(r.end_date) : '—'}`
+            ? `${icon('calendar')} ${r.start_date ? fmtDate(r.start_date) : '—'} → ${r.end_date ? fmtDate(r.end_date) : '—'}`
             : null
           const wCount    = (workoutsByRoutine[r.id] || []).length
           const rNameSafe = r.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
@@ -5553,10 +5554,10 @@ async function renderMyWorkout(gen) {
               const planned = planDist > 0 ? planDist : planDur, executed = execDist > 0 ? execDist : execDur, unit = planDist > 0 ? 'km' : 'min'
               const diff = executed - planned
               totalPlannedAero += planned; if (!notExecuted) totalExecutedAero += executed
-              const plannedTxt  = [planDur > 0 ? planDur + ' min' : null, planDist > 0 ? planDist + ' km' : null, planSpd > 0 ? planSpd + ' km/h' : null, (we?.hr_min || we?.hr_max) ? `❤️ FC: ${we.hr_min || '?'}–${we.hr_max || '?'} bpm` : null].filter(Boolean).join(' · ') || '—'
+              const plannedTxt  = [planDur > 0 ? planDur + ' min' : null, planDist > 0 ? planDist + ' km' : null, planSpd > 0 ? planSpd + ' km/h' : null, (we?.hr_min || we?.hr_max) ? `${icon('heart-pulse')} FC: ${we.hr_min || '?'}–${we.hr_max || '?'} bpm` : null].filter(Boolean).join(' · ') || '—'
               const executedTxt = notExecuted ? '<span style="color:var(--text-muted)">Não executado</span>' : [execDur > 0 ? execDur.toLocaleString('pt-BR') + ' min' : null, execDist > 0 ? execDist.toLocaleString('pt-BR') + ' km' : null, execSpd > 0 ? execSpd.toLocaleString('pt-BR') + ' km/h' : null].filter(Boolean).join(' · ') || '—'
               const diffCell    = notExecuted ? '—' : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>` : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} ${unit}</span>` : `<span style="color:var(--text-muted)">= 0 ${unit}</span>`
-              const exName = `🏃 ${we?.exercise_name || '—'}`
+              const exName = `${icon('footprints')} ${we?.exercise_name || '—'}`
               const row = `<tr><td style="font-weight:500;color:var(--text-secondary)">${exName}</td><td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td><td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td><td style="font-size:.82rem">${diffCell}</td></tr>`
               const card = `<div class="comp-card">
                 <div class="comp-card-name">${exName}</div>
@@ -5575,7 +5576,7 @@ async function renderMyWorkout(gen) {
               const plannedTxt  = planned > 0 ? `${planWeight} kg × ${planReps} reps × ${planSets} séries = ${planned.toLocaleString('pt-BR')} kg` : '—'
               const executedTxt = notExecuted ? '<span style="color:var(--text-muted)">Não executado</span>' : sortedSets.map(s => `S${s.set_number}: ${s.weight_executed}×${s.reps_executed}`).join(' · ') + ` = ${executed.toLocaleString('pt-BR')} kg`
               const diffCell    = notExecuted ? '—' : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>` : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>` : `<span style="color:var(--text-muted)">= 0 kg</span>`
-              const methodTag = we?.training_method ? `⚡ ${we.training_method}` : ''
+              const methodTag = we?.training_method ? `${icon('zap')} ${we.training_method}` : ''
               const row = `<tr><td style="font-weight:500;color:var(--text-secondary)">${we?.exercise_name || '—'}${methodTag ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">${methodTag}</div>` : ''}</td><td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td><td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td><td style="font-size:.82rem">${diffCell}</td></tr>`
               const card = `<div class="comp-card">
                 <div class="comp-card-name">${we?.exercise_name || '—'}${methodTag ? ` <span style="font-size:.72rem;color:var(--accent-soft);font-weight:400">${methodTag}</span>` : ''}</div>
@@ -5634,9 +5635,9 @@ async function renderMyWorkout(gen) {
           const compViewToggle = chartItems.length ? `
             <div class="comp-view-toggle">
               <button class="comp-view-tab active" id="comp-view-tablebtn-${execUid}"
-                      onclick="event.stopPropagation();setCompView('${execUid}','table')">📋 Tabela</button>
+                      onclick="event.stopPropagation();setCompView('${execUid}','table')">${icon('table-2')} Tabela</button>
               <button class="comp-view-tab" id="comp-view-chartbtn-${execUid}"
-                      onclick="event.stopPropagation();setCompView('${execUid}','chart')">📈 Gráfico</button>
+                      onclick="event.stopPropagation();setCompView('${execUid}','chart')">${icon('chart-line')} Gráfico</button>
             </div>` : ''
 
           return `
@@ -5672,7 +5673,7 @@ async function renderMyWorkout(gen) {
             </div>
           </div>`
         }).join('')
-      : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">📊</div><p>Nenhuma execução registrada ainda.</p></div>`
+      : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">${icon('chart-column')}</div><p>Nenhuma execução registrada ainda.</p></div>`
 
     // ── Standalone workouts (edge case) ──
     const standAloneRows = standAloneWorkouts.map(w => {
@@ -5761,7 +5762,7 @@ async function renderMyWorkout(gen) {
       </div>`
     bindWorkoutRowClicks(body)
   } catch (err) {
-    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
       <p>Erro ao carregar.</p>
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem" onclick="navigateTo('my-workout')">Tentar novamente</button></div>`
   }
@@ -5872,7 +5873,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
     }
 
     const workoutListHTML = workouts.length === 0
-      ? `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon">📋</div>
+      ? `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon">${icon('clipboard-list')}</div>
          <p>${profile.role === 'personal' ? 'Nenhum treino nesta rotina ainda.<br>Use "Adicionar Treino" para criar o primeiro!' : 'Nenhum treino nesta rotina ainda.'}</p></div>`
       : [
           ...DAY_ORDER.filter(d => byDay[d]?.length).map(d => `
@@ -5888,7 +5889,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
         ].join('')
 
     const period = routine.start_date || routine.end_date
-      ? `📅 ${routine.start_date ? fmtDate(routine.start_date) : '—'} → ${routine.end_date ? fmtDate(routine.end_date) : '—'}`
+      ? `${icon('calendar')} ${routine.start_date ? fmtDate(routine.start_date) : '—'} → ${routine.end_date ? fmtDate(routine.end_date) : '—'}`
       : null
 
     body.innerHTML = `
@@ -5905,11 +5906,11 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.25rem">
         ${period ? `<span style="font-size:.78rem;color:var(--text-muted);background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.3rem .75rem">${period}</span>` : ''}
-        ${profile.role === 'personal' ? `<span style="font-size:.78rem;color:var(--text-muted);background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.3rem .75rem">👁 ${routine.show_to_student === 'sempre' ? 'Sempre visível ao aluno' : 'Visível só na vigência'}</span>` : ''}
-        ${profile.role === 'personal' && routine.auto_archive ? `<span style="font-size:.78rem;color:var(--text-muted);background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.3rem .75rem">📦 Arquivamento automático</span>` : ''}
+        ${profile.role === 'personal' ? `<span style="font-size:.78rem;color:var(--text-muted);background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.3rem .75rem">${icon('eye')} ${routine.show_to_student === 'sempre' ? 'Sempre visível ao aluno' : 'Visível só na vigência'}</span>` : ''}
+        ${profile.role === 'personal' && routine.auto_archive ? `<span style="font-size:.78rem;color:var(--text-muted);background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.3rem .75rem">${icon('archive')} Arquivamento automático</span>` : ''}
         <span class="routine-count-badge">${workouts.length} treino${workouts.length !== 1 ? 's' : ''}</span>
       </div>
-      ${routine.general_instructions ? `<div style="background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.75rem 1rem;margin-bottom:1.25rem;font-size:.83rem;color:var(--text-secondary)">📝 ${escHtml(routine.general_instructions)}</div>` : ''}
+      ${routine.general_instructions ? `<div style="background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:.75rem 1rem;margin-bottom:1.25rem;font-size:.83rem;color:var(--text-secondary)">${icon('notebook-pen')} ${escHtml(routine.general_instructions)}</div>` : ''}
       <div class="section-label" style="margin-bottom:.75rem">Treinos</div>
       ${profile.role === 'personal' && workouts.length > 0 ? `<div id="bulk-select-bar" class="bulk-select-bar" style="display:none">
         <label class="bulk-select-all-label">
@@ -5925,7 +5926,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
       ${workoutListHTML}`
   } catch (err) {
     const errSnSafe = (opts.studentName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
       <p>Erro ao carregar rotina.</p>
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
               onclick="openRoutineDetail('${opts.studentId || ''}','${errSnSafe}','${opts.routineId || ''}','')">Tentar novamente</button></div>`
@@ -5940,7 +5941,7 @@ function _routineExercisesHTML(exes) {
       ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—'
       : `${ex.sets}×${ex.reps} @ ${ex.weight_kg} kg`
     return `<div style="display:flex;align-items:baseline;gap:.5rem;padding:.35rem 1rem;border-bottom:1px solid var(--border-subtle)">
-      <span style="flex:1;min-width:0;font-size:.82rem;font-weight:600;color:var(--text-secondary)">${escHtml(ex.exercise_name)}${ex.training_method ? `<span style="font-size:.68rem;color:var(--accent-soft);margin-left:.35rem">⚡ ${escHtml(ex.training_method)}</span>` : ''}</span>
+      <span style="flex:1;min-width:0;font-size:.82rem;font-weight:600;color:var(--text-secondary)">${escHtml(ex.exercise_name)}${ex.training_method ? `<span style="font-size:.68rem;color:var(--accent-soft);margin-left:.35rem">${icon('zap')} ${escHtml(ex.training_method)}</span>` : ''}</span>
       <span style="font-size:.77rem;color:var(--text-muted);white-space:nowrap">${detail}</span>
     </div>`
   }).join('')
@@ -6208,7 +6209,7 @@ async function renderProfile() {
         <div class="card-header">
           <div>
             <div class="section-label">Dados Pessoais</div>
-            <div class="card-title">👤 Meu Perfil</div>
+            <div class="card-title">${icon('user-round')} Meu Perfil</div>
           </div>
         </div>
         <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1.25rem">
@@ -6252,7 +6253,7 @@ async function renderProfile() {
       </div>`
     observeRevealElements()
   } catch (err) {
-    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
       <p>Erro ao carregar perfil.</p>
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem" onclick="renderProfile()">Tentar novamente</button></div>`
   }
@@ -6384,7 +6385,7 @@ async function renderPersonalProfile() {
         <div class="card-header">
           <div>
             <div class="section-label">Dados do Perfil</div>
-            <div class="card-title">👤 Meu Perfil</div>
+            <div class="card-title">${icon('user-round')} Meu Perfil</div>
           </div>
         </div>
         <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1.25rem">
@@ -6414,7 +6415,7 @@ async function renderPersonalProfile() {
       </div>`
     observeRevealElements()
   } catch (err) {
-    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
       <p>Erro ao carregar perfil.</p>
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem" onclick="renderPersonalProfile()">Tentar novamente</button></div>`
   }
@@ -6618,7 +6619,7 @@ async function renderProgress(studentIdOverride) {
     }
 
     if (!studentId) {
-      body.innerHTML = studentSelectorHTML + `<div class="empty-state"><div class="empty-icon">👥</div>
+      body.innerHTML = studentSelectorHTML + `<div class="empty-state"><div class="empty-icon">${icon('users')}</div>
         <p>Selecione um aluno.</p></div>`
       return
     }
@@ -6637,7 +6638,7 @@ async function renderProgress(studentIdOverride) {
     window._progressExecutions = execData || []
 
     if (!workouts.length) {
-      body.innerHTML = studentSelectorHTML + `<div class="empty-state"><div class="empty-icon">🏋️</div>
+      body.innerHTML = studentSelectorHTML + `<div class="empty-state"><div class="empty-icon">${icon('dumbbell')}</div>
         <p>Nenhum treino registrado ainda para gerar o gráfico.</p></div>`
       return
     }
@@ -6647,7 +6648,7 @@ async function renderProgress(studentIdOverride) {
     )].sort()
 
     if (!exerciseNames.length) {
-      body.innerHTML = studentSelectorHTML + `<div class="empty-state"><div class="empty-icon">🏋️</div>
+      body.innerHTML = studentSelectorHTML + `<div class="empty-state"><div class="empty-icon">${icon('dumbbell')}</div>
         <p>Nenhum exercício encontrado nos treinos registrados.</p></div>`
       return
     }
@@ -6655,14 +6656,14 @@ async function renderProgress(studentIdOverride) {
     body.innerHTML = `
       ${studentSelectorHTML}
       <div class="card reveal" style="margin-bottom:1.5rem">
-        <div class="card-header"><div class="card-title">📈 Evolução do Volume</div></div>
+        <div class="card-header"><div class="card-title">${icon('trending-up')} Evolução do Volume</div></div>
         <div class="chart-container" style="height:320px"><canvas id="progress-volume-chart"></canvas></div>
       </div>
       <div class="card reveal">
         <div class="card-header" style="flex-wrap:wrap;gap:.75rem">
           <div>
             <div class="section-label">Evolução por Exercício</div>
-            <div class="card-title">📈 Progressão de Carga</div>
+            <div class="card-title">${icon('trending-up')} Progressão de Carga</div>
           </div>
           <select class="form-control" id="prog-metric"
                   style="width:auto;font-size:.82rem;padding:.4rem .75rem"
@@ -6690,7 +6691,7 @@ async function renderProgress(studentIdOverride) {
   } catch (err) {
     console.error('[renderProgress]', err)
     document.getElementById('progress-body').innerHTML =
-      `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      `<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
         <p>Erro ao carregar dados de progresso.</p>
         <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
                 onclick="renderProgress()">Tentar novamente</button></div>`
@@ -7254,7 +7255,7 @@ function addExercise() {
         </div>
         <div class="form-group form-full" id="ex-autocalc-${id}" style="display:none">
           <div style="font-size:.78rem;color:var(--text-muted);background:var(--neutral-a06);border-radius:var(--radius);padding:.45rem .75rem;display:flex;gap:1.5rem;flex-wrap:wrap">
-            <span>⚡ Vel. calculada: <strong id="ex-autocalc-speed-${id}">—</strong> km/h</span>
+            <span>${icon('gauge')} Vel. calculada: <strong id="ex-autocalc-speed-${id}">—</strong> km/h</span>
             <span>Ritmo: <strong id="ex-autocalc-pace-${id}">—</strong></span>
           </div>
         </div>
@@ -8678,7 +8679,7 @@ function startRestTimer(exerciseId, totalSeconds, startedAt = Date.now()) {
       delete restTimers[exerciseId]
       playBeep()
       if (btn2) {
-        btn2.textContent = '✅ Descansou!'
+        btn2.innerHTML = `${icon('check')} Descansou!`
         btn2.classList.remove('running')
         btn2.disabled = true
         btn2.style.cssText = 'background:var(--success-a10);border-color:var(--success-a22);color:var(--success)'
@@ -9056,7 +9057,7 @@ function renderExecutionScreen(workout) {
               ex.speed_kmh    ? `${ex.speed_kmh} km/h`       : null,
               ex.pace         ? `Ritmo: ${ex.pace} /km`      : null,
               ex.recovery_interval_min ? `Rec: ${ex.recovery_interval_min} min` : null,
-              (ex.hr_min || ex.hr_max) ? `❤️ FC: ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : null
+              (ex.hr_min || ex.hr_max) ? `${icon('heart-pulse')} FC: ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : null
             ].filter(Boolean).join(' &nbsp;·&nbsp; ')
           : [
               `${ex.sets} série${ex.sets > 1 ? 's' : ''} × ${ex.reps} reps × ${ex.weight_kg} kg`,
@@ -9098,7 +9099,7 @@ function renderExecutionScreen(workout) {
         return `
         <div class="exec-exercise-card" id="exec-ex-${ex.id}">
           <div class="exec-ex-header">
-            <div class="exec-ex-name">${isAero ? '🏃 ' : ''}${ex.exercise_name}</div>
+            <div class="exec-ex-name">${isAero ? icon('footprints') + ' ' : ''}${ex.exercise_name}</div>
             <span class="live-ex-progress" id="exec-ex-progress-${ex.id}">0/${isAero ? 1 : setsCount} série${(isAero ? 1 : setsCount) > 1 ? 's' : ''}</span>
           </div>
           <div class="exec-ex-planned">${planned || '—'}</div>
@@ -9108,7 +9109,7 @@ function renderExecutionScreen(workout) {
           ${restBtn}
         </div>`
       }).join('')
-    : '<div class="empty-state" style="padding:2rem"><div class="empty-icon">🏋️</div><p>Nenhum exercício neste treino.</p></div>'
+    : '<div class="empty-state" style="padding:2rem"><div class="empty-icon">' + icon('dumbbell') + '</div><p>Nenhum exercício neste treino.</p></div>'
 }
 
 function markExecSetDirty(exerciseId, setNumber) {
@@ -9374,14 +9375,14 @@ function showComparisonModal(finalTime) {
       }
 
       return `<tr>
-        <td style="font-weight:600;color:var(--text-primary)">${isAero ? '🏃 ' : ''}${ex.exercise_name}</td>
+        <td style="font-weight:600;color:var(--text-primary)">${isAero ? icon('footprints') + ' ' : ''}${ex.exercise_name}</td>
         <td style="color:var(--text-muted);font-size:.82rem">${plannedCell}</td>
         <td style="font-size:.82rem">${execCell}</td>
         <td>${diffCell}</td>
       </tr>`
     } catch (err) {
       console.error('[showComparisonModal] erro ao montar linha de', ex.exercise_name, err)
-      return `<tr><td colspan="4" style="color:var(--danger);font-size:.82rem;padding:.75rem 1rem">⚠️ Erro ao exibir "${ex.exercise_name}": ${err.message}</td></tr>`
+      return `<tr><td colspan="4" style="color:var(--danger);font-size:.82rem;padding:.75rem 1rem">${icon('triangle-alert')} Erro ao exibir "${ex.exercise_name}": ${err.message}</td></tr>`
     }
   }).join('')
 
@@ -9698,7 +9699,7 @@ function renderManualExecutionExercises() {
     if (isAero) {
       return `
         <div class="manual-exec-ex" data-exercise-id="${ex.id}" data-aero="1" style="margin-bottom:1rem;padding-bottom:1rem;border-bottom:1px solid var(--border-subtle)">
-          <div style="font-weight:700;font-size:.85rem;margin-bottom:.5rem">🏃 ${escHtml(ex.exercise_name)}</div>
+          <div style="font-weight:700;font-size:.85rem;margin-bottom:.5rem">${icon('footprints')} ${escHtml(ex.exercise_name)}</div>
           <div style="display:flex;gap:.5rem;flex-wrap:wrap">
             <input type="number" class="form-control manual-exec-duration" placeholder="Duração (min)" step="0.5" min="0" style="flex:1;min-width:110px">
             <input type="number" class="form-control manual-exec-distance" placeholder="Distância (km)" step="0.01" min="0" style="flex:1;min-width:110px">
@@ -9846,7 +9847,7 @@ function renderLiveExecutionScreen(workout) {
   const exes = workout.workout_exercises || []
   document.getElementById('live-exec-exercise-list').innerHTML = exes.length
     ? exes.map(ex => renderLiveExerciseCardHTML(ex)).join('')
-    : '<div class="empty-state" style="padding:2rem"><div class="empty-icon">🏋️</div><p>Nenhum exercício neste treino.</p></div>'
+    : '<div class="empty-state" style="padding:2rem"><div class="empty-icon">' + icon('dumbbell') + '</div><p>Nenhum exercício neste treino.</p></div>'
   loadLiveExerciseCatalog()
   // Mesmo catálogo usado pra normalizar grafia no Novo/Editar Treino (ver setupWorkoutForm) —
   // aqui só pra resolver o nome ao salvar; a sugestão em si continua vindo de loadLiveExerciseCatalog().
@@ -9864,7 +9865,7 @@ function renderLiveExerciseCardHTML(ex) {
         ex.duration_min ? `${ex.duration_min} min`     : null,
         ex.distance_km  ? `${ex.distance_km} km`       : null,
         ex.speed_kmh    ? `${ex.speed_kmh} km/h`       : null,
-        (ex.hr_min || ex.hr_max) ? `❤️ FC: ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : null
+        (ex.hr_min || ex.hr_max) ? `${icon('heart-pulse')} FC: ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : null
       ].filter(Boolean).join(' &nbsp;·&nbsp; ')
     : [
         `${setsCount} série${setsCount > 1 ? 's' : ''} × ${ex.reps} reps × ${ex.weight_kg} kg`,
@@ -9938,7 +9939,7 @@ function renderLiveExerciseCardHTML(ex) {
   return `
   <div class="exec-exercise-card" id="live-ex-${ex.id}">
     <div class="exec-ex-header">
-      <div class="exec-ex-name">${isAero ? '🏃 ' : ''}${escHtml(ex.exercise_name)}</div>
+      <div class="exec-ex-name">${isAero ? icon('footprints') + ' ' : ''}${escHtml(ex.exercise_name)}</div>
       <div class="live-ex-header-actions">
         <span class="live-ex-progress" id="live-ex-progress-${ex.id}">0/${isAero ? 1 : setsCount} série${(isAero ? 1 : setsCount) > 1 ? 's' : ''}</span>
         <button type="button" class="btn-live-ex-edit" id="live-ex-editbtn-${ex.id}" title="Editar exercício" aria-label="Editar exercício" onclick="toggleLiveExerciseEdit('${ex.id}')">${icon('pencil')}</button>
@@ -10491,7 +10492,7 @@ function finishLiveExecution() {
 <div id="reorder-modal-overlay" class="reorder-modal-overlay" style="display:none" onclick="if(event.target===this)closeReorderModal()">
   <div class="reorder-modal-card">
     <div class="reorder-modal-header">
-      <span style="font-weight:700;font-size:.95rem;color:var(--text-primary)">☰ Reordenar Exercícios</span>
+      <span style="font-weight:700;font-size:.95rem;color:var(--text-primary)"><span data-icon="arrow-up-down"></span> Reordenar Exercícios</span>
       <button class="btn btn-outline btn-sm" onclick="closeReorderModal()" style="padding:.2rem .6rem">✕</button>
     </div>
     <div id="reorder-modal-body" class="reorder-modal-body"></div>
@@ -10506,7 +10507,7 @@ function finishLiveExecution() {
 <div id="replicate-modal-overlay" class="reorder-modal-overlay" style="display:none" onclick="if(event.target===this)closeReplicateModal()">
   <div class="reorder-modal-card">
     <div class="reorder-modal-header">
-      <span style="font-weight:700;font-size:.95rem;color:var(--text-primary)">📐 Replicar Configuração</span>
+      <span style="font-weight:700;font-size:.95rem;color:var(--text-primary)"><span data-icon="copy-check"></span> Replicar Configuração</span>
       <button class="btn btn-outline btn-sm" onclick="closeReplicateModal()" style="padding:.2rem .6rem">✕</button>
     </div>
     <div class="reorder-modal-body">
@@ -10558,7 +10559,7 @@ function finishLiveExecution() {
 <div id="live-exec-picker-overlay" class="reorder-modal-overlay" style="display:none" onclick="if(event.target===this)closeLiveExecutionPicker()">
   <div class="reorder-modal-card">
     <div class="reorder-modal-header">
-      <span style="font-weight:700;font-size:.95rem;color:var(--text-primary)">▶ Registrar ao Vivo</span>
+      <span style="font-weight:700;font-size:.95rem;color:var(--text-primary)"><span data-icon="play"></span> Registrar ao Vivo</span>
       <button class="btn btn-outline btn-sm" onclick="closeLiveExecutionPicker()" style="padding:.2rem .6rem">✕</button>
     </div>
     <div class="reorder-modal-body">
