@@ -1322,6 +1322,10 @@
     .toast.success { border-left-color: var(--success); }
     .toast.error   { border-left-color: var(--danger); }
 
+    .toast-icon { display: inline-flex; font-size: 1.15rem; color: var(--accent-soft); flex-shrink: 0; }
+    .toast.success .toast-icon { color: var(--success); }
+    .toast.error   .toast-icon { color: var(--danger); }
+
     @keyframes slideIn { from { transform: translateX(110%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
     /* ---- ACTION BTNS (edit / delete / duplicate) ---- */
@@ -1331,18 +1335,30 @@
       cursor: pointer;
       padding: .25rem .4rem;
       border-radius: 8px;
-      font-size: .9rem;
+      font-size: .95rem;
       line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
       opacity: 0;
-      transition: opacity var(--transition), background var(--transition);
+      transition: opacity var(--transition), background var(--transition), color var(--transition);
     }
 
     .history-main-row:hover .del-btn,
     .history-main-row:hover .edit-btn,
     .history-main-row:hover .dup-btn { opacity: 1; }
-    .del-btn:hover  { background: var(--danger-a10); }
-    .edit-btn:hover { background: var(--accent-a12); }
-    .dup-btn:hover  { background: var(--neutral-a08); }
+    .del-btn:hover  { background: var(--danger-a10); color: var(--danger); }
+    .edit-btn:hover { background: var(--accent-a12); color: var(--accent-soft); }
+    .dup-btn:hover  { background: var(--neutral-a08); color: var(--text-primary); }
+
+    /* Campo de busca com ícone (placeholder não aceita SVG) */
+    .search-field { position: relative; }
+    .search-field-icon {
+      position: absolute; left: .875rem; top: 50%; transform: translateY(-50%);
+      display: inline-flex; color: var(--text-muted); pointer-events: none; font-size: 1rem;
+    }
+    .search-field .form-control { padding-left: 2.5rem; }
 
     /* ---- NEW WORKOUT BADGE / ALERT ---- */
     .new-badge {
@@ -2844,7 +2860,7 @@
 <!-- BULK DELETE MODAL -->
 <div id="bulk-delete-modal" class="bulk-delete-modal-overlay" style="display:none" onclick="if(event.target===this)hideBulkDeleteConfirm()">
   <div class="bulk-delete-modal-card">
-    <div style="font-size:2.5rem;text-align:center;margin-bottom:.75rem">🗑️</div>
+    <div style="font-size:2.5rem;text-align:center;margin-bottom:.75rem;color:var(--danger);line-height:1"><span data-icon="trash-2"></span></div>
     <div style="font-size:1.1rem;font-weight:800;color:var(--text-primary);margin-bottom:.875rem;letter-spacing:-0.02em;text-align:center">Confirmar exclusão</div>
     <div id="bulk-delete-modal-body" style="font-size:.84rem;color:var(--text-secondary);margin-bottom:1.5rem;line-height:1.6;text-align:center"></div>
     <div style="display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap">
@@ -2990,7 +3006,7 @@ function icon(name, cls = '') {
 function hydrateIcons(root = document) {
   root.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon, el.dataset.iconClass || '') })
 }
-hydrateIcons()
+document.addEventListener('DOMContentLoaded', () => hydrateIcons())
 
 // ─────────────────────────────────────────────
 // CONFIG
@@ -3830,7 +3846,7 @@ async function renderStudents() {
           const wName    = le.workouts?.name || 'Treino'
           const execDate = fmtDate(le.executed_at.slice(0, 10))
           execBanner = `<div class="new-workout-alert">
-            <span style="font-size:1.2rem">🏋️</span>
+            <span style="font-size:1.2rem;display:inline-flex">${icon('dumbbell')}</span>
             <span>${escHtml(sName)} concluiu o treino "${escHtml(wName)}" em ${execDate}.</span>
           </div>`
         }
@@ -3851,9 +3867,10 @@ async function renderStudents() {
           <div class="stat-label">Com treinos registrados</div>
         </div>
       </div>
-      <div class="form-group reveal" style="margin:.75rem 0">
+      <div class="form-group reveal search-field" style="margin:.75rem 0">
+        <span class="search-field-icon">${icon('search')}</span>
         <input id="student-search" type="text" class="form-control"
-               placeholder="🔍 Buscar aluno pelo nome…"
+               placeholder="Buscar aluno pelo nome…" aria-label="Buscar aluno pelo nome"
                oninput="filterStudents(this.value)">
       </div>
       <div class="students-grid reveal-stagger">
@@ -4241,7 +4258,7 @@ async function renderHistory(studentId, gen = 0) {
       const diffHours = (Date.now() - new Date(workouts[0].created_at).getTime()) / 36e5
       if (diffHours < 24) {
         bannerHTML = `<div class="new-workout-alert">
-          <span style="font-size:1.2rem">🏋️</span>
+          <span style="font-size:1.2rem;display:inline-flex">${icon('dumbbell')}</span>
           <span>Novo treino disponível! Seu personal registrou um treino em ${fmtDate(workouts[0].date)}.</span>
         </div>`
       }
@@ -4378,7 +4395,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
         <td class="vol-cell">${workoutVolumeDisplay(w)}</td>
         <td>${badge}</td>
         <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">▶</span></td>
-        <td style="text-align:center;white-space:nowrap">${profile.role === 'personal' ? `<button class="edit-btn" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar treino">✏️</button><button class="dup-btn" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar treino">📋</button><button class="del-btn" onclick="event.stopPropagation();deleteWorkout('${w.id}')" title="Excluir treino">🗑️</button>` : ''}</td>
+        <td style="text-align:center;white-space:nowrap">${profile.role === 'personal' ? `<button class="edit-btn" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar treino" aria-label="Editar treino">${icon('pencil')}</button><button class="dup-btn" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar treino" aria-label="Duplicar treino">${icon('copy')}</button><button class="del-btn" onclick="event.stopPropagation();deleteWorkout('${w.id}')" title="Excluir treino" aria-label="Excluir treino">${icon('trash-2')}</button>` : ''}</td>
       </tr>
       <tr id="wd-${uid}" style="display:none" class="history-detail-row">
         <td colspan="6">
@@ -4396,7 +4413,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
             </table>
             <div class="ex-detail-cards">${exDetailCards}</div>
             ${profile.role === 'student' ? `<div style="padding:.75rem 1rem .875rem;border-top:1px solid var(--neutral-a06)"><button class="btn-start-workout workout-timer-btn" style="font-size:.8rem;padding:.5rem 1.25rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar Treino'}</button></div>` : ''}
-            ${profile.role === 'personal' ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid var(--neutral-a06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkout('${w.id}')">🗑️ Excluir Treino</button></div>` : ''}
+            ${profile.role === 'personal' ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid var(--neutral-a06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkout('${w.id}')">${icon('trash-2')} Excluir Treino</button></div>` : ''}
           </div>
         </td>
       </tr>`
@@ -4453,7 +4470,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
             <span id="bulk-select-count" class="bulk-select-count"></span>
             <div class="bulk-select-actions">
               <button class="btn btn-sm btn-outline" onclick="cancelBulkSelection()">Cancelar</button>
-              <button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="showBulkDeleteConfirm()">🗑️ Excluir selecionados</button>
+              <button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="showBulkDeleteConfirm()">${icon('trash-2')} Excluir selecionados</button>
             </div>
           </div>` : ''}
           <div class="table-wrap">
@@ -4872,7 +4889,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
         </div>
       </div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-        <button class="btn btn-primary btn-sm" onclick="openNewWorkoutForStudent('${safeIdH}','${safeNameH}')">➕ Novo Treino</button>
+        <button class="btn btn-primary btn-sm" onclick="openNewWorkoutForStudent('${safeIdH}','${safeNameH}')">${icon('plus')} Novo Treino</button>
         <button class="btn btn-outline btn-sm" onclick="closeStudentSheet()">✕ Fechar</button>
       </div>
     </div>`
@@ -4980,11 +4997,11 @@ async function renderStudentSheet(studentId, studentName, gen) {
       const exRows  = exPairs.map(p => p.row).join('')
       const exCards = exPairs.map(p => p.card).join('')
       const editBtn = profile.role === 'personal'
-        ? `<button class="edit-btn" style="opacity:1" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar">✏️</button><button class="dup-btn" style="opacity:1" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar">📋</button>`
+        ? `<button class="edit-btn" style="opacity:1" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar" aria-label="Editar">${icon('pencil')}</button><button class="dup-btn" style="opacity:1" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar" aria-label="Duplicar">${icon('copy')}</button>`
         : ''
       const safeStudentName = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
       const deleteBtn = profile.role === 'personal'
-        ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid var(--neutral-a06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}','${safeStudentName}')">🗑️ Excluir Treino</button></div>`
+        ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid var(--neutral-a06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}','${safeStudentName}')">${icon('trash-2')} Excluir Treino</button></div>`
         : ''
       const checkboxOpen  = profile.role === 'personal'
         ? `<div class="workout-row-name-wrap"><input type="checkbox" class="workout-checkbox" data-workout-id="${w.id}" onclick="event.stopPropagation();toggleWorkoutCheckbox('${w.id}',this)"><div>`
@@ -5199,7 +5216,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
           }
 
           const deleteExecBtn = profile.role === 'personal'
-            ? `<button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}','${safeStudentNameExec}')">🗑️ Apagar execução</button>`
+            ? `<button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}','${safeStudentNameExec}')">${icon('trash-2')} Apagar execução</button>`
             : ''
           // Inclui executedAt no uid: o mesmo workoutId pode ter várias execuções em datas
           // diferentes (grupos separados), e usar só o workoutId gerava ids duplicados no
@@ -5296,9 +5313,9 @@ async function renderStudentSheet(studentId, studentName, gen) {
             <div class="routine-card-footer">
               <span class="routine-count-badge">${wCount} treino${wCount !== 1 ? 's' : ''}</span>
               <div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end">
-                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openRoutineModal('${studentId}','${snSafe}','${r.id}')">✏️</button>
-                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openDupRoutineModal('${r.id}')" title="Duplicar rotina">📋</button>
-                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteRoutine('${r.id}','${studentId}','${snSafe}')">🗑️</button>
+                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openRoutineModal('${studentId}','${snSafe}','${r.id}')" title="Editar rotina" aria-label="Editar rotina">${icon('pencil')}</button>
+                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openDupRoutineModal('${r.id}')" title="Duplicar rotina" aria-label="Duplicar rotina">${icon('copy')}</button>
+                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteRoutine('${r.id}','${studentId}','${snSafe}')" title="Excluir rotina" aria-label="Excluir rotina">${icon('trash-2')}</button>
               </div>
             </div>
           </div>`
@@ -5307,7 +5324,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
       <div style="margin-top:1.25rem">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
           <div class="section-label" style="margin-bottom:0">Rotinas</div>
-          <button class="btn btn-primary btn-sm" onclick="openRoutineModal('${studentId}','${snSafe}')">➕ Nova Rotina</button>
+          <button class="btn btn-primary btn-sm" onclick="openRoutineModal('${studentId}','${snSafe}')">${icon('plus')} Nova Rotina</button>
         </div>
         ${routineCardsHTML}
       </div>`
@@ -5358,7 +5375,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
         <span id="bulk-select-count" class="bulk-select-count"></span>
         <div class="bulk-select-actions">
           <button class="btn btn-sm btn-outline" onclick="cancelBulkSelection()">Cancelar</button>
-          <button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="showBulkDeleteConfirm()">🗑️ Excluir selecionados</button>
+          <button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="showBulkDeleteConfirm()">${icon('trash-2')} Excluir selecionados</button>
         </div>
       </div>` : ''}
       <div class="table-wrap">
@@ -5396,7 +5413,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.875rem;flex-wrap:wrap;gap:.5rem">
           <div class="section-label" style="margin-bottom:0">Execuções Realizadas</div>
           <button class="btn btn-primary btn-sm" onclick="openLiveExecutionPicker('${safeIdH}','${safeNameH}')" ${_liveTimerInterval ? 'disabled' : ''}>${_liveTimerInterval ? '⏱ Registro ao vivo em andamento…' : '▶ Registrar ao vivo'}</button>
-          <button class="btn btn-outline btn-sm" onclick="openManualExecutionModal('${safeIdH}','${safeNameH}')">➕ Registrar retroativo</button>
+          <button class="btn btn-outline btn-sm" onclick="openManualExecutionModal('${safeIdH}','${safeNameH}')">${icon('plus')} Registrar retroativo</button>
         </div>
         ${execSectionHTML}
       </div>
@@ -5489,9 +5506,9 @@ async function renderMyWorkout(gen) {
             <div class="routine-card-footer">
               <span class="routine-count-badge">${wCount} treino${wCount !== 1 ? 's' : ''}</span>
               <div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end">
-                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openRoutineModal('${studentId}','${snSafe}','${r.id}')">✏️</button>
-                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openDupRoutineModal('${r.id}')" title="Duplicar rotina">📋</button>
-                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteRoutine('${r.id}','${studentId}','${snSafe}')">🗑️</button>
+                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openRoutineModal('${studentId}','${snSafe}','${r.id}')" title="Editar rotina" aria-label="Editar rotina">${icon('pencil')}</button>
+                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openDupRoutineModal('${r.id}')" title="Duplicar rotina" aria-label="Duplicar rotina">${icon('copy')}</button>
+                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteRoutine('${r.id}','${studentId}','${snSafe}')" title="Excluir rotina" aria-label="Excluir rotina">${icon('trash-2')}</button>
               </div>
             </div>
           </div>`
@@ -5631,7 +5648,7 @@ async function renderMyWorkout(gen) {
               </div>
               <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
                 <div style="font-size:.75rem;color:var(--text-muted)">${fmtDateTime(group.executedAt)}</div>
-                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}','${snSafe}')">🗑️ Apagar execução</button>
+                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}','${snSafe}')">${icon('trash-2')} Apagar execução</button>
               </div>
             </div>
             <div class="ex-body" id="ex-body-${execUid}">
@@ -5684,8 +5701,8 @@ async function renderMyWorkout(gen) {
           <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">▶</span></td>
           <td style="text-align:center;white-space:nowrap">
             <button class="btn-start-workout workout-timer-btn" style="font-size:.75rem;padding:.35rem .85rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? '⏱ Em andamento…' : '▶ Iniciar'}</button>
-            <button class="edit-btn" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar">✏️</button>
-            <button class="del-btn" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}','${snSafe}')" title="Excluir">🗑️</button>
+            <button class="edit-btn" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar" aria-label="Editar">${icon('pencil')}</button>
+            <button class="del-btn" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}','${snSafe}')" title="Excluir" aria-label="Excluir">${icon('trash-2')}</button>
           </td>
         </tr>
         <tr id="wd-${uid}" style="display:none" class="history-detail-row">
@@ -5733,7 +5750,7 @@ async function renderMyWorkout(gen) {
       <div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
           <div class="section-label" style="margin-bottom:0">Minhas Rotinas</div>
-          <button class="btn btn-primary btn-sm" onclick="openRoutineModal('${studentId}','${snSafe}')">➕ Nova Rotina</button>
+          <button class="btn btn-primary btn-sm" onclick="openRoutineModal('${studentId}','${snSafe}')">${icon('plus')} Nova Rotina</button>
         </div>
         ${routineCardsHTML}
       </div>
@@ -5841,9 +5858,9 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
               </div>
               <div style="display:flex;align-items:center;gap:.4rem;flex-shrink:0">
                 ${profile.role === 'personal'
-                  ? `<button class="btn btn-sm btn-outline" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar">✏️</button>
-                     <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar">📋</button>
-                     <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromRoutine('${w.id}','${studentId}','${snSafe}','${routineId}','${rNameSafe}')" title="Excluir">🗑️</button>`
+                  ? `<button class="btn btn-sm btn-outline" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar" aria-label="Editar">${icon('pencil')}</button>
+                     <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar" aria-label="Duplicar">${icon('copy')}</button>
+                     <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromRoutine('${w.id}','${studentId}','${snSafe}','${routineId}','${rNameSafe}')" title="Excluir" aria-label="Excluir">${icon('trash-2')}</button>`
                   : ''}
                 <span id="rdi-${uid}" class="routine-expand-icon" style="margin-left:.25rem">▶</span>
               </div>
@@ -5881,8 +5898,8 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
           <div style="font-size:1.05rem;font-weight:800;letter-spacing:-0.02em">${escHtml(routine.name)}</div>
         </div>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-          ${profile.role === 'personal' ? `<button class="btn btn-outline btn-sm" onclick="openRoutineModal('${studentId}','${snSafe}','${routineId}')" title="Editar nome/data da rotina">✏️ Editar Rotina</button>` : ''}
-          ${profile.role === 'personal' ? `<button class="btn btn-primary btn-sm" onclick="openNewWorkoutForRoutine('${studentId}','${snSafe}','${routineId}','${rNameSafe}',historyCtx?.fromView)">➕ Adicionar Treino</button>` : ''}
+          ${profile.role === 'personal' ? `<button class="btn btn-outline btn-sm" onclick="openRoutineModal('${studentId}','${snSafe}','${routineId}')" title="Editar nome/data da rotina">${icon('pencil')} Editar Rotina</button>` : ''}
+          ${profile.role === 'personal' ? `<button class="btn btn-primary btn-sm" onclick="openNewWorkoutForRoutine('${studentId}','${snSafe}','${routineId}','${rNameSafe}',historyCtx?.fromView)">${icon('plus')} Adicionar Treino</button>` : ''}
           <button class="btn btn-outline btn-sm" onclick="closeRoutineDetail('${studentId}','${snSafe}')">← Voltar</button>
         </div>
       </div>
@@ -5902,7 +5919,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
         <span id="bulk-select-count" class="bulk-select-count"></span>
         <div class="bulk-select-actions">
           <button class="btn btn-sm btn-outline" onclick="cancelBulkSelection()">Cancelar</button>
-          <button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="showBulkDeleteConfirm()">🗑️ Excluir selecionados</button>
+          <button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="showBulkDeleteConfirm()">${icon('trash-2')} Excluir selecionados</button>
         </div>
       </div>` : ''}
       ${workoutListHTML}`
@@ -7815,8 +7832,8 @@ function openReplicateModal() {
   const modelSel = document.getElementById('replicate-model-sel')
   modelSel.innerHTML = rows.map(row => {
     const name = row.querySelector('.ex-name')?.value.trim() || 'Exercício sem nome'
-    const icon = (row.querySelector('.ex-type')?.value || 'musculacao') === 'aerobico' ? '🏃' : '🏋️'
-    return `<option value="${row.id}">${icon} ${escHtml(name)}</option>`
+    const typeMark = (row.querySelector('.ex-type')?.value || 'musculacao') === 'aerobico' ? '🏃' : '🏋️'
+    return `<option value="${row.id}">${typeMark} ${escHtml(name)}</option>`
   }).join('')
   modelSel.value = rows[0].id
 
@@ -8496,10 +8513,10 @@ function today() {
 }
 
 function toast(msg, type = 'info', opts = {}) {
-  const icons = { success:'✅', error:'❌', info:'ℹ️' }
+  const toastIcons = { success:'circle-check', error:'circle-x', info:'info' }
   const el = document.createElement('div')
   el.className = `toast ${type}`
-  el.innerHTML = `<span>${icons[type] || 'ℹ️'}</span><span>${msg}</span>`
+  el.innerHTML = `<span class="toast-icon">${icon(toastIcons[type] || 'info')}</span><span>${msg}</span>`
   if (opts.actionLabel && opts.onAction) {
     const btn = document.createElement('button')
     btn.type = 'button'
@@ -9924,8 +9941,8 @@ function renderLiveExerciseCardHTML(ex) {
       <div class="exec-ex-name">${isAero ? '🏃 ' : ''}${escHtml(ex.exercise_name)}</div>
       <div class="live-ex-header-actions">
         <span class="live-ex-progress" id="live-ex-progress-${ex.id}">0/${isAero ? 1 : setsCount} série${(isAero ? 1 : setsCount) > 1 ? 's' : ''}</span>
-        <button type="button" class="btn-live-ex-edit" id="live-ex-editbtn-${ex.id}" title="Editar exercício" onclick="toggleLiveExerciseEdit('${ex.id}')">✎</button>
-        <button type="button" class="btn-live-ex-edit" title="Remover exercício" onclick="removeLiveExercise('${ex.id}')">🗑</button>
+        <button type="button" class="btn-live-ex-edit" id="live-ex-editbtn-${ex.id}" title="Editar exercício" aria-label="Editar exercício" onclick="toggleLiveExerciseEdit('${ex.id}')">${icon('pencil')}</button>
+        <button type="button" class="btn-live-ex-edit" title="Remover exercício" aria-label="Remover exercício" onclick="removeLiveExercise('${ex.id}')">${icon('trash-2')}</button>
       </div>
     </div>
     <div class="exec-ex-planned">${planned || '—'}</div>
@@ -10408,7 +10425,7 @@ function finishLiveExecution() {
 <!-- MODAL: Duplicar treino -->
 <div id="dup-modal-overlay" class="dup-modal-overlay" style="display:none" onclick="if(event.target===this)closeDupModal()">
   <div class="dup-modal-card">
-    <div class="dup-modal-title">📋 Duplicar Treino</div>
+    <div class="dup-modal-title"><span data-icon="copy"></span> Duplicar Treino</div>
     <div class="dup-modal-subtitle" id="dup-modal-subtitle">Copia todos os exercícios para um novo treino.</div>
     <div class="form-group" style="margin-bottom:1rem">
       <label style="font-size:.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Para qual aluno</label>
@@ -10445,7 +10462,7 @@ function finishLiveExecution() {
 <!-- MODAL: Duplicar rotina -->
 <div id="dup-routine-modal-overlay" class="dup-modal-overlay" style="display:none" onclick="if(event.target===this)closeDupRoutineModal()">
   <div class="dup-modal-card">
-    <div class="dup-modal-title">📋 Duplicar Rotina</div>
+    <div class="dup-modal-title"><span data-icon="copy"></span> Duplicar Rotina</div>
     <div class="dup-modal-subtitle" id="dup-routine-modal-subtitle">Copia todos os treinos e exercícios da rotina para uma nova rotina.</div>
     <div class="form-group" style="margin-bottom:1rem">
       <label style="font-size:.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Para qual aluno</label>
@@ -10511,7 +10528,7 @@ function finishLiveExecution() {
 <div id="manual-exec-modal-overlay" class="reorder-modal-overlay" style="display:none" onclick="if(event.target===this)closeManualExecutionModal()">
   <div class="reorder-modal-card">
     <div class="reorder-modal-header">
-      <span style="font-weight:700;font-size:.95rem;color:var(--text-primary)">➕ Registrar Treino Retroativo</span>
+      <span style="font-weight:700;font-size:.95rem;color:var(--text-primary)"><span data-icon="plus"></span> Registrar Treino Retroativo</span>
       <button class="btn btn-outline btn-sm" onclick="closeManualExecutionModal()" style="padding:.2rem .6rem">✕</button>
     </div>
     <div class="reorder-modal-body">
@@ -10573,7 +10590,7 @@ function finishLiveExecution() {
       </div>
     </div>
     <div class="section-label" style="margin-bottom:1rem">Marque cada série assim que o aluno terminar</div>
-    <div class="live-ex-edit-notice">✎ Toque no lápis pra ajustar um exercício durante o treino — a alteração também vale para as próximas vezes que esse treino for usado.</div>
+    <div class="live-ex-edit-notice"><span data-icon="pencil"></span> Toque no lápis pra ajustar um exercício durante o treino — a alteração também vale para as próximas vezes que esse treino for usado.</div>
     <datalist id="live-exercise-catalog"></datalist>
     <div id="live-exec-exercise-list"></div>
     <div style="margin:1rem 0 .5rem">
