@@ -2477,14 +2477,6 @@
           <label>Senha</label>
           <input id="s-pass" type="password" class="form-control" placeholder="Mínimo 6 caracteres" minlength="6" required>
         </div>
-        <div class="form-group">
-          <label>Tipo de conta</label>
-          <select id="s-role" class="form-control" required>
-            <option value="">Selecione...</option>
-            <option value="personal">Personal Trainer</option>
-            <option value="student">Aluno</option>
-          </select>
-        </div>
         <button id="signup-btn" type="submit" class="btn btn-primary btn-block">Criar Conta</button>
       </form>
 
@@ -3423,9 +3415,9 @@ async function doSignup(e) {
   const name  = document.getElementById('s-name').value.trim()
   const email = document.getElementById('s-email').value.trim()
   const pass  = document.getElementById('s-pass').value
-  const role  = document.getElementById('s-role').value
-
-  if (!role) { setMsg('Selecione o tipo de conta.'); btn.textContent = 'Criar Conta'; btn.disabled = false; return }
+  // Cadastro público cria sempre aluno — o trigger profiles_enforce_role força isso no
+  // banco de qualquer forma. Contas de personal são promovidas manualmente pelo admin.
+  const role  = 'student'
 
   let authResult
   try {
