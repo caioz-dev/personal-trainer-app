@@ -4423,16 +4423,16 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
     return `
       <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
         <td>
-          ${profile.role === 'personal' ? `<div class="workout-row-name-wrap"><input type="checkbox" class="workout-checkbox" data-workout-id="${w.id}" onclick="event.stopPropagation();toggleWorkoutCheckbox('${w.id}',this)" style="margin-top:.2rem"><div>` : ''}
+          ${profile.role === 'personal' && canEditWorkout(w) ? `<div class="workout-row-name-wrap"><input type="checkbox" class="workout-checkbox" data-workout-id="${w.id}" onclick="event.stopPropagation();toggleWorkoutCheckbox('${w.id}',this)" style="margin-top:.2rem"><div>` : ''}
           <strong>${escHtml(w.name || fmtDate(w.date))}</strong>${routineTag}
           ${dateSub}
-          ${profile.role === 'personal' ? '</div></div>' : ''}
+          ${profile.role === 'personal' && canEditWorkout(w) ? '</div></div>' : ''}
         </td>
         <td style="color:var(--text-muted);font-size:.83rem">${exLabel}</td>
         <td class="vol-cell">${workoutVolumeDisplay(w)}</td>
         <td>${badge}</td>
         <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">${icon('chevron-right')}</span></td>
-        <td style="text-align:center;white-space:nowrap">${profile.role === 'personal' ? `<button class="edit-btn" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar treino" aria-label="Editar treino">${icon('pencil')}</button><button class="dup-btn" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar treino" aria-label="Duplicar treino">${icon('copy')}</button><button class="del-btn" onclick="event.stopPropagation();deleteWorkout('${w.id}')" title="Excluir treino" aria-label="Excluir treino">${icon('trash-2')}</button>` : ''}</td>
+        <td style="text-align:center;white-space:nowrap">${profile.role === 'personal' ? `${canEditWorkout(w) ? `<button class="edit-btn" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar treino" aria-label="Editar treino">${icon('pencil')}</button>` : ''}<button class="dup-btn" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar treino" aria-label="Duplicar treino">${icon('copy')}</button>${canEditWorkout(w) ? `<button class="del-btn" onclick="event.stopPropagation();deleteWorkout('${w.id}')" title="Excluir treino" aria-label="Excluir treino">${icon('trash-2')}</button>` : ''}` : ''}</td>
       </tr>
       <tr id="wd-${uid}" style="display:none" class="history-detail-row">
         <td colspan="6">
@@ -4450,7 +4450,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
             </table>
             <div class="ex-detail-cards">${exDetailCards}</div>
             ${profile.role === 'student' ? `<div style="padding:.75rem 1rem .875rem;border-top:1px solid var(--neutral-a06)"><button class="btn-start-workout workout-timer-btn" style="font-size:.8rem;padding:.5rem 1.25rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? icon('timer') + ' Em andamento…' : icon('play') + ' Iniciar Treino'}</button></div>` : ''}
-            ${profile.role === 'personal' ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid var(--neutral-a06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkout('${w.id}')">${icon('trash-2')} Excluir Treino</button></div>` : ''}
+            ${profile.role === 'personal' && canEditWorkout(w) ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid var(--neutral-a06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkout('${w.id}')">${icon('trash-2')} Excluir Treino</button></div>` : ''}
           </div>
         </td>
       </tr>`
@@ -4543,6 +4543,15 @@ function toggleWorkoutDetail(uid) {
 }
 
 async function _cascadeDeleteWorkout(workoutId) {
+  // Antes de tudo: execuções e avaliações do aluno são apagáveis por qualquer personal com
+  // vínculo ativo (RLS), mas o treino só pelo criador. Sem esta checagem, outro personal
+  // apagaria o histórico do aluno e o treino ficaria — com toast de sucesso.
+  const { data: owner, error: ownerErr } = await sb.from('workouts')
+    .select('id, created_by').eq('id', workoutId).maybeSingle()
+  if (ownerErr) return 'Erro ao verificar o treino: ' + ownerErr.message
+  if (!owner) return 'Treino não encontrado.'
+  if (!canEditWorkout(owner)) return NO_EDIT_PERMISSION_MSG
+
   // Etapa 1: busca exerciseIds, apaga avaliações e apaga execuções por workout_id — as três
   // são independentes entre si (tabelas/filtros diferentes), então rodam em paralelo em vez
   // de uma esperando a outra.
@@ -4568,8 +4577,9 @@ async function _cascadeDeleteWorkout(workoutId) {
 
   // Etapa 4: apaga o treino — precisa que avaliações (etapa 1) e exercícios (etapa 3) já
   // tenham sido apagados.
-  const { error: e3 } = await sb.from('workouts').delete().eq('id', workoutId)
+  const { data: delRows, error: e3 } = await sb.from('workouts').delete().eq('id', workoutId).select('id')
   if (e3) return 'Erro ao excluir treino: ' + e3.message
+  if (!delRows?.length) return NO_EDIT_PERMISSION_MSG
 
   return null // sem erro
 }
@@ -5033,17 +5043,18 @@ async function renderStudentSheet(studentId, studentName, gen) {
              card: `<div class="ex-card ex-card-legacy">Sem detalhes disponíveis</div>` }]
       const exRows  = exPairs.map(p => p.row).join('')
       const exCards = exPairs.map(p => p.card).join('')
+      const canEdit = profile.role === 'personal' && canEditWorkout(w)
       const editBtn = profile.role === 'personal'
-        ? `<button class="edit-btn" style="opacity:1" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar" aria-label="Editar">${icon('pencil')}</button><button class="dup-btn" style="opacity:1" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar" aria-label="Duplicar">${icon('copy')}</button>`
+        ? `${canEdit ? `<button class="edit-btn" style="opacity:1" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar" aria-label="Editar">${icon('pencil')}</button>` : ''}<button class="dup-btn" style="opacity:1" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar" aria-label="Duplicar">${icon('copy')}</button>`
         : ''
       rememberStudentName(studentId, studentName)
-      const deleteBtn = profile.role === 'personal'
+      const deleteBtn = canEdit
         ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid var(--neutral-a06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}',studentNameOf('${studentId}'))">${icon('trash-2')} Excluir Treino</button></div>`
         : ''
-      const checkboxOpen  = profile.role === 'personal'
+      const checkboxOpen  = canEdit
         ? `<div class="workout-row-name-wrap"><input type="checkbox" class="workout-checkbox" data-workout-id="${w.id}" onclick="event.stopPropagation();toggleWorkoutCheckbox('${w.id}',this)"><div>`
         : ''
-      const checkboxClose = profile.role === 'personal' ? '</div></div>' : ''
+      const checkboxClose = canEdit ? '</div></div>' : ''
       return `
         <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
           <td>
@@ -5888,16 +5899,16 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
           <div style="position:relative;padding:.75rem 1rem;cursor:pointer"
                onclick="toggleRoutineWorkoutAccordion('${uid}','${w.id}')">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem">
-              ${profile.role === 'personal' ? `<input type="checkbox" class="workout-checkbox" data-workout-id="${w.id}" onclick="event.stopPropagation();toggleWorkoutCheckbox('${w.id}',this)">` : ''}
+              ${profile.role === 'personal' && canEditWorkout(w) ? `<input type="checkbox" class="workout-checkbox" data-workout-id="${w.id}" onclick="event.stopPropagation();toggleWorkoutCheckbox('${w.id}',this)">` : ''}
               <div style="min-width:0;flex:1">
                 <div style="font-weight:700;font-size:.9rem;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(w.name || 'Treino sem nome')}</div>
                 <div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem">${exCount} exercício${exCount !== 1 ? 's' : ''} · Vol: ${workoutVolumeDisplay(w)}</div>
               </div>
               <div style="display:flex;align-items:center;gap:.4rem;flex-shrink:0">
                 ${profile.role === 'personal'
-                  ? `<button class="btn btn-sm btn-outline" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar" aria-label="Editar">${icon('pencil')}</button>
+                  ? `${canEditWorkout(w) ? `<button class="btn btn-sm btn-outline" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar" aria-label="Editar">${icon('pencil')}</button>` : ''}
                      <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar" aria-label="Duplicar">${icon('copy')}</button>
-                     <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromRoutine('${w.id}','${studentId}',studentNameOf('${studentId}'),'${routineId}',routineNameOf('${routineId}'))" title="Excluir" aria-label="Excluir">${icon('trash-2')}</button>`
+                     ${canEditWorkout(w) ? `<button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromRoutine('${w.id}','${studentId}',studentNameOf('${studentId}'),'${routineId}',routineNameOf('${routineId}'))" title="Excluir" aria-label="Excluir">${icon('trash-2')}</button>` : ''}`
                   : ''}
                 <span id="rdi-${uid}" class="routine-expand-icon" style="margin-left:.25rem">${icon('chevron-right')}</span>
               </div>
@@ -7833,12 +7844,13 @@ async function saveReorderModal() {
       const results = await Promise.all(items.map((item, idx) => {
         const row  = document.getElementById(item.dataset.rowId)
         const dbId = row?.dataset.dbId
-        if (!dbId) return Promise.resolve({ error: null })
-        return sb.from('workout_exercises').update({ position: idx }).eq('id', dbId)
+        if (!dbId) return Promise.resolve({ error: null, data: [{}] })
+        return sb.from('workout_exercises').update({ position: idx }).eq('id', dbId).select('id')
       }))
       if (results.some(r => r?.error)) throw new Error('falha ao gravar a ordem')
-    } catch {
-      toast('Erro ao salvar ordem.', 'error')
+      if (results.some(r => !r?.data?.length)) throw new Error(NO_EDIT_PERMISSION_MSG)
+    } catch (err) {
+      toast(err?.message === NO_EDIT_PERMISSION_MSG ? NO_EDIT_PERMISSION_MSG : 'Erro ao salvar ordem.', 'error')
     } finally {
       if (btn) { btn.disabled = false; setBtnLabel(btn, 'Salvar ordem', 'check') }
     }
@@ -8244,7 +8256,7 @@ async function saveWorkout(e) {
       if (curErr) throw curErr
       if (!current) throw new Error('Treino não encontrado.')
       if (current.created_by !== me.id) {
-        toast('Só quem criou o treino pode editar.', 'error')
+        toast(NO_EDIT_PERMISSION_MSG, 'error')
         resetBtn()
         return
       }
@@ -8655,6 +8667,15 @@ function uuidv4() {
 
 function today() {
   return localDateStr()
+}
+
+// Só quem criou o treino altera ou apaga o treino e os exercícios dele (RLS do Lote C).
+// Outro personal vinculado ao mesmo aluno continua podendo ver, duplicar e registrar séries.
+// UPDATE/DELETE barrado pela RLS não dá erro — afeta 0 linhas —, por isso as escritas
+// abaixo usam .select() e tratam 0 linhas como falta de permissão, nunca como sucesso.
+const NO_EDIT_PERMISSION_MSG = 'Sem permissão: este treino foi criado por outro personal'
+function canEditWorkout(w) {
+  return !!w && !!me && w.created_by === me.id
 }
 
 function toast(msg, type = 'info', opts = {}) {
@@ -9994,6 +10015,11 @@ function updateLiveTimerDisplay() {
 function renderLiveExecutionScreen(workout) {
   document.getElementById('live-exec-student-name').textContent = _liveExecStudentName || '—'
   document.getElementById('live-exec-workout-name').textContent = workout.name || fmtDate(workout.date)
+  const canEdit = canEditWorkout(workout)
+  document.getElementById('live-ex-edit-notice').style.display     = canEdit ? '' : 'none'
+  document.getElementById('live-ex-readonly-notice').style.display = canEdit ? 'none' : ''
+  document.getElementById('live-add-ex-wrap').style.display        = canEdit ? '' : 'none'
+  if (!canEdit) cancelLiveAddExercise()
   const exes = workout.workout_exercises || []
   document.getElementById('live-exec-exercise-list').innerHTML = exes.length
     ? exes.map(ex => renderLiveExerciseCardHTML(ex)).join('')
@@ -10053,7 +10079,8 @@ function renderLiveExerciseCardHTML(ex) {
          <button class="btn-live-set-save" onclick="saveLiveSet('${ex.id}',${i + 1})">${icon('check')} <span class="btn-label">Salvar</span></button>
        </div>`).join('')
 
-  const setsStepper = !isAero
+  const canEdit = canEditWorkout(_liveWorkoutData)
+  const setsStepper = !isAero && canEdit
     ? `<div class="live-ex-sets-stepper">
          <button type="button" class="btn-live-sets-step" aria-label="Remover série" title="Remover série" onclick="liveAdjustSets('${ex.id}',-1)" ${setsCount <= 1 ? 'disabled' : ''}>−</button>
          <span class="live-ex-sets-value">${setsCount} série${setsCount > 1 ? 's' : ''}</span>
@@ -10061,7 +10088,7 @@ function renderLiveExerciseCardHTML(ex) {
        </div>`
     : ''
 
-  const editPanel = isAero
+  const editPanel = !canEdit ? '' : isAero
     ? `<div class="live-ex-edit-panel" id="live-ex-editpanel-${ex.id}" style="display:none">
          <div class="live-ex-edit-row">
            <input type="text" class="form-control" id="live-edit-name-${ex.id}" value="${escHtml(ex.exercise_name)}" list="live-exercise-catalog" placeholder="Nome do exercício">
@@ -10092,8 +10119,8 @@ function renderLiveExerciseCardHTML(ex) {
       <div class="exec-ex-name">${isAero ? icon('footprints') + ' ' : ''}${escHtml(ex.exercise_name)}</div>
       <div class="live-ex-header-actions">
         <span class="live-ex-progress" id="live-ex-progress-${ex.id}">0/${isAero ? 1 : setsCount} série${(isAero ? 1 : setsCount) > 1 ? 's' : ''}</span>
-        <button type="button" class="btn-live-ex-edit" id="live-ex-editbtn-${ex.id}" title="Editar exercício" aria-label="Editar exercício" onclick="toggleLiveExerciseEdit('${ex.id}')">${icon('pencil')}</button>
-        <button type="button" class="btn-live-ex-edit" title="Remover exercício" aria-label="Remover exercício" onclick="removeLiveExercise('${ex.id}')">${icon('trash-2')}</button>
+        ${canEdit ? `<button type="button" class="btn-live-ex-edit" id="live-ex-editbtn-${ex.id}" title="Editar exercício" aria-label="Editar exercício" onclick="toggleLiveExerciseEdit('${ex.id}')">${icon('pencil')}</button>
+        <button type="button" class="btn-live-ex-edit" title="Remover exercício" aria-label="Remover exercício" onclick="removeLiveExercise('${ex.id}')">${icon('trash-2')}</button>` : ''}
       </div>
     </div>
     <div class="exec-ex-planned">${planned || '—'}</div>
@@ -10182,6 +10209,7 @@ function cancelLiveExerciseEdit(exerciseId) {
 async function saveLiveExerciseEdit(exerciseId) {
   const ex = (_liveWorkoutData?.workout_exercises || []).find(e => e.id === exerciseId)
   if (!ex) return
+  if (!canEditWorkout(_liveWorkoutData)) { toast(NO_EDIT_PERMISSION_MSG, 'error'); return }
   const isAero = ex.exercise_type === 'aerobico'
 
   const nameInput = document.getElementById(`live-edit-name-${exerciseId}`)
@@ -10204,8 +10232,13 @@ async function saveLiveExerciseEdit(exerciseId) {
   const saveBtn = panel?.querySelector('.btn-primary')
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Salvando…' }
   try {
-    const { error } = await sb.from('workout_exercises').update(patch).eq('id', exerciseId)
+    const { data: rows, error } = await sb.from('workout_exercises').update(patch).eq('id', exerciseId).select('id')
     if (error) throw error
+    if (!rows?.length) {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Salvar alteração' }
+      toast(NO_EDIT_PERMISSION_MSG, 'error')
+      return
+    }
     Object.assign(ex, patch)
     refreshLiveExerciseCard(exerciseId)
     saveLiveExecutionState()
@@ -10223,6 +10256,7 @@ async function saveLiveExerciseEdit(exerciseId) {
 async function liveAdjustSets(exerciseId, delta) {
   const ex = (_liveWorkoutData?.workout_exercises || []).find(e => e.id === exerciseId)
   if (!ex) return
+  if (!canEditWorkout(_liveWorkoutData)) { toast(NO_EDIT_PERMISSION_MSG, 'error'); return }
   const current = Math.max(1, parseInt(ex.sets) || 1)
   const next = current + delta
   if (next < 1) return
@@ -10234,8 +10268,13 @@ async function liveAdjustSets(exerciseId, delta) {
   const stepBtns = document.querySelectorAll(`#live-ex-${exerciseId} .btn-live-sets-step`)
   stepBtns.forEach(b => b.disabled = true)
   try {
-    const { error } = await sb.from('workout_exercises').update({ sets: next }).eq('id', exerciseId)
+    const { data: rows, error } = await sb.from('workout_exercises').update({ sets: next }).eq('id', exerciseId).select('id')
     if (error) throw error
+    if (!rows?.length) {
+      stepBtns.forEach(b => b.disabled = false)
+      toast(NO_EDIT_PERMISSION_MSG, 'error')
+      return
+    }
     ex.sets = next
     refreshLiveExerciseCard(exerciseId)
     saveLiveExecutionState()
@@ -10253,6 +10292,7 @@ async function liveAdjustSets(exerciseId, delta) {
 async function removeLiveExercise(exerciseId) {
   const ex = (_liveWorkoutData?.workout_exercises || []).find(e => e.id === exerciseId)
   if (!ex) return
+  if (!canEditWorkout(_liveWorkoutData)) { toast(NO_EDIT_PERMISSION_MSG, 'error'); return }
 
   let historyCount = 0
   try {
@@ -10267,8 +10307,9 @@ async function removeLiveExercise(exerciseId) {
   if (!confirm(warnMsg)) return
 
   try {
-    const { error } = await sb.from('workout_exercises').delete().eq('id', exerciseId)
+    const { data: rows, error } = await sb.from('workout_exercises').delete().eq('id', exerciseId).select('id')
     if (error) throw error
+    if (!rows?.length) { toast(NO_EDIT_PERMISSION_MSG, 'error'); return }
     _liveWorkoutData.workout_exercises = (_liveWorkoutData.workout_exercises || []).filter(e => e.id !== exerciseId)
     delete _liveSavedSets[exerciseId]
     document.getElementById(`live-ex-${exerciseId}`)?.remove()
@@ -10321,6 +10362,7 @@ function toggleLiveAddExerciseType() {
 async function saveLiveAddExercise() {
   const workoutId = _liveWorkoutData?.id
   if (!workoutId) return
+  if (!canEditWorkout(_liveWorkoutData)) { toast(NO_EDIT_PERMISSION_MSG, 'error'); return }
 
   const name = _resolveExerciseName(document.getElementById('live-add-ex-name').value, window._liveExerciseCatalog)
   if (!name) { toast('Informe o nome do exercício.', 'error'); return }
@@ -10377,7 +10419,7 @@ async function saveLiveAddExercise() {
     toast('Exercício adicionado ao treino.', 'success')
   } catch (err) {
     console.error('[saveLiveAddExercise] erro:', err?.message || err)
-    toast('Não foi possível adicionar o exercício. Verifique sua conexão e tente novamente.', 'error')
+    toast(err?.code === '42501' ? NO_EDIT_PERMISSION_MSG : 'Não foi possível adicionar o exercício. Verifique sua conexão e tente novamente.', 'error')
   } finally {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '+ Adicionar' }
   }
@@ -10741,10 +10783,11 @@ function finishLiveExecution() {
       </div>
     </div>
     <div class="section-label" style="margin-bottom:1rem">Marque cada série assim que o aluno terminar</div>
-    <div class="live-ex-edit-notice"><span data-icon="pencil"></span> Toque no lápis pra ajustar um exercício durante o treino — a alteração também vale para as próximas vezes que esse treino for usado.</div>
+    <div class="live-ex-edit-notice" id="live-ex-edit-notice"><span data-icon="pencil"></span> Toque no lápis pra ajustar um exercício durante o treino — a alteração também vale para as próximas vezes que esse treino for usado.</div>
+    <div class="live-ex-edit-notice" id="live-ex-readonly-notice" style="display:none"><span data-icon="lock-keyhole"></span> Treino criado por outro personal: você pode registrar as séries, mas não editar, remover ou adicionar exercícios.</div>
     <datalist id="live-exercise-catalog"></datalist>
     <div id="live-exec-exercise-list"></div>
-    <div style="margin:1rem 0 .5rem">
+    <div style="margin:1rem 0 .5rem" id="live-add-ex-wrap">
       <button type="button" class="btn btn-outline btn-sm" onclick="toggleLiveAddExercise()">+ Adicionar exercício</button>
     </div>
     <div class="live-ex-edit-panel" id="live-add-ex-panel" style="display:none;margin-bottom:1rem">
