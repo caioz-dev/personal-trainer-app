@@ -8641,6 +8641,18 @@ function daysBetween(a, b) {
   return Math.round((parseLocalDate(a) - parseLocalDate(b)) / 864e5)
 }
 
+// UUID v4 para session_id (coluna uuid). crypto.randomUUID não existe em iOS < 15.4 nem
+// fora de contexto seguro; o fallback usa crypto.getRandomValues, disponível em todos.
+const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+function uuidv4() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  const b = crypto.getRandomValues(new Uint8Array(16))
+  b[6] = (b[6] & 0x0f) | 0x40   // versão 4
+  b[8] = (b[8] & 0x3f) | 0x80   // variante RFC 4122
+  const h = Array.from(b, x => x.toString(16).padStart(2, '0')).join('')
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+}
+
 function today() {
   return localDateStr()
 }
@@ -9096,9 +9108,9 @@ function restoreExecutionState() {
     currentWorkoutData  = state.currentWorkoutData
     exerciseExecutions  = state.exerciseExecutions || {}
     _execStartTimestamp = state.startTimestamp
-    // state.sessionId pode faltar num estado salvo antes desta versão — gera um novo pra
-    // não quebrar o restore; séries antigas eventualmente já salvas ficam com o id anterior.
-    _execSessionId      = state.sessionId || (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    // state.sessionId pode faltar num estado salvo antes desta versão (ou ser o fallback
+    // antigo, que não era UUID e nunca gravava) — gera um novo pra não quebrar o restore.
+    _execSessionId      = UUID_V4_RE.test(state.sessionId || '') ? state.sessionId : uuidv4()
 
     window._workoutsCache = window._workoutsCache || {}
     window._workoutsCache[state.workoutId] = currentWorkoutData
@@ -9156,7 +9168,7 @@ async function startWorkoutExecution(workoutId) {
   currentWorkoutData  = workout
   exerciseExecutions  = {}
   _execStartTimestamp = Date.now()
-  _execSessionId      = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  _execSessionId      = uuidv4()
   renderExecutionScreen(workout)
   document.getElementById('execution-overlay').style.display = 'flex'
   document.body.style.overflow = 'hidden'
@@ -9557,7 +9569,8 @@ function dismissComparison() {
 // completamente sem nenhuma série registrada, gravando a linha "Não executado" pra
 // aparecer certo na tela do personal. Não reprocessa o que já foi salvo ao vivo.
 async function saveWorkoutExecutions(workoutId) {
-  const exes = currentWorkoutData?.workout_exercises || []
+  const exes      = currentWorkoutData?.workout_exercises || []
+  const sessionId = _execSessionId   // captura antes do await abaixo
   if (!exes.length) return
 
   const pendingIds = exes
@@ -9568,8 +9581,9 @@ async function saveWorkoutExecutions(workoutId) {
   // exerciseExecutions (memória local) pode estar vazio mesmo já havendo séries reais no
   // banco pra esse exercício — ex: o aluno fechou/reabriu o app no meio do treino e a
   // execução recomeçou do zero em memória. Sem checar o banco aqui, a linha "Não executado"
-  // era inserida por cima de séries já registradas, duplicando o exercício no histórico
-  // (essa linha não tem session_id, então nunca se agrupa com a sessão real que já existia).
+  // era inserida por cima de séries já registradas, duplicando o exercício no histórico.
+  // Essa checagem também evita conflito com a UNIQUE (session_id, exercise_id, set_number):
+  // se já existe série real do exercício nesta sessão, ele não entra em records.
   //
   // Restrito ao dia desta execução (a partir de _execStartTimestamp): workoutId é o slot
   // recorrente do treino (mesmo id toda semana), não uma ocorrência única — sem esse filtro,
@@ -9590,6 +9604,9 @@ async function saveWorkoutExecutions(workoutId) {
   }
   const alreadyRecorded = new Set((existing || []).map(r => r.exercise_id))
 
+  // Mesmo session_id e um executed_at do cliente (como nas séries salvas em saveExecSet),
+  // pra o "Não executado" agrupar com a sessão no histórico em vez de virar outro card.
+  const executedAt = new Date().toISOString()
   const records = pendingIds
     .filter(id => !alreadyRecorded.has(id))
     .map(id => ({
@@ -9597,6 +9614,9 @@ async function saveWorkoutExecutions(workoutId) {
       exercise_id:           id,
       student_id:            profile.id,
       set_number:            1,
+      session_id:            sessionId,
+      is_manual:             false,
+      executed_at:           executedAt,
       weight_executed:       null,
       reps_executed:         null,
       duration_executed_min: null,
@@ -9945,7 +9965,7 @@ function startLiveExecution() {
 
   _liveWorkoutData    = workout
   _liveSavedSets      = {}
-  _liveSessionId      = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`)
+  _liveSessionId      = uuidv4()
   _liveStartTimestamp = Date.now()
 
   renderLiveExecutionScreen(workout)
