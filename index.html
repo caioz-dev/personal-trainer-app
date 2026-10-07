@@ -3691,13 +3691,32 @@ function avatarEl(name, avatarUrl, sizePx, extraStyle) {
   const ini    = (name || '?').trim().split(/\s+/).map(n => n[0]).join('').substring(0, 2).toUpperCase()
   const shared = `width:${sizePx}px;height:${sizePx}px;border-radius:50%;flex-shrink:0;overflow:hidden;${extraStyle ? extraStyle + ';' : ''}`
   if (avatarUrl) {
-    return `<img src="${escHtml(avatarUrl)}" alt="${ini}" style="${shared}object-fit:cover;display:block" loading="lazy">`
+    return `<img src="${escHtml(avatarUrl)}" alt="${escHtml(ini)}" style="${shared}object-fit:cover;display:block" loading="lazy">`
   }
   const fs = Math.max(Math.round(sizePx * 0.34), 11)
-  return `<div style="${shared}background:var(--accent-a10);border:1px solid var(--accent-a20);display:flex;align-items:center;justify-content:center;color:var(--accent-soft);font-size:${fs}px;font-weight:800;letter-spacing:-0.02em">${ini}</div>`
+  return `<div style="${shared}background:var(--accent-a10);border:1px solid var(--accent-a20);display:flex;align-items:center;justify-content:center;color:var(--accent-soft);font-size:${fs}px;font-weight:800;letter-spacing:-0.02em">${escHtml(ini)}</div>`
 }
 
 function displayName(p) { return (p?.username || '').trim() || p?.name || '' }
+
+// Handlers inline (onclick) recebem só ids — o nome é resolvido no clique a partir
+// destes caches, nunca interpolado como texto livre dentro de um atributo/string JS.
+const _studentNameById = {}
+const _routineNameById = {}
+function rememberStudentName(id, name) { if (id && name) _studentNameById[id] = name }
+function rememberRoutineName(id, name) { if (id && name) _routineNameById[id] = name }
+function studentNameOf(id) {
+  if (_studentNameById[id]) return _studentNameById[id]
+  const s = students.find(x => x.id === id)
+  if (s) return displayName(s)
+  if (id && id === me?.id) return profile?.name || ''
+  return 'Aluno'
+}
+function routineNameOf(id) { return _routineNameById[id] || '' }
+function cadenciaOf(exId) {
+  const exes = [...(currentWorkoutData?.workout_exercises || []), ...(_liveWorkoutData?.workout_exercises || [])]
+  return exes.find(e => e.id === exId)?.cadencia || ''
+}
 
 // ─────────────────────────────────────────────
 // DATA
@@ -3895,11 +3914,11 @@ async function renderStudents() {
         ${withLast.map((s, i) => {
           const vol      = s.last ? getWorkoutVolume(s.last) : null
           const dName    = displayName(s)
-          const nameSafe = escHtml(dName.replace(/\\/g,'\\\\').replace(/'/g,"\\'"))
+          rememberStudentName(s.id, dName)
           return `<div class="student-card stagger-item" data-student-id="${s.id}" style="--stagger-index:${i}"
-              onclick="openStudentSheet('${s.id}','${nameSafe}')">
+              onclick="openStudentSheet('${s.id}',studentNameOf('${s.id}'))">
             <button class="student-unlink-btn" title="Desvincular aluno"
-                onclick="event.stopPropagation();confirmUnlinkStudent('${s.id}','${nameSafe}')" aria-label="Desvincular aluno">${icon('x')}</button>
+                onclick="event.stopPropagation();confirmUnlinkStudent('${s.id}',studentNameOf('${s.id}'))" aria-label="Desvincular aluno">${icon('x')}</button>
             ${avatarEl(dName, s.avatar_url || null, 48, 'margin-bottom:.875rem')}
             <div class="student-name">${escHtml(dName)}</div>
             <div class="student-meta">
@@ -4187,7 +4206,7 @@ async function renderDetail(studentId, studentName, gen = 0) {
     body.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
       <p>Erro ao carregar treinos.</p>
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
-              onclick="renderDetail('${studentId}','${studentName}')">Tentar novamente</button></div>`
+              onclick="renderDetail('${studentId}',studentNameOf('${studentId}'))">Tentar novamente</button></div>`
   }
 }
 
@@ -4227,7 +4246,7 @@ async function renderHistory(studentId, gen = 0) {
         return afterStart && beforeEnd
       })
       if (visibleRoutines.length) {
-        const snSafe = profile.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+        rememberStudentName(studentId, profile.name)
         const workoutsByRoutine = {}
         for (const w of workouts) {
           if (w.routine_id) {
@@ -4240,9 +4259,9 @@ async function renderHistory(studentId, gen = 0) {
             ? `${icon('calendar')} ${r.start_date ? fmtDate(r.start_date) : '—'} → ${r.end_date ? fmtDate(r.end_date) : '—'}`
             : null
           const wCount    = (workoutsByRoutine[r.id] || []).length
-          const rNameSafe = r.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+          rememberRoutineName(r.id, r.name)
           return `<div class="routine-card" role="button" style="cursor:pointer"
-              onclick="openRoutineDetail('${studentId}','${snSafe}','${r.id}','${rNameSafe}','history')">
+              onclick="openRoutineDetail('${studentId}',studentNameOf('${studentId}'),'${r.id}',routineNameOf('${r.id}'),'history')">
             <div class="routine-card-name">${escHtml(r.name)}</div>
             <div class="routine-card-meta">
               ${period ? `<span>${period}</span>` : `<span style="font-style:italic">Sem período definido</span>`}
@@ -4296,7 +4315,7 @@ async function renderHistory(studentId, gen = 0) {
 function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', routineNameById = {}) {
   if (!ws.length) return `<div class="empty-state">
     <div class="empty-icon">${icon('dumbbell')}</div>
-    <p>Nenhum treino registrado ainda para ${name}.<br>
+    <p>Nenhum treino registrado ainda para ${escHtml(name)}.<br>
     Use "Novo Treino" para registrar o primeiro!</p></div>`
 
   const total  = ws.reduce((s, w) => s + getWorkoutVolume(w), 0)
@@ -4340,23 +4359,23 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
             ].filter(Boolean).join(' / ')
             const row = `<tr>
               <td style="padding-left:2rem;font-weight:500;color:var(--text-secondary)">
-                ${ex.exercise_name}
+                ${escHtml(ex.exercise_name)}
                 <span style="font-size:.63rem;background:var(--warning-a10);color:var(--warning);border:1px solid var(--warning-a20);border-radius:999px;padding:.1rem .45rem;margin-left:.3rem;vertical-align:middle;white-space:nowrap">${icon('footprints')} Aeróbico</span>
               </td>
               <td>—</td>
               <td style="color:var(--text-secondary)">${parts || '—'}</td>
               <td>${ex.speed_kmh ? ex.speed_kmh + ' km/h' : '—'}</td>
-              <td>${ex.pace ? ex.pace + ' /km' : '—'}</td>
+              <td>${ex.pace ? escHtml(ex.pace) + ' /km' : '—'}</td>
               <td style="color:var(--text-muted)">${(ex.hr_min || ex.hr_max) ? `${icon('heart-pulse')} ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : '—'}</td>
             </tr>`
             const aeroParts = [
               ex.duration_min ? `${ex.duration_min} min` : null,
               ex.distance_km  ? `${ex.distance_km} km`  : null,
               ex.speed_kmh    ? `${ex.speed_kmh} km/h`  : null,
-              ex.pace         ? `Ritmo: ${ex.pace}/km`  : null
+              ex.pace         ? `Ritmo: ${escHtml(ex.pace)}/km`  : null
             ].filter(Boolean).join(' · ')
             const card = `<div class="ex-card">
-              <div class="ex-card-name">${ex.exercise_name}<span class="ex-badge-aero">${icon('footprints')} Aeróbico</span></div>
+              <div class="ex-card-name">${escHtml(ex.exercise_name)}<span class="ex-badge-aero">${icon('footprints')} Aeróbico</span></div>
               ${aeroParts ? `<div class="ex-card-detail">${aeroParts}</div>` : ''}
               ${(ex.hr_min || ex.hr_max) ? `<div class="ex-card-sub">${icon('heart-pulse')} FC: ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm</div>` : ''}
             </div>`
@@ -4364,26 +4383,26 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
           }
           const row = `<tr>
             <td style="padding-left:2rem;font-weight:500;color:var(--text-secondary)">
-              ${ex.exercise_name}
-              ${ex.training_method ? `<div style="font-size:.7rem;color:var(--accent-soft);margin-top:.15rem">${icon('zap')} ${ex.training_method}</div>` : ''}
-              ${ex.method_description ? `<div style="font-size:.68rem;color:var(--text-muted);margin-top:.1rem;font-style:italic">${ex.method_description}</div>` : ''}
+              ${escHtml(ex.exercise_name)}
+              ${ex.training_method ? `<div style="font-size:.7rem;color:var(--accent-soft);margin-top:.15rem">${icon('zap')} ${escHtml(ex.training_method)}</div>` : ''}
+              ${ex.method_description ? `<div style="font-size:.68rem;color:var(--text-muted);margin-top:.1rem;font-style:italic">${escHtml(ex.method_description)}</div>` : ''}
             </td>
             <td>${ex.sets} série${ex.sets > 1 ? 's' : ''}</td>
             <td>${ex.weight_kg} kg × ${ex.reps} reps</td>
-            <td>${ex.cadencia || '—'}</td>
+            <td>${escHtml(ex.cadencia || '—')}</td>
             <td>${ex.tempo_descanso != null ? ex.tempo_descanso + 's' : '—'}</td>
             <td class="vol-cell">${parseFloat(ex.volume).toLocaleString('pt-BR')} kg</td>
           </tr>`
           const detailLine = `${ex.sets} série${ex.sets > 1 ? 's' : ''} × ${ex.reps} reps @ ${ex.weight_kg} kg — Vol: ${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
           const subParts = [
-            ex.cadencia ? `Cadência: ${ex.cadencia}` : null,
+            ex.cadencia ? `Cadência: ${escHtml(ex.cadencia)}` : null,
             ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null
           ].filter(Boolean).join(' · ')
           const card = `<div class="ex-card">
-            <div class="ex-card-name">${ex.exercise_name}${ex.training_method ? `<span class="ex-badge-method">${icon('zap')} ${ex.training_method}</span>` : ''}</div>
+            <div class="ex-card-name">${escHtml(ex.exercise_name)}${ex.training_method ? `<span class="ex-badge-method">${icon('zap')} ${escHtml(ex.training_method)}</span>` : ''}</div>
             <div class="ex-card-detail">${detailLine}</div>
             ${subParts ? `<div class="ex-card-sub">${subParts}</div>` : ''}
-            ${ex.method_description ? `<div class="ex-card-method">${ex.method_description}</div>` : ''}
+            ${ex.method_description ? `<div class="ex-card-method">${escHtml(ex.method_description)}</div>` : ''}
           </div>`
           return { row, card }
         })
@@ -4405,7 +4424,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
       <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
         <td>
           ${profile.role === 'personal' ? `<div class="workout-row-name-wrap"><input type="checkbox" class="workout-checkbox" data-workout-id="${w.id}" onclick="event.stopPropagation();toggleWorkoutCheckbox('${w.id}',this)" style="margin-top:.2rem"><div>` : ''}
-          <strong>${w.name || fmtDate(w.date)}</strong>${routineTag}
+          <strong>${escHtml(w.name || fmtDate(w.date))}</strong>${routineTag}
           ${dateSub}
           ${profile.role === 'personal' ? '</div></div>' : ''}
         </td>
@@ -4438,7 +4457,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
   }).join('')
 
   return `
-    <div class="section-label reveal">Histórico de Treinos — ${name}</div>
+    <div class="section-label reveal">Histórico de Treinos — ${escHtml(name)}</div>
     <div class="stats-grid reveal-stagger">
       <div class="stat-card stagger-item" style="--stagger-index:0">
         <div class="stat-value">${ws.length}</div>
@@ -4895,19 +4914,19 @@ async function renderStudentSheet(studentId, studentName, gen) {
   const studentAvatarUrl = studentRecord.avatar_url || null
   const studentEmail    = studentRecord.email || null
   const safeIdH   = studentId
-  const safeNameH = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+  rememberStudentName(studentId, studentName)
   const header = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.75rem">
       <div style="display:flex;align-items:center;gap:.875rem">
         ${avatarEl(studentName, studentAvatarUrl, 48, 'margin-bottom:0')}
         <div>
           <div class="section-label" style="margin-bottom:.25rem">Ficha do Aluno</div>
-          <div style="font-size:1.05rem;font-weight:800;letter-spacing:-0.02em">${studentName}</div>
+          <div style="font-size:1.05rem;font-weight:800;letter-spacing:-0.02em">${escHtml(studentName)}</div>
           ${studentEmail ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.15rem">${icon('mail')} ${escHtml(studentEmail)}</div>` : ''}
         </div>
       </div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-        <button class="btn btn-primary btn-sm" onclick="openNewWorkoutForStudent('${safeIdH}','${safeNameH}')">${icon('plus')} Novo Treino</button>
+        <button class="btn btn-primary btn-sm" onclick="openNewWorkoutForStudent('${safeIdH}',studentNameOf('${safeIdH}'))">${icon('plus')} Novo Treino</button>
         <button class="btn btn-outline btn-sm" onclick="closeStudentSheet()">${icon('x')} Fechar</button>
       </div>
     </div>`
@@ -4985,7 +5004,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
         ? exes.map(ex => {
             const isAero  = ex.exercise_type === 'aerobico'
             const nameSub = !isAero && ex.training_method
-              ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">${icon('zap')} ${ex.training_method}</div>`
+              ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">${icon('zap')} ${escHtml(ex.training_method)}</div>`
               : ''
             const detail  = isAero
               ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—'
@@ -4994,18 +5013,18 @@ async function renderStudentSheet(studentId, studentName, gen) {
             const row = `
               <tr>
                 <td style="padding-left:1.5rem;font-weight:500;color:var(--text-secondary)">
-                  ${ex.exercise_name}${nameSub}
+                  ${escHtml(ex.exercise_name)}${nameSub}
                 </td>
                 <td>${detail}</td>
                 <td class="vol-cell">${volCell}</td>
               </tr>`
             const card = isAero
               ? `<div class="ex-card">
-                  <div class="ex-card-name">${ex.exercise_name}<span class="ex-badge-aero">${icon('footprints')} Aeróbico</span></div>
+                  <div class="ex-card-name">${escHtml(ex.exercise_name)}<span class="ex-badge-aero">${icon('footprints')} Aeróbico</span></div>
                   <div class="ex-card-detail">${detail}</div>
                 </div>`
               : `<div class="ex-card">
-                  <div class="ex-card-name">${ex.exercise_name}${ex.training_method ? `<span class="ex-badge-method">${icon('zap')} ${ex.training_method}</span>` : ''}</div>
+                  <div class="ex-card-name">${escHtml(ex.exercise_name)}${ex.training_method ? `<span class="ex-badge-method">${icon('zap')} ${escHtml(ex.training_method)}</span>` : ''}</div>
                   <div class="ex-card-detail">${detail} — Vol: ${volCell}</div>
                 </div>`
             return { row, card }
@@ -5017,9 +5036,9 @@ async function renderStudentSheet(studentId, studentName, gen) {
       const editBtn = profile.role === 'personal'
         ? `<button class="edit-btn" style="opacity:1" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar" aria-label="Editar">${icon('pencil')}</button><button class="dup-btn" style="opacity:1" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar" aria-label="Duplicar">${icon('copy')}</button>`
         : ''
-      const safeStudentName = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+      rememberStudentName(studentId, studentName)
       const deleteBtn = profile.role === 'personal'
-        ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid var(--neutral-a06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}','${safeStudentName}')">${icon('trash-2')} Excluir Treino</button></div>`
+        ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid var(--neutral-a06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}',studentNameOf('${studentId}'))">${icon('trash-2')} Excluir Treino</button></div>`
         : ''
       const checkboxOpen  = profile.role === 'personal'
         ? `<div class="workout-row-name-wrap"><input type="checkbox" class="workout-checkbox" data-workout-id="${w.id}" onclick="event.stopPropagation();toggleWorkoutCheckbox('${w.id}',this)"><div>`
@@ -5029,7 +5048,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
         <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
           <td>
             ${checkboxOpen}
-            <strong>${w.name || fmtDate(w.date)}</strong>${routineTag}
+            <strong>${escHtml(w.name || fmtDate(w.date))}</strong>${routineTag}
             ${dateSub}
             ${checkboxClose}
           </td>
@@ -5101,7 +5120,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
       manualNotes: g.manualNotes,
       items:       Object.values(g.exerciseMap).sort((a, b) => (a.exercise_id > b.exercise_id ? 1 : -1))
     }))
-    const safeStudentNameExec = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    rememberStudentName(studentId, studentName)
 
     const execSectionHTML = execGroups.length
       ? execGroups.map(group => {
@@ -5137,7 +5156,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
                 : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>`
                 : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} ${unit}</span>`
                 :             `<span style="color:var(--text-muted)">= 0 ${unit}</span>`
-              const exName = `${icon('footprints')} ${we?.exercise_name || '—'}`
+              const exName = `${icon('footprints')} ${escHtml(we?.exercise_name || '—')}`
 
               const row = `<tr>
                 <td style="font-weight:500;color:var(--text-secondary)">${exName}</td>
@@ -5174,11 +5193,11 @@ async function renderStudentSheet(studentId, studentName, gen) {
                 : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>`
                 : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>`
                 :             `<span style="color:var(--text-muted)">= 0 kg</span>`
-              const methodTag = we?.training_method ? `${icon('zap')} ${we.training_method}` : ''
+              const methodTag = we?.training_method ? `${icon('zap')} ${escHtml(we.training_method)}` : ''
 
               const row = `<tr>
                 <td style="font-weight:500;color:var(--text-secondary)">
-                  ${we?.exercise_name || '—'}
+                  ${escHtml(we?.exercise_name || '—')}
                   ${methodTag ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">${methodTag}</div>` : ''}
                 </td>
                 <td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td>
@@ -5186,7 +5205,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
                 <td style="font-size:.82rem">${diffCell}</td>
               </tr>`
               const card = `<div class="comp-card">
-                <div class="comp-card-name">${we?.exercise_name || '—'}${methodTag ? ` <span style="font-size:.72rem;color:var(--accent-soft);font-weight:400">${methodTag}</span>` : ''}</div>
+                <div class="comp-card-name">${escHtml(we?.exercise_name || '—')}${methodTag ? ` <span style="font-size:.72rem;color:var(--accent-soft);font-weight:400">${methodTag}</span>` : ''}</div>
                 <div class="comp-card-row"><span class="label">Previsto</span><span>${plannedTxt}</span></div>
                 <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--success);font-weight:600">${executedTxt}</span></div>
                 <div class="comp-card-row"><span class="label">Diferença</span><span>${diffCell}</span></div>
@@ -5234,7 +5253,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
           }
 
           const deleteExecBtn = profile.role === 'personal'
-            ? `<button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}','${safeStudentNameExec}')">${icon('trash-2')} Apagar execução</button>`
+            ? `<button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}',studentNameOf('${studentId}'))">${icon('trash-2')} Apagar execução</button>`
             : ''
           // Inclui executedAt no uid: o mesmo workoutId pode ter várias execuções em datas
           // diferentes (grupos separados), e usar só o workoutId gerava ids duplicados no
@@ -5310,7 +5329,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
         }).join('')
       : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">${icon('chart-column')}</div><p>Nenhuma execução registrada ainda.</p></div>`
 
-    const snSafe = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    rememberStudentName(studentId, studentName)
     const routineCardsHTML = routinesData.length === 0
       ? `<p style="font-size:.82rem;color:var(--text-muted);padding:.5rem 0 .25rem">Nenhuma rotina criada ainda.</p>`
       : `<div class="routines-grid">${routinesData.map(r => {
@@ -5319,9 +5338,9 @@ async function renderStudentSheet(studentId, studentName, gen) {
             : null
           const rWorkouts = workoutsByRoutine[r.id] || []
           const wCount    = rWorkouts.length
-          const rNameSafe = r.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+          rememberRoutineName(r.id, r.name)
           return `<div class="routine-card" role="button" style="cursor:pointer"
-              onclick="openRoutineDetail('${studentId}','${snSafe}','${r.id}','${rNameSafe}')">
+              onclick="openRoutineDetail('${studentId}',studentNameOf('${studentId}'),'${r.id}',routineNameOf('${r.id}'))">
             <div class="routine-card-name">${escHtml(r.name)}</div>
             <div class="routine-card-meta">
               ${period ? `<span>${period}</span>` : `<span style="font-style:italic">Sem período definido</span>`}
@@ -5331,9 +5350,9 @@ async function renderStudentSheet(studentId, studentName, gen) {
             <div class="routine-card-footer">
               <span class="routine-count-badge">${wCount} treino${wCount !== 1 ? 's' : ''}</span>
               <div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end">
-                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openRoutineModal('${studentId}','${snSafe}','${r.id}')" title="Editar rotina" aria-label="Editar rotina">${icon('pencil')}</button>
+                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openRoutineModal('${studentId}',studentNameOf('${studentId}'),'${r.id}')" title="Editar rotina" aria-label="Editar rotina">${icon('pencil')}</button>
                 <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openDupRoutineModal('${r.id}')" title="Duplicar rotina" aria-label="Duplicar rotina">${icon('copy')}</button>
-                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteRoutine('${r.id}','${studentId}','${snSafe}')" title="Excluir rotina" aria-label="Excluir rotina">${icon('trash-2')}</button>
+                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteRoutine('${r.id}','${studentId}',studentNameOf('${studentId}'))" title="Excluir rotina" aria-label="Excluir rotina">${icon('trash-2')}</button>
               </div>
             </div>
           </div>`
@@ -5342,7 +5361,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
       <div style="margin-top:1.25rem">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
           <div class="section-label" style="margin-bottom:0">Rotinas</div>
-          <button class="btn btn-primary btn-sm" onclick="openRoutineModal('${studentId}','${snSafe}')">${icon('plus')} Nova Rotina</button>
+          <button class="btn btn-primary btn-sm" onclick="openRoutineModal('${studentId}',studentNameOf('${studentId}'))">${icon('plus')} Nova Rotina</button>
         </div>
         ${routineCardsHTML}
       </div>`
@@ -5404,7 +5423,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
           <tbody>${rows}</tbody>
         </table>
       </div>`
-      : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon">${icon('dumbbell')}</div><p>Nenhum treino registrado para ${studentName}.</p></div>`
+      : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon">${icon('dumbbell')}</div><p>Nenhum treino registrado para ${escHtml(studentName)}.</p></div>`
 
     body.innerHTML = `${header}
       ${profileStatsHTML}
@@ -5430,8 +5449,8 @@ async function renderStudentSheet(studentId, studentName, gen) {
       <div style="margin-top:1.75rem;padding-top:1.5rem;border-top:1px solid var(--border-subtle)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.875rem;flex-wrap:wrap;gap:.5rem">
           <div class="section-label" style="margin-bottom:0">Execuções Realizadas</div>
-          <button class="btn btn-primary btn-sm" onclick="openLiveExecutionPicker('${safeIdH}','${safeNameH}')" ${_liveTimerInterval ? 'disabled' : ''}>${_liveTimerInterval ? icon('timer') + ' Registro ao vivo em andamento…' : icon('play') + ' Registrar ao vivo'}</button>
-          <button class="btn btn-outline btn-sm" onclick="openManualExecutionModal('${safeIdH}','${safeNameH}')">${icon('plus')} Registrar retroativo</button>
+          <button class="btn btn-primary btn-sm" onclick="openLiveExecutionPicker('${safeIdH}',studentNameOf('${safeIdH}'))" ${_liveTimerInterval ? 'disabled' : ''}>${_liveTimerInterval ? icon('timer') + ' Registro ao vivo em andamento…' : icon('play') + ' Registrar ao vivo'}</button>
+          <button class="btn btn-outline btn-sm" onclick="openManualExecutionModal('${safeIdH}',studentNameOf('${safeIdH}'))">${icon('plus')} Registrar retroativo</button>
         </div>
         ${execSectionHTML}
       </div>
@@ -5442,7 +5461,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
     body.innerHTML = `${header}<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
       <p>Erro ao carregar histórico.</p>
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
-              onclick="openStudentSheet('${studentId}','${studentName.replace(/'/g, "\\'")}')">Tentar novamente</button></div>`
+              onclick="openStudentSheet('${studentId}',studentNameOf('${studentId}'))">Tentar novamente</button></div>`
   }
 }
 
@@ -5504,7 +5523,7 @@ async function renderMyWorkout(gen) {
     const allAeroMW    = workouts.length > 0 && workouts.every(w => isWorkoutAllAerobic(w))
     const totalDispMW  = allAeroMW ? workouts.reduce((s, w) => s + getWorkoutAeroDistance(w), 0) : total
     const volUnitMW    = allAeroMW ? 'km' : 'kg'
-    const snSafe       = studentName.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    rememberStudentName(studentId, studentName)
 
     // ── Routine cards ──
     const routineCardsHTML = routinesData.length === 0
@@ -5514,9 +5533,9 @@ async function renderMyWorkout(gen) {
             ? `${icon('calendar')} ${r.start_date ? fmtDate(r.start_date) : '—'} → ${r.end_date ? fmtDate(r.end_date) : '—'}`
             : null
           const wCount    = (workoutsByRoutine[r.id] || []).length
-          const rNameSafe = r.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+          rememberRoutineName(r.id, r.name)
           return `<div class="routine-card" role="button" style="cursor:pointer"
-              onclick="openRoutineDetail('${studentId}','${snSafe}','${r.id}','${rNameSafe}','my-workout')">
+              onclick="openRoutineDetail('${studentId}',studentNameOf('${studentId}'),'${r.id}',routineNameOf('${r.id}'),'my-workout')">
             <div class="routine-card-name">${escHtml(r.name)}</div>
             <div class="routine-card-meta">
               ${period ? `<span>${period}</span>` : `<span style="font-style:italic">Sem período definido</span>`}
@@ -5524,9 +5543,9 @@ async function renderMyWorkout(gen) {
             <div class="routine-card-footer">
               <span class="routine-count-badge">${wCount} treino${wCount !== 1 ? 's' : ''}</span>
               <div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end">
-                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openRoutineModal('${studentId}','${snSafe}','${r.id}')" title="Editar rotina" aria-label="Editar rotina">${icon('pencil')}</button>
+                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openRoutineModal('${studentId}',studentNameOf('${studentId}'),'${r.id}')" title="Editar rotina" aria-label="Editar rotina">${icon('pencil')}</button>
                 <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openDupRoutineModal('${r.id}')" title="Duplicar rotina" aria-label="Duplicar rotina">${icon('copy')}</button>
-                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteRoutine('${r.id}','${studentId}','${snSafe}')" title="Excluir rotina" aria-label="Excluir rotina">${icon('trash-2')}</button>
+                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteRoutine('${r.id}','${studentId}',studentNameOf('${studentId}'))" title="Excluir rotina" aria-label="Excluir rotina">${icon('trash-2')}</button>
               </div>
             </div>
           </div>`
@@ -5574,7 +5593,7 @@ async function renderMyWorkout(gen) {
               const plannedTxt  = [planDur > 0 ? planDur + ' min' : null, planDist > 0 ? planDist + ' km' : null, planSpd > 0 ? planSpd + ' km/h' : null, (we?.hr_min || we?.hr_max) ? `${icon('heart-pulse')} FC: ${we.hr_min || '?'}–${we.hr_max || '?'} bpm` : null].filter(Boolean).join(' · ') || '—'
               const executedTxt = notExecuted ? '<span style="color:var(--text-muted)">Não executado</span>' : [execDur > 0 ? execDur.toLocaleString('pt-BR') + ' min' : null, execDist > 0 ? execDist.toLocaleString('pt-BR') + ' km' : null, execSpd > 0 ? execSpd.toLocaleString('pt-BR') + ' km/h' : null].filter(Boolean).join(' · ') || '—'
               const diffCell    = notExecuted ? '—' : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>` : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} ${unit}</span>` : `<span style="color:var(--text-muted)">= 0 ${unit}</span>`
-              const exName = `${icon('footprints')} ${we?.exercise_name || '—'}`
+              const exName = `${icon('footprints')} ${escHtml(we?.exercise_name || '—')}`
               const row = `<tr><td style="font-weight:500;color:var(--text-secondary)">${exName}</td><td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td><td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td><td style="font-size:.82rem">${diffCell}</td></tr>`
               const card = `<div class="comp-card">
                 <div class="comp-card-name">${exName}</div>
@@ -5593,10 +5612,10 @@ async function renderMyWorkout(gen) {
               const plannedTxt  = planned > 0 ? `${planWeight} kg × ${planReps} reps × ${planSets} séries = ${planned.toLocaleString('pt-BR')} kg` : '—'
               const executedTxt = notExecuted ? '<span style="color:var(--text-muted)">Não executado</span>' : sortedSets.map(s => `S${s.set_number}: ${s.weight_executed}×${s.reps_executed}`).join(' · ') + ` = ${executed.toLocaleString('pt-BR')} kg`
               const diffCell    = notExecuted ? '—' : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>` : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>` : `<span style="color:var(--text-muted)">= 0 kg</span>`
-              const methodTag = we?.training_method ? `${icon('zap')} ${we.training_method}` : ''
-              const row = `<tr><td style="font-weight:500;color:var(--text-secondary)">${we?.exercise_name || '—'}${methodTag ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">${methodTag}</div>` : ''}</td><td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td><td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td><td style="font-size:.82rem">${diffCell}</td></tr>`
+              const methodTag = we?.training_method ? `${icon('zap')} ${escHtml(we.training_method)}` : ''
+              const row = `<tr><td style="font-weight:500;color:var(--text-secondary)">${escHtml(we?.exercise_name || '—')}${methodTag ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">${methodTag}</div>` : ''}</td><td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td><td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td><td style="font-size:.82rem">${diffCell}</td></tr>`
               const card = `<div class="comp-card">
-                <div class="comp-card-name">${we?.exercise_name || '—'}${methodTag ? ` <span style="font-size:.72rem;color:var(--accent-soft);font-weight:400">${methodTag}</span>` : ''}</div>
+                <div class="comp-card-name">${escHtml(we?.exercise_name || '—')}${methodTag ? ` <span style="font-size:.72rem;color:var(--accent-soft);font-weight:400">${methodTag}</span>` : ''}</div>
                 <div class="comp-card-row"><span class="label">Previsto</span><span>${plannedTxt}</span></div>
                 <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--success);font-weight:600">${executedTxt}</span></div>
                 <div class="comp-card-row"><span class="label">Diferença</span><span>${diffCell}</span></div>
@@ -5666,7 +5685,7 @@ async function renderMyWorkout(gen) {
               </div>
               <div class="exec-group-meta" style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
                 <div style="font-size:.75rem;color:var(--text-muted)">${fmtDateTime(group.executedAt)}</div>
-                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}','${snSafe}')">${icon('trash-2')} Apagar execução</button>
+                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}',studentNameOf('${studentId}'))">${icon('trash-2')} Apagar execução</button>
               </div>
             </div>
             <div class="ex-body" id="ex-body-${execUid}">
@@ -5704,8 +5723,8 @@ async function renderMyWorkout(gen) {
             const isAero  = ex.exercise_type === 'aerobico'
             const detail  = isAero ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—' : `${ex.sets}×${ex.reps} @ ${ex.weight_kg} kg`
             const volCell = isAero ? '—' : `${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
-            const row  = `<tr><td style="padding-left:1.5rem;font-weight:500;color:var(--text-secondary)">${ex.exercise_name}</td><td>${detail}</td><td class="vol-cell">${volCell}</td></tr>`
-            const card = `<div class="ex-card"><div class="ex-card-name">${ex.exercise_name}</div><div class="ex-card-detail">${detail}${isAero ? '' : ` — Vol: ${volCell}`}</div></div>`
+            const row  = `<tr><td style="padding-left:1.5rem;font-weight:500;color:var(--text-secondary)">${escHtml(ex.exercise_name)}</td><td>${detail}</td><td class="vol-cell">${volCell}</td></tr>`
+            const card = `<div class="ex-card"><div class="ex-card-name">${escHtml(ex.exercise_name)}</div><div class="ex-card-detail">${detail}${isAero ? '' : ` — Vol: ${volCell}`}</div></div>`
             return { row, card }
           })
         : [{ row: `<tr><td colspan="3" style="padding:.75rem 1rem;font-style:italic;color:var(--text-muted)">Sem detalhes disponíveis</td></tr>`, card: `<div class="ex-card ex-card-legacy">Sem detalhes disponíveis</div>` }]
@@ -5713,14 +5732,14 @@ async function renderMyWorkout(gen) {
       const exCards = exPairs.map(p => p.card).join('')
       return `
         <tr class="history-main-row" data-uid="${uid}" style="cursor:pointer">
-          <td><strong>${w.name || fmtDate(w.date)}</strong>${dateSub}</td>
+          <td><strong>${escHtml(w.name || fmtDate(w.date))}</strong>${dateSub}</td>
           <td style="color:var(--text-muted);font-size:.83rem">${exes.length} exercício${exes.length !== 1 ? 's' : ''}</td>
           <td class="vol-cell">${workoutVolumeDisplay(w)}</td>
           <td style="text-align:center"><span class="expand-icon" id="wi-${uid}">${icon('chevron-right')}</span></td>
           <td style="text-align:center;white-space:nowrap">
             <button class="btn-start-workout workout-timer-btn" style="font-size:.75rem;padding:.35rem .85rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? icon('timer') + ' Em andamento…' : icon('play') + ' Iniciar'}</button>
             <button class="edit-btn" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar" aria-label="Editar">${icon('pencil')}</button>
-            <button class="del-btn" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}','${snSafe}')" title="Excluir" aria-label="Excluir">${icon('trash-2')}</button>
+            <button class="del-btn" onclick="event.stopPropagation();deleteWorkoutFromSheet('${w.id}','${studentId}',studentNameOf('${studentId}'))" title="Excluir" aria-label="Excluir">${icon('trash-2')}</button>
           </td>
         </tr>
         <tr id="wd-${uid}" style="display:none" class="history-detail-row">
@@ -5768,7 +5787,7 @@ async function renderMyWorkout(gen) {
       <div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
           <div class="section-label" style="margin-bottom:0">Minhas Rotinas</div>
-          <button class="btn btn-primary btn-sm" onclick="openRoutineModal('${studentId}','${snSafe}')">${icon('plus')} Nova Rotina</button>
+          <button class="btn btn-primary btn-sm" onclick="openRoutineModal('${studentId}',studentNameOf('${studentId}'))">${icon('plus')} Nova Rotina</button>
         </div>
         ${routineCardsHTML}
       </div>
@@ -5803,7 +5822,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
   const body = document.getElementById('routine-detail-body')
   if (!body) return
 
-  const snSafe = (studentName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+  rememberStudentName(studentId, studentName)
   body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando…</div>'
   _selectedWorkoutIds.clear()
 
@@ -5852,7 +5871,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
       byDay[d].push(w)
     }
 
-    const rNameSafe = routine.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    rememberRoutineName(routineId, routine.name)
 
     const mkWorkoutCard = (w) => {
       const exes    = w.workout_exercises || []
@@ -5878,7 +5897,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
                 ${profile.role === 'personal'
                   ? `<button class="btn btn-sm btn-outline" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar" aria-label="Editar">${icon('pencil')}</button>
                      <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar" aria-label="Duplicar">${icon('copy')}</button>
-                     <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromRoutine('${w.id}','${studentId}','${snSafe}','${routineId}','${rNameSafe}')" title="Excluir" aria-label="Excluir">${icon('trash-2')}</button>`
+                     <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromRoutine('${w.id}','${studentId}',studentNameOf('${studentId}'),'${routineId}',routineNameOf('${routineId}'))" title="Excluir" aria-label="Excluir">${icon('trash-2')}</button>`
                   : ''}
                 <span id="rdi-${uid}" class="routine-expand-icon" style="margin-left:.25rem">${icon('chevron-right')}</span>
               </div>
@@ -5916,9 +5935,9 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
           <div style="font-size:1.05rem;font-weight:800;letter-spacing:-0.02em">${escHtml(routine.name)}</div>
         </div>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-          ${profile.role === 'personal' ? `<button class="btn btn-outline btn-sm" onclick="openRoutineModal('${studentId}','${snSafe}','${routineId}')" title="Editar nome/data da rotina">${icon('pencil')} Editar Rotina</button>` : ''}
-          ${profile.role === 'personal' ? `<button class="btn btn-primary btn-sm" onclick="openNewWorkoutForRoutine('${studentId}','${snSafe}','${routineId}','${rNameSafe}',historyCtx?.fromView)">${icon('plus')} Adicionar Treino</button>` : ''}
-          <button class="btn btn-outline btn-sm" onclick="closeRoutineDetail('${studentId}','${snSafe}')">${icon('arrow-left')} Voltar</button>
+          ${profile.role === 'personal' ? `<button class="btn btn-outline btn-sm" onclick="openRoutineModal('${studentId}',studentNameOf('${studentId}'),'${routineId}')" title="Editar nome/data da rotina">${icon('pencil')} Editar Rotina</button>` : ''}
+          ${profile.role === 'personal' ? `<button class="btn btn-primary btn-sm" onclick="openNewWorkoutForRoutine('${studentId}',studentNameOf('${studentId}'),'${routineId}',routineNameOf('${routineId}'),historyCtx?.fromView)">${icon('plus')} Adicionar Treino</button>` : ''}
+          <button class="btn btn-outline btn-sm" onclick="closeRoutineDetail('${studentId}',studentNameOf('${studentId}'))">${icon('arrow-left')} Voltar</button>
         </div>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.25rem">
@@ -5942,11 +5961,11 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
       </div>` : ''}
       ${workoutListHTML}`
   } catch (err) {
-    const errSnSafe = (opts.studentName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    rememberStudentName(opts.studentId, opts.studentName)
     body.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
       <p>Erro ao carregar rotina.</p>
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
-              onclick="openRoutineDetail('${opts.studentId || ''}','${errSnSafe}','${opts.routineId || ''}','')">Tentar novamente</button></div>`
+              onclick="openRoutineDetail('${opts.studentId || ''}',studentNameOf('${opts.studentId || ''}'),'${opts.routineId || ''}','')">Tentar novamente</button></div>`
   }
 }
 
@@ -6697,7 +6716,7 @@ async function renderProgress(studentIdOverride) {
         <div class="form-group" style="margin:.75rem 0 1.25rem;max-width:400px">
           <label>Exercício</label>
           <select class="form-control" id="prog-exercise" onchange="updateProgressMetrics()">
-            ${exerciseNames.map(n => `<option value="${n}">${n}</option>`).join('')}
+            ${exerciseNames.map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('')}
           </select>
         </div>
         <div class="chart-container" style="height:320px"><canvas id="progress-chart"></canvas></div>
@@ -8447,7 +8466,7 @@ async function calcRun(prefix, fixedStudentId) {
 
     if (!lastExercise) {
       out.innerHTML = `<div class="calc-no-prev">
-        <p style="font-size:1.1rem;font-weight:600;color:var(--text-primary)">Nenhum registro para "${exerciseName}"</p>
+        <p style="font-size:1.1rem;font-weight:600;color:var(--text-primary)">Nenhum registro para "${escHtml(exerciseName)}"</p>
         <p style="font-size:.85rem;margin-top:.4rem">Este será o primeiro treino deste exercício!</p>
       </div>`
       return
@@ -8462,7 +8481,7 @@ async function calcRun(prefix, fixedStudentId) {
         <div class="calc-reps">${minReps}</div>
         <div class="calc-sub">reps com ${weight.toLocaleString('pt-BR')} kg</div>
         <div class="calc-detail">
-          Exercício: <strong style="color:var(--text-primary)">${lastExercise.exercise_name}</strong> — ${fmtDate(lastDate)}<br>
+          Exercício: <strong style="color:var(--text-primary)">${escHtml(lastExercise.exercise_name)}</strong> — ${fmtDate(lastDate)}<br>
           Treino anterior: <strong style="color:var(--text-primary)">${parseFloat(lastExercise.volume).toLocaleString('pt-BR')} kg</strong>
           (${lastExercise.sets} × ${lastExercise.weight_kg} kg × ${lastExercise.reps} reps)<br>
           Volume mínimo alvo: <strong style="color:var(--accent-soft)">${minVolume.toLocaleString('pt-BR')} kg</strong>
@@ -8480,7 +8499,7 @@ async function calcRun(prefix, fixedStudentId) {
 // HELPERS
 // ─────────────────────────────────────────────
 function escHtml(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
 }
 
 function fmtDate(s) {
@@ -8527,7 +8546,10 @@ function toast(msg, type = 'info', opts = {}) {
   const toastIcons = { success:'circle-check', error:'circle-x', info:'info' }
   const el = document.createElement('div')
   el.className = `toast ${type}`
-  el.innerHTML = `<span class="toast-icon">${icon(toastIcons[type] || 'info')}</span><span>${msg}</span>`
+  el.innerHTML = `<span class="toast-icon">${icon(toastIcons[type] || 'info')}</span>`
+  const msgEl = document.createElement('span')
+  msgEl.textContent = msg   // texto puro: a mensagem pode conter nome de aluno/treino
+  el.appendChild(msgEl)
   if (opts.actionLabel && opts.onAction) {
     const btn = document.createElement('button')
     btn.type = 'button'
@@ -9058,15 +9080,15 @@ function renderExecutionScreen(workout) {
               ex.duration_min ? `${ex.duration_min} min`     : null,
               ex.distance_km  ? `${ex.distance_km} km`       : null,
               ex.speed_kmh    ? `${ex.speed_kmh} km/h`       : null,
-              ex.pace         ? `Ritmo: ${ex.pace} /km`      : null,
+              ex.pace         ? `Ritmo: ${escHtml(ex.pace)} /km`      : null,
               ex.recovery_interval_min ? `Rec: ${ex.recovery_interval_min} min` : null,
               (ex.hr_min || ex.hr_max) ? `${icon('heart-pulse')} FC: ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : null
             ].filter(Boolean).join(' &nbsp;·&nbsp; ')
           : [
               `${ex.sets} série${ex.sets > 1 ? 's' : ''} × ${ex.reps} reps × ${ex.weight_kg} kg`,
-              ex.cadencia          ? `Cadência: ${ex.cadencia}`         : null,
+              ex.cadencia          ? `Cadência: ${escHtml(ex.cadencia)}`         : null,
               ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null,
-              ex.training_method   ? `Método: ${ex.training_method}`    : null
+              ex.training_method   ? `Método: ${escHtml(ex.training_method)}`    : null
             ].filter(Boolean).join(' &nbsp;·&nbsp; ')
         const restBtn = !isAero && ex.tempo_descanso > 0
           ? `<div class="rest-timer-wrap" id="rest-timer-${ex.id}">
@@ -9077,7 +9099,7 @@ function renderExecutionScreen(workout) {
         const _cadPhases = !isAero ? parseCadencia(ex.cadencia) : null
         const metronomBtn = _cadPhases
           ? `<div class="metronome-wrap">
-               <button class="btn-metronome" id="metronome-btn-${ex.id}" onclick="toggleMetronome('${ex.id}','${ex.cadencia}')">${icon('play')} <span class="btn-label">Metrônomo</span></button>
+               <button class="btn-metronome" id="metronome-btn-${ex.id}" onclick="toggleMetronome('${ex.id}',cadenciaOf('${ex.id}'))">${icon('play')} <span class="btn-label">Metrônomo</span></button>
                <div class="metronome-indicator" id="metronome-ind-${ex.id}" style="display:none">${_cadPhases.map((phase, i) => `<div class="metronome-phase${phase.duracao === 0 ? ' metronome-phase-skip' : ''}" id="mphase-${ex.id}-${i}"><span class="mphase-label">${phase.nome}</span><span class="mphase-dur">${phase.duracao > 0 ? phase.duracao + 's' : '—'}</span></div>${i < _cadPhases.length - 1 ? '<span class="metronome-sep">›</span>' : ''}`).join('')}</div>
              </div>`
           : ''
@@ -9102,11 +9124,11 @@ function renderExecutionScreen(workout) {
         return `
         <div class="exec-exercise-card" id="exec-ex-${ex.id}">
           <div class="exec-ex-header">
-            <div class="exec-ex-name">${isAero ? icon('footprints') + ' ' : ''}${ex.exercise_name}</div>
+            <div class="exec-ex-name">${isAero ? icon('footprints') + ' ' : ''}${escHtml(ex.exercise_name)}</div>
             <span class="live-ex-progress" id="exec-ex-progress-${ex.id}">0/${isAero ? 1 : setsCount} série${(isAero ? 1 : setsCount) > 1 ? 's' : ''}</span>
           </div>
           <div class="exec-ex-planned">${planned || '—'}</div>
-          ${!isAero && ex.method_description ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.4rem;padding:.4rem .75rem;background:rgba(86,115,255,0.05);border-radius:var(--radius-md);border-left:2px solid var(--accent-a25)">${ex.method_description}</div>` : ''}
+          ${!isAero && ex.method_description ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.4rem;padding:.4rem .75rem;background:rgba(86,115,255,0.05);border-radius:var(--radius-md);border-left:2px solid var(--accent-a25)">${escHtml(ex.method_description)}</div>` : ''}
           <div class="live-set-rows">${rowsHTML}</div>
           ${metronomBtn}
           ${restBtn}
@@ -9378,14 +9400,14 @@ function showComparisonModal(finalTime) {
       }
 
       return `<tr>
-        <td style="font-weight:600;color:var(--text-primary)">${isAero ? icon('footprints') + ' ' : ''}${ex.exercise_name}</td>
+        <td style="font-weight:600;color:var(--text-primary)">${isAero ? icon('footprints') + ' ' : ''}${escHtml(ex.exercise_name)}</td>
         <td style="color:var(--text-muted);font-size:.82rem">${plannedCell}</td>
         <td style="font-size:.82rem">${execCell}</td>
         <td>${diffCell}</td>
       </tr>`
     } catch (err) {
       console.error('[showComparisonModal] erro ao montar linha de', ex.exercise_name, err)
-      return `<tr><td colspan="4" style="color:var(--danger);font-size:.82rem;padding:.75rem 1rem">${icon('triangle-alert')} Erro ao exibir "${ex.exercise_name}": ${err.message}</td></tr>`
+      return `<tr><td colspan="4" style="color:var(--danger);font-size:.82rem;padding:.75rem 1rem">${icon('triangle-alert')} Erro ao exibir "${escHtml(ex.exercise_name)}": ${escHtml(err.message)}</td></tr>`
     }
   }).join('')
 
@@ -9872,9 +9894,9 @@ function renderLiveExerciseCardHTML(ex) {
       ].filter(Boolean).join(' &nbsp;·&nbsp; ')
     : [
         `${setsCount} série${setsCount > 1 ? 's' : ''} × ${ex.reps} reps × ${ex.weight_kg} kg`,
-        ex.cadencia          ? `Cadência: ${ex.cadencia}`         : null,
+        ex.cadencia          ? `Cadência: ${escHtml(ex.cadencia)}`         : null,
         ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null,
-        ex.training_method   ? `Método: ${ex.training_method}`    : null
+        ex.training_method   ? `Método: ${escHtml(ex.training_method)}`    : null
       ].filter(Boolean).join(' &nbsp;·&nbsp; ')
   const restBtn = !isAero && ex.tempo_descanso > 0
     ? `<div class="rest-timer-wrap" id="rest-timer-${ex.id}">
@@ -9885,7 +9907,7 @@ function renderLiveExerciseCardHTML(ex) {
   const _cadPhases = !isAero ? parseCadencia(ex.cadencia) : null
   const metronomBtn = _cadPhases
     ? `<div class="metronome-wrap">
-         <button class="btn-metronome" id="metronome-btn-${ex.id}" onclick="toggleMetronome('${ex.id}','${ex.cadencia}')">${icon('play')} <span class="btn-label">Metrônomo</span></button>
+         <button class="btn-metronome" id="metronome-btn-${ex.id}" onclick="toggleMetronome('${ex.id}',cadenciaOf('${ex.id}'))">${icon('play')} <span class="btn-label">Metrônomo</span></button>
          <div class="metronome-indicator" id="metronome-ind-${ex.id}" style="display:none">${_cadPhases.map((phase, i) => `<div class="metronome-phase${phase.duracao === 0 ? ' metronome-phase-skip' : ''}" id="mphase-${ex.id}-${i}"><span class="mphase-label">${phase.nome}</span><span class="mphase-dur">${phase.duracao > 0 ? phase.duracao + 's' : '—'}</span></div>${i < _cadPhases.length - 1 ? '<span class="metronome-sep">›</span>' : ''}`).join('')}</div>
        </div>`
     : ''
