@@ -4941,6 +4941,8 @@ async function renderStudentSheet(studentId, studentName, gen) {
       .order('position', { ascending: true, foreignTable: 'workout_exercises' })
     if (_wErr) throw _wErr
     const workouts = _wData || []
+    window._workoutsCache = window._workoutsCache || {}
+    workouts.forEach(w => { window._workoutsCache[w.id] = w })
 
     // Agrupa treinos vinculados a rotina — usado pra contar treinos por rotina nos cards
     // de "Rotinas" (o Histórico de Treinos abaixo agora lista todos os treinos, com ou
