@@ -6918,20 +6918,16 @@ function _scheduleWorkoutFormSave() {
 // Chamada no boot, depois que `me`/`profile` já estão resolvidos. Retorna true se
 // restaurou um rascunho salvo (e já deixou a tela pronta), false caso contrário.
 async function restoreWorkoutFormState() {
-  console.log('[restoreWorkoutFormState DEBUG] chamada. profile?.role:', profile?.role, 'me?.id:', me?.id)
-  if (profile?.role !== 'personal') { console.log('[restoreWorkoutFormState DEBUG] abortou: role não é personal'); return false }
+  if (profile?.role !== 'personal') return false
 
   let raw
   try { raw = localStorage.getItem(WF_STATE_KEY) } catch (err) { console.error('[restoreWorkoutFormState DEBUG] localStorage.getItem falhou:', err); return false }
-  console.log('[restoreWorkoutFormState DEBUG] raw do localStorage:', raw)
-  if (!raw) { console.log('[restoreWorkoutFormState DEBUG] nada salvo (raw vazio) — nunca chegou a salvar, ou já foi limpo'); return false }
+  if (!raw) return false
 
   let state
   try { state = JSON.parse(raw) } catch (err) { console.error('[restoreWorkoutFormState DEBUG] JSON.parse falhou:', err, 'raw:', raw); clearWorkoutFormState(); return false }
-  console.log('[restoreWorkoutFormState DEBUG] state parseado:', state)
 
   if (!state || typeof state !== 'object' || !state.date) {
-    console.log('[restoreWorkoutFormState DEBUG] state com formato inválido/incompleto — descartando. date:', state?.date)
     clearWorkoutFormState()
     return false
   }
@@ -6939,20 +6935,17 @@ async function restoreWorkoutFormState() {
   // Rascunho velho (de dias/testes anteriores) — não fica restaurando indefinidamente.
   const WF_DRAFT_MAX_AGE_MS = 60 * 60 * 1000 // 1 hora
   if (!state.savedAt || (Date.now() - state.savedAt) > WF_DRAFT_MAX_AGE_MS) {
-    console.log('[restoreWorkoutFormState DEBUG] rascunho expirado (sem savedAt ou com mais de 1h) — descartando. savedAt:', state.savedAt)
     clearWorkoutFormState()
     return false
   }
   // Personal já tinha navegado pra outra tela antes de recarregar — não sequestra a
   // navegação de volta pro formulário; os dados continuam salvos, só não reabrem sozinhos.
   if (state.active === false) {
-    console.log('[restoreWorkoutFormState DEBUG] rascunho marcado como inativo (não era mais a tela atual) — não restaura automaticamente')
     return false
   }
 
   // Rascunho de outro personal no mesmo navegador — não restaura no lugar errado.
   if (state.personalId && me?.id && state.personalId !== me.id) {
-    console.log('[restoreWorkoutFormState DEBUG] personalId do rascunho não bate com o usuário logado. salvo:', state.personalId, 'logado:', me.id)
     clearWorkoutFormState()
     return false
   }
@@ -6961,7 +6954,6 @@ async function restoreWorkoutFormState() {
   // (dono do treino ou vínculo ativo com o aluno) antes de reabrir com os dados salvos.
   if (state.editingWorkoutId) {
     const ok = await _isLinkedOrOwner(state.createdBy, state.studentId)
-    console.log('[restoreWorkoutFormState DEBUG] revalidação de acesso (editingWorkoutId presente):', ok)
     if (!ok) {
       clearWorkoutFormState()
       toast('Não foi possível restaurar o rascunho: o acesso a este treino/aluno não é mais válido.', 'error')
@@ -7519,17 +7511,14 @@ async function confirmDupWorkout() {
     }).select().maybeSingle()
     if (wErr) throw wErr
     if (!newWorkout) throw new Error('Não foi possível criar o treino duplicado.')
-    console.log('Novo workout criado:', newWorkout)
     if (!newWorkout?.id) throw new Error('Workout criado sem ID')
 
     // 2. Duplica exercícios
     const exes = workout.workout_exercises || []
-    console.log('Exercícios a duplicar:', exes)
     if (!exes || exes.length === 0) throw new Error('Nenhum exercício encontrado para duplicar')
     const { data: exData, error: exError } = await sb.from('workout_exercises').insert(
       exes.map(ex => _cloneExerciseForInsert(ex, newWorkout.id))
     )
-    console.log('Exercícios duplicados:', exData, exError)
     if (exError) throw new Error('Erro ao duplicar exercícios: ' + exError.message)
 
     // 3. Notifica o aluno (fire-and-forget)
@@ -8756,7 +8745,6 @@ async function _ensureAudioCtx() {
   if (!_audioCtx || _audioCtx.state === 'closed') {
     try {
       _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
-      console.log('[audio] AudioContext criado, state inicial:', _audioCtx.state)
     } catch (err) {
       console.error('[audio] falha ao criar AudioContext:', err?.message || err)
       throw err
@@ -8765,7 +8753,6 @@ async function _ensureAudioCtx() {
   if (_audioCtx.state === 'suspended') {
     try {
       await _audioCtx.resume()
-      console.log('[audio] resume() concluído, state agora:', _audioCtx.state)
     } catch (err) {
       console.error('[audio] resume() rejeitou:', err?.message || err)
     }
@@ -8969,26 +8956,21 @@ function clearExecutionState() {
 // restaurou uma execução salva (e já deixou a tela pronta), false caso contrário —
 // nesse caso o chamador segue o fluxo normal de navegação.
 function restoreExecutionState() {
-  console.log('[restoreExecutionState DEBUG] chamada. timerInterval:', timerInterval, 'me?.id:', me?.id)
-  if (timerInterval) { console.log('[restoreExecutionState DEBUG] abortou: já existe timerInterval ativo em memória'); return false }
+  if (timerInterval) return false
 
   let raw
   try { raw = localStorage.getItem(EXEC_STATE_KEY) } catch (err) { console.error('[restoreExecutionState DEBUG] localStorage.getItem falhou:', err); return false }
-  console.log('[restoreExecutionState DEBUG] raw do localStorage:', raw)
-  if (!raw) { console.log('[restoreExecutionState DEBUG] nada salvo (raw vazio) — nunca chegou a salvar, ou já foi limpo'); return false }
+  if (!raw) return false
 
   let state
   try { state = JSON.parse(raw) } catch (err) { console.error('[restoreExecutionState DEBUG] JSON.parse falhou:', err, 'raw:', raw); clearExecutionState(); return false }
-  console.log('[restoreExecutionState DEBUG] state parseado:', state)
 
   if (!state || typeof state !== 'object' || !state.workoutId || !state.currentWorkoutData || !state.startTimestamp) {
-    console.log('[restoreExecutionState DEBUG] state com formato inválido/incompleto — descartando. workoutId:', state?.workoutId, 'currentWorkoutData:', !!state?.currentWorkoutData, 'startTimestamp:', state?.startTimestamp)
     clearExecutionState()
     return false
   }
   // Estado de outro aluno/conta no mesmo navegador — não retoma silenciosamente no lugar errado.
   if (state.studentId && me?.id && state.studentId !== me.id) {
-    console.log('[restoreExecutionState DEBUG] studentId do estado salvo não bate com o usuário logado. salvo:', state.studentId, 'logado:', me.id)
     clearExecutionState()
     return false
   }
