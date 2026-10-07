@@ -3881,7 +3881,7 @@ async function renderStudents() {
           const sFound   = students.find(s => s.id === le.student_id)
           const sName    = sFound ? displayName(sFound) : 'Aluno'
           const wName    = le.workouts?.name || 'Treino'
-          const execDate = fmtDate(le.executed_at.slice(0, 10))
+          const execDate = fmtDate(localDateStr(new Date(le.executed_at)))
           execBanner = `<div class="new-workout-alert">
             <span style="font-size:1.2rem;display:inline-flex">${icon('dumbbell')}</span>
             <span>${escHtml(sName)} concluiu o treino "${escHtml(wName)}" em ${execDate}.</span>
@@ -3960,7 +3960,7 @@ function pickRelevantRoutine(routines, todayStr) {
 }
 
 function renewalStatus(endDate, todayStr) {
-  const diffDays = Math.round((new Date(endDate + 'T00:00:00') - new Date(todayStr + 'T00:00:00')) / 864e5)
+  const diffDays = daysBetween(endDate, todayStr)
   const level = diffDays <= 3 ? 'danger' : diffDays <= 7 ? 'warning' : 'normal'
   return { level, diffDays }
 }
@@ -3979,7 +3979,7 @@ async function renderRenewals(gen = 0) {
       return
     }
 
-    const todayStr = new Date().toISOString().slice(0, 10)
+    const todayStr = today()
 
     const rows = await Promise.all(students.map(async s => {
       const { data: routines, error } = await sb.from('routines')
@@ -4014,7 +4014,7 @@ async function renderRenewals(gen = 0) {
         </tr>`
       }
 
-      const createdStr = r.created_at ? fmtDate(r.created_at.slice(0, 10)) : '—'
+      const createdStr = r.created_at ? fmtDate(localDateStr(new Date(r.created_at))) : '—'
 
       let endCell
       if (!r.end_date) {
@@ -4238,7 +4238,7 @@ async function renderHistory(studentId, gen = 0) {
 
     let routinesCardsHTML = ''
     if (profile.role === 'student') {
-      const todayStr = new Date().toISOString().slice(0, 10)
+      const todayStr = today()
       const visibleRoutines = (routinesRes.data || []).filter(r => {
         if (r.show_to_student === 'sempre') return true
         const afterStart = !r.start_date || todayStr >= r.start_date
@@ -6778,7 +6778,7 @@ function updateProgressChart() {
   const byDate = {}
   for (const ex of executions) {
     if ((ex.workout_exercises?.exercise_name) !== exerciseName) continue
-    const day = (ex.executed_at || '').slice(0, 10)
+    const day = ex.executed_at ? localDateStr(new Date(ex.executed_at)) : ''
     if (!day) continue
     if (!byDate[day]) byDate[day] = []
     byDate[day].push(ex)
@@ -7400,7 +7400,7 @@ function openDupModal(workoutId) {
   document.getElementById('dup-day-of-week').value = workout.day_of_week || ''
 
   // Data padrão = hoje
-  document.getElementById('dup-date').value = new Date().toISOString().slice(0, 10)
+  document.getElementById('dup-date').value = today()
 
   loadDupRoutineOptions()
 
@@ -7484,14 +7484,8 @@ async function confirmDupWorkout() {
   // Mantém a duração original em dias (se houver end_date)
   let newEndDate = null
   if (workout.end_date && workout.date) {
-    const durDays = Math.round(
-      (new Date(workout.end_date) - new Date(workout.date)) / 864e5
-    )
-    if (durDays > 0) {
-      const d = new Date(newDate)
-      d.setDate(d.getDate() + durDays)
-      newEndDate = d.toISOString().slice(0, 10)
-    }
+    const durDays = daysBetween(workout.end_date, workout.date)
+    if (durDays > 0) newEndDate = addDaysStr(newDate, durDays)
   }
 
   const btn = document.getElementById('dup-confirm-btn')
@@ -7596,7 +7590,7 @@ async function openDupRoutineModal(routineId) {
       .join('')
 
   document.getElementById('dupr-name').value  = routine.name ? `${routine.name} (cópia)` : ''
-  document.getElementById('dupr-start').value = new Date().toISOString().slice(0, 10)
+  document.getElementById('dupr-start').value = today()
   document.getElementById('dupr-end').value   = ''
 
   const btn = document.getElementById('dupr-confirm-btn')
@@ -7651,14 +7645,9 @@ async function confirmDupRoutine() {
     // pra garantir que cada exercício vá pro workout_id certo) mantendo o espaçamento
     // relativo das datas em relação ao início original da rotina.
     const offsetDays = routine.start_date
-      ? Math.round((new Date(newStart) - new Date(routine.start_date)) / 864e5)
+      ? daysBetween(newStart, routine.start_date)
       : 0
-    const shiftDate = (dateStr) => {
-      if (!dateStr) return null
-      const d = new Date(dateStr)
-      d.setDate(d.getDate() + offsetDays)
-      return d.toISOString().slice(0, 10)
-    }
+    const shiftDate = (dateStr) => dateStr ? addDaysStr(dateStr, offsetDays) : null
 
     for (const w of (sourceWorkouts || [])) {
       const { data: newWorkout, error: wErr } = await sb.from('workouts').insert({
@@ -8622,8 +8611,36 @@ function fmtDateTime(s) {
     ' às ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
+// Datas de "dia" (YYYY-MM-DD) sempre no fuso de Brasília — toISOString() usa UTC e,
+// a partir das 21h, já devolveria o dia seguinte.
+const APP_TZ = 'America/Sao_Paulo'
+// Offset fixo de SP: o Brasil não tem horário de verão desde 2019.
+const APP_TZ_OFFSET = '-03:00'
+
+function localDateStr(date = new Date()) {
+  return date.toLocaleDateString('sv-SE', { timeZone: APP_TZ })
+}
+
+// 'YYYY-MM-DD' → Date ao meio-dia local (new Date('YYYY-MM-DD') seria meia-noite UTC
+// e pode cair no dia anterior); usado só para somar/subtrair dias.
+function parseLocalDate(s) {
+  const [y, m, d] = s.split('-').map(Number)
+  return new Date(y, m - 1, d, 12)
+}
+
+function addDaysStr(s, n) {
+  const d = parseLocalDate(s)
+  d.setDate(d.getDate() + n)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// Diferença em dias de calendário entre duas datas 'YYYY-MM-DD' (a − b)
+function daysBetween(a, b) {
+  return Math.round((parseLocalDate(a) - parseLocalDate(b)) / 864e5)
+}
+
 function today() {
-  return new Date().toISOString().split('T')[0]
+  return localDateStr()
 }
 
 function toast(msg, type = 'info', opts = {}) {
@@ -9556,8 +9573,9 @@ async function saveWorkoutExecutions(workoutId) {
   // recorrente do treino (mesmo id toda semana), não uma ocorrência única — sem esse filtro,
   // uma série real de 3 semanas atrás faria esta função achar (erroneamente) que o exercício
   // "já foi registrado" e pular o "Não executado" de hoje pra sempre.
-  const dayStart = new Date(_execStartTimestamp)
-  dayStart.setHours(0, 0, 0, 0)
+  // Meia-noite de SP do dia em que a execução começou (offset fixo −03:00: o Brasil não
+  // tem horário de verão desde 2019), independente do fuso do navegador.
+  const dayStart = new Date(`${localDateStr(new Date(_execStartTimestamp))}T00:00:00${APP_TZ_OFFSET}`)
   const { data: existing, error: existingErr } = await sb.from('workout_executions')
     .select('exercise_id')
     .eq('workout_id', workoutId)
@@ -9843,8 +9861,9 @@ async function confirmManualExecution() {
   const blocks = document.querySelectorAll('#manual-exec-exercises .manual-exec-ex')
   if (!blocks.length) { toast('Selecione um treino com exercícios cadastrados.', 'error'); return }
 
-  // Meio-dia local evita a data "voltar um dia" quando exibida depois com fmtDateTime
-  const executedAt  = new Date(dateVal + 'T12:00:00').toISOString()
+  // Meio-dia de SP (offset fixo −03:00: o Brasil não tem horário de verão desde 2019)
+  // evita a data "voltar um dia" quando exibida depois com fmtDateTime
+  const executedAt  = new Date(`${dateVal}T12:00:00${APP_TZ_OFFSET}`).toISOString()
   const studentId   = _manualExecStudentId
   const studentName = _manualExecStudentName
   const records = []
