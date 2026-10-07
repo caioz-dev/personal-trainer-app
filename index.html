@@ -4758,10 +4758,6 @@ async function deleteWorkoutFromSheet(workoutId, studentId, studentName) {
 
 // Reaproveitado por editWorkout (sempre revalida contra o banco) e por
 // restoreWorkoutFormState (revalida um rascunho de edição salvo localmente).
-async function _isLinkedOrOwner(createdBy, studentId) {
-  return createdBy === me.id || await isStudentLinkedToMe(studentId)
-}
-
 async function editWorkout(workoutId) {
   if (profile.role !== 'personal') return
   const { data: workout, error } = await sb
@@ -4772,9 +4768,11 @@ async function editWorkout(workoutId) {
     .maybeSingle()
   if (error || !workout) { toast('Erro ao carregar treino para edição.', 'error'); return }
 
-  if (!(await _isLinkedOrOwner(workout.created_by, workout.student_id))) {
-    toast('Acesso negado', 'error')
-    navigateTo('students')
+  // Só o criador edita: o RLS de workouts só deixa o criador atualizar a linha, então um
+  // personal apenas vinculado ao aluno (aluno compartilhado) teria o UPDATE ignorado em
+  // silêncio enquanto os exercícios eram alterados.
+  if (workout.created_by !== me.id) {
+    toast('Só quem criou o treino pode editar.', 'error')
     return
   }
 
@@ -4861,7 +4859,7 @@ async function editWorkout(workoutId) {
 
 // Preenche #exercise-list a partir de um array de exercícios no formato de uma linha de
 // workout_exercises. Reaproveitado por editWorkout (dados do Supabase, com id real de cada
-// linha) e por restoreWorkoutFormState (dados de um rascunho salvo no localStorage, sem id).
+// linha) e por restoreWorkoutFormState (rascunho do localStorage — de edição, também com id).
 function _populateExerciseRows(exesArray, { withDbId = false } = {}) {
   exesArray.forEach(ex => {
     addExercise()
@@ -6874,6 +6872,7 @@ function saveWorkoutFormState(active = true) {
   try {
     const studentSel = document.getElementById('wf-student')
     const exercises = [...document.querySelectorAll('#exercise-list .exercise-row')].map(row => ({
+      id:                    row.dataset.dbId || null,   // casa a linha com o banco ao editar
       exercise_name:         row.querySelector('.ex-name')?.value ?? '',
       exercise_type:         row.querySelector('.ex-type')?.value ?? 'musculacao',
       sets:                  row.querySelector('.ex-sets')?.value ?? '',
@@ -6961,11 +6960,10 @@ async function restoreWorkoutFormState() {
     return false
   }
 
-  // Rascunho de EDIÇÃO: revalida o mesmo acesso que editWorkout normalmente checa
-  // (dono do treino ou vínculo ativo com o aluno) antes de reabrir com os dados salvos.
+  // Rascunho de EDIÇÃO: revalida a mesma regra de editWorkout (só o criador do treino
+  // edita) antes de reabrir com os dados salvos. saveWorkout confere de novo no banco.
   if (state.editingWorkoutId) {
-    const ok = await _isLinkedOrOwner(state.createdBy, state.studentId)
-    if (!ok) {
+    if (state.createdBy !== me?.id) {
       clearWorkoutFormState()
       toast('Não foi possível restaurar o rascunho: o acesso a este treino/aluno não é mais válido.', 'error')
       return false
@@ -7037,7 +7035,9 @@ async function restoreWorkoutFormState() {
     list.innerHTML = ''
     exerciseCounter = 0
     if (!state.exercises || !state.exercises.length) addExercise()
-    else _populateExerciseRows(state.exercises)
+    // Rascunho de edição guarda o id de cada exercício: sem ele, saveWorkout trataria as
+    // linhas existentes como novas e os exercícios originais como removidos.
+    else _populateExerciseRows(state.exercises, { withDbId: !!state.editingWorkoutId })
     refreshTotalVolume()
 
     // navigateTo('workout') acima já disparou setupWorkoutForm() internamente, que reseta o
@@ -7838,12 +7838,14 @@ async function saveReorderModal() {
   if (editingWorkoutId) {
     if (btn) { btn.disabled = true; btn.textContent = 'Salvando…' }
     try {
-      await Promise.all(items.map((item, idx) => {
+      // Só o campo de ordem, por id — nunca toca no resto do exercício nem no histórico.
+      const results = await Promise.all(items.map((item, idx) => {
         const row  = document.getElementById(item.dataset.rowId)
         const dbId = row?.dataset.dbId
-        if (!dbId) return Promise.resolve()
+        if (!dbId) return Promise.resolve({ error: null })
         return sb.from('workout_exercises').update({ position: idx }).eq('id', dbId)
       }))
+      if (results.some(r => r?.error)) throw new Error('falha ao gravar a ordem')
     } catch {
       toast('Erro ao salvar ordem.', 'error')
     } finally {
@@ -8138,6 +8140,7 @@ async function saveWorkout(e) {
   // Collect and validate exercises
   const rows      = document.querySelectorAll('#exercise-list .exercise-row')
   const exercises = []
+  const dbIds     = []   // id no banco de cada item de exercises (null = exercício novo)
   let totalVolume = 0
 
   // Limpa destaques de uma tentativa anterior antes de validar de novo.
@@ -8180,6 +8183,7 @@ async function saveWorkout(e) {
         training_method: null, method_description: null,
         position: idx
       })
+      dbIds.push(row.dataset.dbId || null)
     } else {
       const setsEl   = row.querySelector('.ex-sets')
       const weightEl = row.querySelector('.ex-weight')
@@ -8206,6 +8210,7 @@ async function saveWorkout(e) {
         training_method: method, method_description: methodDesc,
         position: idx
       })
+      dbIds.push(row.dataset.dbId || null)
     }
   }
 
@@ -8232,7 +8237,70 @@ async function saveWorkout(e) {
 
   try {
     if (editingWorkoutId) {
-      const { error: wErr } = await sb.from('workouts').update({
+      // Edição por diferença: nunca apaga e recria os exercícios. Um DELETE em
+      // workout_exercises apaga em cascata (FK ON DELETE CASCADE) todas as execuções
+      // daquele exercício — por isso só os exercícios que o personal removeu são apagados,
+      // e só depois que todo o resto foi gravado com sucesso.
+      const resetBtn = () => { btn.textContent = 'Atualizar Treino'; btn.disabled = false }
+      // Lido uma vez: se o formulário for cancelado/fechado durante o salvamento, a global
+      // editingWorkoutId é zerada e as próximas chamadas iriam com id=null.
+      const wid = editingWorkoutId
+
+      const { data: current, error: curErr } = await sb.from('workouts')
+        .select('id, created_by, workout_exercises(*)')
+        .eq('id', wid)
+        .maybeSingle()
+      if (curErr) throw curErr
+      if (!current) throw new Error('Treino não encontrado.')
+      if (current.created_by !== me.id) {
+        toast('Só quem criou o treino pode editar.', 'error')
+        resetBtn()
+        return
+      }
+
+      const dbById = {}
+      for (const x of current.workout_exercises || []) dbById[x.id] = x
+      const sameValue = (a, b) => {
+        if ((a ?? null) === (b ?? null)) return true
+        if (a == null || b == null) return false
+        const na = Number(a), nb = Number(b)
+        return !isNaN(na) && !isNaN(nb) && na === nb
+      }
+
+      const updates = []   // { id, patch } — só os campos que mudaram (inclui position)
+      const inserts = []
+      const keptIds = new Set()
+      exercises.forEach((ex, i) => {
+        const dbId = dbIds[i]
+        const old  = dbId ? dbById[dbId] : null
+        if (!old) { inserts.push({ ...ex, workout_id: wid }); return }
+        keptIds.add(dbId)
+        const patch = {}
+        for (const [k, v] of Object.entries(ex)) if (!sameValue(v, old[k])) patch[k] = v
+        if (Object.keys(patch).length) updates.push({ id: dbId, patch })
+      })
+      const removed = Object.values(dbById).filter(x => !keptIds.has(x.id))
+
+      // Antes de qualquer gravação: se algum exercício removido tem séries registradas,
+      // avisa quantas serão apagadas junto. Se a contagem falhar, não segue.
+      if (removed.length) {
+        const { count, error: cntErr } = await sb.from('workout_executions')
+          .select('id', { count: 'exact', head: true })
+          .in('exercise_id', removed.map(x => x.id))
+        if (cntErr || count == null) {
+          toast('Não foi possível verificar o histórico dos exercícios removidos. Nada foi salvo — tente novamente.', 'error')
+          resetBtn()
+          return
+        }
+        if (count > 0) {
+          const names = removed.map(x => `"${x.exercise_name}"`).join(', ')
+          const ok = confirm(`Você removeu ${names}. ${count} série${count !== 1 ? 's' : ''} registrada${count !== 1 ? 's' : ''} desse${removed.length > 1 ? 's exercícios' : ' exercício'} ser${count !== 1 ? 'ão' : 'á'} apagada${count !== 1 ? 's' : ''} junto, permanentemente.\n\nAs séries dos outros exercícios não são afetadas. Salvar mesmo assim?`)
+          if (!ok) { resetBtn(); return }
+        }
+      }
+
+      // 1) treino — 0 linhas afetadas é erro, nunca sucesso silencioso
+      const { data: wRows, error: wErr } = await sb.from('workouts').update({
         student_id:   studentId,
         name:         workoutName || null,
         date,
@@ -8241,16 +8309,32 @@ async function saveWorkout(e) {
         notes:        notes || null,
         routine_id:   routineId  || null,
         day_of_week:  dayOfWeek  || null
-      }).eq('id', editingWorkoutId)
+      }).eq('id', wid).select('id')
       if (wErr) throw wErr
+      if (!wRows?.length) throw new Error('O treino não foi atualizado (sem permissão ou treino inexistente). Nenhum exercício foi alterado.')
 
-      const { error: delErr } = await sb.from('workout_exercises').delete().eq('workout_id', editingWorkoutId)
-      if (delErr) throw delErr
+      // 2) exercícios existentes — UPDATE por id, só do que mudou
+      for (const { id, patch } of updates) {
+        const { data: uRows, error: uErr } = await sb.from('workout_exercises')
+          .update(patch).eq('id', id).eq('workout_id', wid).select('id')
+        if (uErr) throw uErr
+        if (!uRows?.length) throw new Error('Um exercício não pôde ser atualizado. Nenhum exercício foi removido.')
+      }
 
-      const { error: exErr } = await sb.from('workout_exercises').insert(
-        exercises.map(ex => ({ ...ex, workout_id: editingWorkoutId }))
-      )
-      if (exErr) throw exErr
+      // 3) exercícios novos — INSERT
+      if (inserts.length) {
+        const { data: iRows, error: iErr } = await sb.from('workout_exercises').insert(inserts).select('id')
+        if (iErr) throw iErr
+        if ((iRows?.length || 0) !== inserts.length) throw new Error('Nem todos os exercícios novos foram gravados. Nenhum exercício foi removido.')
+      }
+
+      // 4) por último, só os exercícios que o personal removeu
+      if (removed.length) {
+        const { data: dRows, error: dErr } = await sb.from('workout_exercises')
+          .delete().in('id', removed.map(x => x.id)).eq('workout_id', wid).select('id')
+        if (dErr) throw dErr
+        if ((dRows?.length || 0) !== removed.length) throw new Error('Alguns exercícios removidos não puderam ser apagados.')
+      }
 
       toast('Treino atualizado com sucesso!', 'success')
       clearWorkoutFormState()
