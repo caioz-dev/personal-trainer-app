@@ -1136,6 +1136,9 @@
 
     /* ---- EXERCISE DETAIL CARDS (mobile) ---- */
     .ex-detail-cards { display: none; }
+    /* Barra de ações da linha expandida (Editar/Duplicar): só no mobile, onde a coluna de
+       ícones da tabela fica escondida (ver @media max-width: 480px) */
+    .row-mobile-actions { display: none; }
     .ex-card {
       padding: .5rem .875rem;
       border-bottom: 1px solid var(--neutral-a07);
@@ -1993,6 +1996,9 @@
       .sheet-workout-table .history-main-row td:nth-child(2),
       .sheet-workout-table .history-main-row td:nth-child(5) { display: none; }
       .sheet-workout-table .history-main-row td:nth-child(3) { white-space: nowrap; padding-left: .25rem; }
+
+      /* Coluna de ações escondida acima: Editar/Duplicar vão para a linha expandida */
+      .row-mobile-actions { display: flex; flex-wrap: wrap; gap: .5rem; padding: .625rem 1rem .25rem; }
 
       /* Comparison table → stacked cards */
       .comparison-modal-card table { border-collapse: separate; border-spacing: 0; }
@@ -4450,6 +4456,7 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
             </table>
             <div class="ex-detail-cards">${exDetailCards}</div>
             ${profile.role === 'student' ? `<div style="padding:.75rem 1rem .875rem;border-top:1px solid var(--neutral-a06)"><button class="btn-start-workout workout-timer-btn" style="font-size:.8rem;padding:.5rem 1.25rem" onclick="event.stopPropagation();startWorkoutExecution('${w.id}')" ${timerInterval ? 'disabled' : ''}>${timerInterval ? icon('timer') + ' Em andamento…' : icon('play') + ' Iniciar Treino'}</button></div>` : ''}
+            ${rowMobileActionsHTML(w)}
             ${profile.role === 'personal' && canEditWorkout(w) ? `<div style="padding:.625rem 1rem .875rem;border-top:1px solid var(--neutral-a06)"><button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkout('${w.id}')">${icon('trash-2')} Excluir Treino</button></div>` : ''}
           </div>
         </td>
@@ -5080,6 +5087,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
                 <tbody>${exRows}</tbody>
               </table>
               <div class="ex-detail-cards">${exCards}</div>
+              ${rowMobileActionsHTML(w)}
               ${deleteBtn}
             </div>
           </td>
@@ -7450,7 +7458,21 @@ async function loadDupRoutineOptions() {
   } finally {
     routineSel.disabled = false
     if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Duplicar' }
+    syncDupDayOfWeek()
   }
+}
+
+// O dia da semana só existe dentro de rotina (o confirmDupWorkout grava null sem rotina,
+// igual ao formulário de treino). Sem rotina: esconde e limpa o campo, em vez de mostrar
+// um valor que seria descartado. Com rotina: mostra e, se vazio, sugere o dia da origem.
+function syncDupDayOfWeek() {
+  const hasRoutine = !!document.getElementById('dup-routine-sel')?.value
+  const group = document.getElementById('dup-day-group')
+  const sel   = document.getElementById('dup-day-of-week')
+  if (group) group.style.display = hasRoutine ? '' : 'none'
+  if (!sel) return
+  if (!hasRoutine) sel.value = ''
+  else if (!sel.value) sel.value = (window._workoutsCache || {})[_dupWorkoutId]?.day_of_week || ''
 }
 
 function closeDupModal() {
@@ -8676,6 +8698,16 @@ function today() {
 const NO_EDIT_PERMISSION_MSG = 'Sem permissão: este treino foi criado por outro personal'
 function canEditWorkout(w) {
   return !!w && !!me && w.created_by === me.id
+}
+
+// Editar (só o criador) e Duplicar dentro da linha expandida do treino. Só aparece no
+// mobile (.row-mobile-actions), onde a coluna de ícones da tabela fica escondida.
+function rowMobileActionsHTML(w) {
+  if (profile?.role !== 'personal') return ''
+  return `<div class="row-mobile-actions">
+      ${canEditWorkout(w) ? `<button class="btn btn-sm btn-outline" onclick="event.stopPropagation();editWorkout('${w.id}')">${icon('pencil')} Editar</button>` : ''}
+      <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openDupModal('${w.id}')">${icon('copy')} Duplicar</button>
+    </div>`
 }
 
 function toast(msg, type = 'info', opts = {}) {
@@ -10626,9 +10658,9 @@ function finishLiveExecution() {
     </div>
     <div class="form-group" style="margin-bottom:1rem">
       <label style="font-size:.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Vincular à rotina</label>
-      <select id="dup-routine-sel" class="form-control"><option value="">Sem rotina (avulso)</option></select>
+      <select id="dup-routine-sel" class="form-control" onchange="syncDupDayOfWeek()"><option value="">Sem rotina (avulso)</option></select>
     </div>
-    <div class="form-group" style="margin-bottom:1rem">
+    <div class="form-group" id="dup-day-group" style="margin-bottom:1rem">
       <label style="font-size:.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Dia da semana</label>
       <select id="dup-day-of-week" class="form-control">
         <option value="">Sem dia definido</option>
