@@ -3462,7 +3462,7 @@ async function doSignup(e) {
       authHeader().then(auth => fetch(`${SUPA_URL}/functions/v1/notify-new-student`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': auth },
-        body: JSON.stringify({ type: 'new_signup', student_email: email, student_name: name })
+        body: JSON.stringify({ type: 'new_signup' })
       }).then(async res => {
         if (!res.ok) console.error('[notify-new-student] new_signup resposta não-OK:', res.status, await res.text().catch(() => ''))
       })).catch(err => console.error('[notify-new-student] new_signup falhou (rede):', err))
@@ -6130,14 +6130,7 @@ async function saveRoutine(e) {
     authHeader().then(auth => fetch(`${SUPA_URL}/functions/v1/notify-new-routine`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': auth },
-      body: JSON.stringify({
-        student_id:   studentId,
-        routine_id:   newRoutine?.id,
-        routine_name: payload.name,
-        start_date:   payload.start_date,
-        end_date:     payload.end_date,
-        personal_name: profile.name
-      })
+      body: JSON.stringify({ routine_id: newRoutine?.id })
     })).catch(err => console.warn('[notify-new-routine] falhou silenciosamente:', err))
   }
 
@@ -7569,13 +7562,7 @@ async function confirmDupWorkout() {
     authHeader().then(auth => fetch(`${SUPA_URL}/functions/v1/notify-new-workout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': auth },
-      body: JSON.stringify({
-        student_id:    targetStudentId,
-        workout_id:    newWorkout.id,
-        workout_name:  newWorkout.name || 'Treino sem nome',
-        workout_date:  newDate,
-        personal_name: profile.name
-      })
+      body: JSON.stringify({ workout_id: newWorkout.id })
     })).catch(err => console.warn('[notify-new-workout] falhou silenciosamente:', err))
 
     toast(`Treino duplicado para ${targetName} com ${exes.length} exercício(s)!`, 'success')
@@ -8401,13 +8388,7 @@ async function saveWorkout(e) {
           'Content-Type': 'application/json',
           'Authorization': auth
         },
-        body: JSON.stringify({
-          student_id:    studentId,
-          workout_id:    workout.id,
-          workout_name:  workoutName || 'Treino sem nome',
-          workout_date:  date,
-          personal_name: profile.name
-        })
+        body: JSON.stringify({ workout_id: workout.id })
       })).catch(err => console.warn('[notify-new-workout] falhou silenciosamente:', err))
 
       clearWorkoutFormState()
