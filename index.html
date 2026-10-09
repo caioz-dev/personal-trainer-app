@@ -7570,33 +7570,6 @@ function closeDupModal() {
   _dupWorkoutId = null
 }
 
-// Mapeia um workout_exercise existente pros campos de um insert de duplicata,
-// usado tanto pra duplicar um treino avulso quanto uma rotina inteira.
-function _cloneExerciseForInsert(ex, workoutId) {
-  return {
-    workout_id:            workoutId,
-    exercise_name:         ex.exercise_name,
-    exercise_type:         ex.exercise_type,
-    sets:                  ex.sets,
-    reps:                  ex.reps,
-    weight_kg:             ex.weight_kg,
-    volume:                ex.volume,
-    cadencia:              ex.cadencia,
-    tempo_descanso:        ex.tempo_descanso,
-    training_method:       ex.training_method,
-    method_description:    ex.method_description,
-    duration_min:          ex.duration_min,
-    distance_km:           ex.distance_km,
-    speed_kmh:             ex.speed_kmh,
-    pace:                  ex.pace,
-    hr_min:                ex.hr_min,
-    hr_max:                ex.hr_max,
-    recovery_interval_min: ex.recovery_interval_min,
-    recovery_speed_kmh:    ex.recovery_speed_kmh,
-    position:              ex.position
-  }
-}
-
 async function confirmDupWorkout() {
   const workout = (window._workoutsCache || {})[_dupWorkoutId]
   if (!workout) { toast('Dados do treino não encontrados.', 'error'); return }
@@ -7627,29 +7600,21 @@ async function confirmDupWorkout() {
       return
     }
 
-    // 1. Cria o novo workout
-    const { data: newWorkout, error: wErr } = await sb.from('workouts').insert({
-      student_id:   targetStudentId,
-      name:         workout.name   || null,
-      date:         newDate,
-      end_date:     newEndDate,
-      total_volume: workout.total_volume ?? 0,
-      notes:        workout.notes  || null,
-      routine_id:   newRoutineId,
-      day_of_week:  newRoutineId ? newDayOfWeek : null,
-      created_by:   me.id
-    }).select().maybeSingle()
-    if (wErr) throw wErr
-    if (!newWorkout) throw new Error('Não foi possível criar o treino duplicado.')
-    if (!newWorkout?.id) throw new Error('Workout criado sem ID')
-
-    // 2. Duplica exercícios
+    // 1+2. Treino e exercícios numa transação só (RPC duplicate_workout): grava tudo ou
+    // nada — falha na cópia dos exercícios não deixa mais um treino vazio para trás.
+    // A RPC copia os exercícios direto do banco e o total_volume é recalculado por trigger.
     const exes = workout.workout_exercises || []
-    if (!exes || exes.length === 0) throw new Error('Nenhum exercício encontrado para duplicar')
-    const { data: exData, error: exError } = await sb.from('workout_exercises').insert(
-      exes.map(ex => _cloneExerciseForInsert(ex, newWorkout.id))
-    )
-    if (exError) throw new Error('Erro ao duplicar exercícios: ' + exError.message)
+    if (!exes.length) throw new Error('Nenhum exercício encontrado para duplicar')
+    const { data: newWorkoutId, error: dErr } = await sb.rpc('duplicate_workout', {
+      p_source_id:   workout.id,
+      p_student_id:  targetStudentId,
+      p_date:        newDate,
+      p_end_date:    newEndDate,
+      p_routine_id:  newRoutineId,
+      p_day_of_week: newRoutineId ? newDayOfWeek : null
+    })
+    if (dErr) throw dErr
+    if (!newWorkoutId) throw new Error('Não foi possível criar o treino duplicado.')
 
     // 3. Notifica o aluno (fire-and-forget)
     const targetStudent = students.find(s => s.id === targetStudentId)
@@ -7659,7 +7624,7 @@ async function confirmDupWorkout() {
     authHeader().then(auth => fetch(`${SUPA_URL}/functions/v1/notify-new-workout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': auth },
-      body: JSON.stringify({ workout_id: newWorkout.id })
+      body: JSON.stringify({ workout_id: newWorkoutId })
     })).catch(err => console.warn('[notify-new-workout] falhou silenciosamente:', err))
 
     toast(`Treino duplicado para ${targetName} com ${exes.length} exercício(s)!`, 'success')
@@ -7739,65 +7704,26 @@ async function confirmDupRoutine() {
   if (btn) { btn.disabled = true; btn.textContent = 'Duplicando…' }
 
   try {
-    // 1. Busca os treinos da rotina original — sem tocar em workout_executions,
-    // só a estrutura planejada (treinos + exercícios) é copiada.
-    const { data: sourceWorkouts, error: swErr } = await sb.from('workouts')
-      .select('*, workout_exercises(*)')
-      .eq('routine_id', _dupRoutineId)
-    if (swErr) throw swErr
-
-    // 2. Cria a nova rotina com as datas escolhidas pelo usuário (nunca herda as originais)
-    const { data: newRoutine, error: rErr } = await sb.from('routines').insert({
-      personal_id:          me.id,
-      student_id:           targetStudentId,
-      name:                 newName,
-      start_date:           newStart,
-      end_date:             newEnd,
-      show_to_student:      routine.show_to_student || 'sempre',
-      auto_archive:         !!routine.auto_archive,
-      general_instructions: routine.general_instructions || null
-    }).select().maybeSingle()
-    if (rErr) throw rErr
-    if (!newRoutine) throw new Error('Não foi possível criar a rotina duplicada.')
-
-    // 3. Duplica cada treino da rotina (um a um, igual à duplicação de treino avulso,
-    // pra garantir que cada exercício vá pro workout_id certo) mantendo o espaçamento
-    // relativo das datas em relação ao início original da rotina.
-    const offsetDays = routine.start_date
-      ? daysBetween(newStart, routine.start_date)
-      : 0
-    const shiftDate = (dateStr) => dateStr ? addDaysStr(dateStr, offsetDays) : null
-
-    for (const w of (sourceWorkouts || [])) {
-      const { data: newWorkout, error: wErr } = await sb.from('workouts').insert({
-        student_id:   targetStudentId,
-        name:         w.name || null,
-        date:         routine.start_date ? shiftDate(w.date) : newStart,
-        end_date:     routine.start_date ? shiftDate(w.end_date) : null,
-        total_volume: w.total_volume ?? 0,
-        notes:        w.notes || null,
-        routine_id:   newRoutine.id,
-        day_of_week:  w.day_of_week || null,
-        created_by:   me.id
-      }).select().maybeSingle()
-      if (wErr) throw wErr
-      if (!newWorkout) throw new Error('Não foi possível criar um dos treinos duplicados.')
-
-      const exes = w.workout_exercises || []
-      if (exes.length) {
-        const { error: exErr } = await sb.from('workout_exercises').insert(
-          exes.map(ex => _cloneExerciseForInsert(ex, newWorkout.id))
-        )
-        if (exErr) throw new Error('Erro ao duplicar exercícios de "' + (w.name || 'treino') + '": ' + exErr.message)
-      }
-    }
+    // Rotina + treinos + exercícios numa transação só (RPC duplicate_routine): grava tudo
+    // ou nada — falha no meio não deixa mais rotina pela metade. Só a estrutura planejada
+    // é copiada (nunca workout_executions); as datas mantêm o espaçamento relativo ao
+    // início original, e o total_volume de cada treino é recalculado por trigger.
+    const { data: dup, error: dErr } = await sb.rpc('duplicate_routine', {
+      p_source_routine_id: _dupRoutineId,
+      p_student_id:        targetStudentId,
+      p_name:              newName,
+      p_start:             newStart,
+      p_end:               newEnd
+    })
+    if (dErr) throw dErr
+    if (!dup?.routine_id) throw new Error('Não foi possível criar a rotina duplicada.')
 
     const targetStudent = students.find(s => s.id === targetStudentId)
     const targetName    = targetStudent
       ? displayName(targetStudent)
       : (targetStudentId === me?.id ? profile.name : 'Aluno')
 
-    toast(`Rotina duplicada para ${targetName} com ${(sourceWorkouts || []).length} treino(s)!`, 'success')
+    toast(`Rotina duplicada para ${targetName} com ${dup.workouts} treino(s)!`, 'success')
     closeDupRoutineModal()
     if (targetStudentId === me?.id) navigateTo('my-workout')
     else openStudentSheet(targetStudentId, targetName)
