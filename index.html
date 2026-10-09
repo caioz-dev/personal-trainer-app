@@ -4750,11 +4750,10 @@ async function deleteExecutionGroup(workoutId, executedAt, studentId, studentNam
   const from = new Date(t - 3600000).toISOString()
   const to   = new Date(t + 3600000).toISOString()
 
-  // Deleta primeiro as avaliações (workout_reviews) vinculadas ao treino,
-  // pois referenciam workout_id e bloqueariam a exclusão da execução por FK
-  const { error: reviewErr } = await sb.from('workout_reviews').delete().eq('workout_id', workoutId)
-  if (reviewErr) { toast('Erro ao apagar avaliação da execução: ' + reviewErr.message, 'error'); return }
-
+  // Não apaga avaliações (workout_reviews) aqui: elas não têm FK para workout_executions
+  // (só para workouts e profiles), então não bloqueiam este delete. E ainda não guardam
+  // session_id, então filtrar por workout_id apagaria as avaliações de TODAS as execuções
+  // deste treino, não só desta. Elas são apagadas junto com o treino em _cascadeDeleteWorkout.
   const { error } = await sb.from('workout_executions')
     .delete()
     .eq('workout_id', workoutId)
