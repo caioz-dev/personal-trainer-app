@@ -1,5 +1,5 @@
 -- ============================================================================
--- M1 + M2 · aplicada em: AAAA-MM-DD HH:MM (preencher após rodar no SQL Editor)
+-- M1 + M2 · aplicada em: 2026-10-09 18:15
 -- M2: volume e total_volume passam a ser derivados no banco (triggers).
 -- M1: duplicar treino / rotina em uma transação só (RPCs SECURITY INVOKER).
 -- Origem: migration_m1m2_proposta.sql (sha256 8324f95a…); testado com teste_zz_d2_m1m2.sql (T1–T16, PÓS ok).
