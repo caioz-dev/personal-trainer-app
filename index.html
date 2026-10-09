@@ -4743,23 +4743,37 @@ async function confirmBulkDelete() {
   updateBulkBar()
 }
 
-async function deleteExecutionGroup(workoutId, executedAt, studentId, studentName) {
+async function deleteExecutionGroup(workoutId, executedAt, studentId, studentName, sessionId) {
   if (!confirm('Apagar esta execução? Os dados de desempenho serão perdidos.')) return
   // Janela de ±1 hora em torno do executed_at para cobrir micro-variações de timestamp
   const t    = new Date(executedAt).getTime()
   const from = new Date(t - 3600000).toISOString()
   const to   = new Date(t + 3600000).toISOString()
 
-  // Não apaga avaliações (workout_reviews) aqui: elas não têm FK para workout_executions
-  // (só para workouts e profiles), então não bloqueiam este delete. E ainda não guardam
-  // session_id, então filtrar por workout_id apagaria as avaliações de TODAS as execuções
-  // deste treino, não só desta. Elas são apagadas junto com o treino em _cascadeDeleteWorkout.
   const { error } = await sb.from('workout_executions')
     .delete()
     .eq('workout_id', workoutId)
     .gte('executed_at', from)
     .lte('executed_at', to)
   if (error) { toast('Erro ao apagar execução: ' + error.message, 'error'); return }
+
+  // A avaliação pertence à sessão (workout_reviews.session_id), então só a desta sessão
+  // sai junto. Grupo sem session_id (execução antiga/manual) não apaga avaliação nenhuma:
+  // filtrar por workout_id levaria as avaliações de todas as execuções do treino.
+  // Apagada depois das execuções: se o delete acima falhar, a avaliação fica intacta.
+  if (sessionId) {
+    const { error: reviewErr } = await sb.from('workout_reviews')
+      .delete()
+      .eq('session_id', sessionId)
+      .select('id')
+    if (reviewErr) {
+      console.error('[deleteExecutionGroup] erro ao apagar avaliação da sessão:', reviewErr.message)
+      toast('Execução apagada, mas não foi possível apagar a avaliação dela: ' + reviewErr.message, 'error')
+      if (historyCtx?.view === 'my-workout') navigateTo('my-workout')
+      else openStudentSheet(studentId, studentName)
+      return
+    }
+  }
   toast('Execução apagada com sucesso.', 'success')
   if (historyCtx?.view === 'my-workout') navigateTo('my-workout')
   else openStudentSheet(studentId, studentName)
@@ -4988,9 +5002,11 @@ async function renderStudentSheet(studentId, studentName, gen) {
     const executions = execRes.data || []
     if (execRes.error) console.error('[openStudentSheet] erro na query de execuções:', execRes.error?.code, execRes.error?.message)
     const studentProfileData = spRes?.data || null
-    const reviewsByWorkout = {}
+    // Avaliação é da sessão (session_id), não do treino-modelo: por workout_id, todas as
+    // execuções do mesmo treino mostravam a avaliação mais recente. Sem session_id, não aparece.
+    const reviewsBySession = {}
     for (const r of (reviewsRes.data || [])) {
-      if (!reviewsByWorkout[r.workout_id]) reviewsByWorkout[r.workout_id] = r
+      if (r.session_id) reviewsBySession[r.session_id] = r
     }
 
     const routinesData = routinesRes.data || []
@@ -5105,6 +5121,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
       if (!execByWorkout[key]) {
         execByWorkout[key] = {
           workoutId:    ex.workout_id,
+          sessionId:    ex.session_id || null,
           workoutName:  ex.workouts?.name || (ex.workouts?.date ? fmtDate(ex.workouts.date) : '—'),
           executedAt:   ex.executed_at,
           manualNotes:  null,
@@ -5133,6 +5150,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
     }
     const execGroups = Object.values(execByWorkout).map(g => ({
       workoutId:   g.workoutId,
+      sessionId:   g.sessionId,
       workoutName: g.workoutName,
       executedAt:  g.executedAt,
       manualNotes: g.manualNotes,
@@ -5271,7 +5289,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
           }
 
           const deleteExecBtn = profile.role === 'personal'
-            ? `<button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}',studentNameOf('${studentId}'))">${icon('trash-2')} Apagar execução</button>`
+            ? `<button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}',studentNameOf('${studentId}'),'${group.sessionId || ''}')">${icon('trash-2')} Apagar execução</button>`
             : ''
           // Inclui executedAt no uid: o mesmo workoutId pode ter várias execuções em datas
           // diferentes (grupos separados), e usar só o workoutId gerava ids duplicados no
@@ -5288,7 +5306,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
                       onclick="event.stopPropagation();setCompView('${execUid}','chart')">${icon('chart-line')} Gráfico</button>
             </div>` : ''
 
-          const review = reviewsByWorkout[group.workoutId]
+          const review = group.sessionId ? reviewsBySession[group.sessionId] : null
           const feelingEmojis = ['😩','😕','😐','🙂','😄']
           const reviewHTML = review ? `
             <div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--neutral-a08)">
@@ -5532,9 +5550,10 @@ async function renderMyWorkout(gen) {
     if (gen && navGen !== gen) return
 
     const executions = execRes.data || []
-    const reviewsByWorkout = {}
+    // Avaliação por sessão (session_id) — ver renderStudentSheet
+    const reviewsBySession = {}
     for (const r of (reviewsRes.data || [])) {
-      if (!reviewsByWorkout[r.workout_id]) reviewsByWorkout[r.workout_id] = r
+      if (r.session_id) reviewsBySession[r.session_id] = r
     }
     const routinesData = routinesRes.data || []
     const total        = workouts.reduce((s, w) => s + getWorkoutVolume(w), 0)
@@ -5577,7 +5596,7 @@ async function renderMyWorkout(gen) {
     for (const ex of executions) {
       const key = ex.session_id ? `sid:${ex.session_id}` : (ex.workout_id + '|' + ex.executed_at)
       if (!execByWorkout[key]) {
-        execByWorkout[key] = { workoutId: ex.workout_id, workoutName: ex.workouts?.name || (ex.workouts?.date ? fmtDate(ex.workouts.date) : '—'), executedAt: ex.executed_at, exerciseMap: {} }
+        execByWorkout[key] = { workoutId: ex.workout_id, sessionId: ex.session_id || null, workoutName: ex.workouts?.name || (ex.workouts?.date ? fmtDate(ex.workouts.date) : '—'), executedAt: ex.executed_at, exerciseMap: {} }
       }
       const exId = ex.exercise_id
       if (!execByWorkout[key].exerciseMap[exId]) {
@@ -5591,7 +5610,7 @@ async function renderMyWorkout(gen) {
         entry.sets.push({ set_number: ex.set_number || 1, weight_executed: ex.weight_executed, reps_executed: ex.reps_executed })
     }
     const execGroups = Object.values(execByWorkout).map(g => ({
-      workoutId: g.workoutId, workoutName: g.workoutName, executedAt: g.executedAt,
+      workoutId: g.workoutId, sessionId: g.sessionId, workoutName: g.workoutName, executedAt: g.executedAt,
       items: Object.values(g.exerciseMap).sort((a, b) => a.exercise_id > b.exercise_id ? 1 : -1)
     }))
 
@@ -5668,7 +5687,7 @@ async function renderMyWorkout(gen) {
               <div class="comp-card-row"><span class="label">Diferença</span><span>${dCell}</span></div>
             </div>`)
           }
-          const review        = reviewsByWorkout[group.workoutId]
+          const review        = group.sessionId ? reviewsBySession[group.sessionId] : null
           const feelingEmojis = ['😩','😕','😐','🙂','😄']
           const reviewHTML    = review ? `
             <div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--neutral-a08)">
@@ -5703,7 +5722,7 @@ async function renderMyWorkout(gen) {
               </div>
               <div class="exec-group-meta" style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
                 <div style="font-size:.75rem;color:var(--text-muted)">${fmtDateTime(group.executedAt)}</div>
-                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}',studentNameOf('${studentId}'))">${icon('trash-2')} Apagar execução</button>
+                <button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}',studentNameOf('${studentId}'),'${group.sessionId || ''}')">${icon('trash-2')} Apagar execução</button>
               </div>
             </div>
             <div class="ex-body" id="ex-body-${execUid}">
@@ -9415,12 +9434,17 @@ function selectEffort(val) {
 
 async function submitReview() {
   const notes = document.getElementById('review-modal-notes').value.trim() || null
+  // Captura antes de qualquer await (como em saveWorkoutExecutions): liga a avaliação à
+  // sessão executada. Sem id válido, grava sem sessão em vez de inventar um.
+  const sessionId = UUID_V4_RE.test(_execSessionId || '') ? _execSessionId : null
   document.getElementById('review-modal').style.display = 'none'
   if (currentWorkoutData && (_selectedFeeling || _selectedEffort || notes)) {
+    if (!sessionId) console.warn('[submitReview] sessão sem id válido; avaliação gravada sem session_id')
     // Aguarda a avaliação ser salva (com retry em caso de falha) antes de seguir para a tela de conclusão
     await saveReviewWithRetry({
       workout_id:       currentWorkoutData.id,
       student_id:       profile.id,
+      session_id:       sessionId,
       feeling:          _selectedFeeling || null,
       perceived_effort: _selectedEffort  || null,
       notes
@@ -9432,11 +9456,15 @@ async function submitReview() {
 // Só resolve quando o insert tiver sucesso; em falha real (inclusive erro de rede,
 // que rejeita a Promise em vez de resolver com {error}) mostra toast com "Tentar novamente"
 // e tenta de novo somente quando o usuário clicar.
+// Com session_id é upsert (UNIQUE em session_id): se a 1ª tentativa gravou e só a resposta
+// se perdeu, o "Tentar novamente" atualiza a mesma linha em vez de duplicar a avaliação.
 function saveReviewWithRetry(payload) {
   return new Promise(resolve => {
     const attempt = async () => {
       try {
-        const { error } = await sb.from('workout_reviews').insert(payload)
+        const { error } = payload.session_id
+          ? await sb.from('workout_reviews').upsert(payload, { onConflict: 'session_id' })
+          : await sb.from('workout_reviews').insert(payload)
         if (error) throw error
         resolve()
       } catch (err) {
