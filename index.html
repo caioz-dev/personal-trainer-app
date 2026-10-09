@@ -4788,17 +4788,32 @@ async function confirmBulkDelete() {
 
 async function deleteExecutionGroup(workoutId, executedAt, studentId, studentName, sessionId) {
   if (!confirm('Apagar esta execução? Os dados de desempenho serão perdidos.')) return
-  // Janela de ±1 hora em torno do executed_at para cobrir micro-variações de timestamp
-  const t    = new Date(executedAt).getTime()
-  const from = new Date(t - 3600000).toISOString()
-  const to   = new Date(t + 3600000).toISOString()
 
-  const { error } = await sb.from('workout_executions')
-    .delete()
-    .eq('workout_id', workoutId)
-    .gte('executed_at', from)
-    .lte('executed_at', to)
-  if (error) { toast('Erro ao apagar execução: ' + error.message, 'error'); return }
+  if (sessionId) {
+    // Sessão identificada: apaga exatamente as linhas dela. A janela de horário abaixo
+    // levaria junto outra sessão do mesmo treino feita a menos de 1h desta.
+    const { data: delRows, error } = await sb.from('workout_executions')
+      .delete()
+      .eq('session_id', sessionId)
+      .eq('workout_id', workoutId)
+      .select('id')
+    if (error) { toast('Erro ao apagar execução: ' + error.message, 'error'); return }
+    // 0 linhas = RLS barrou ou a execução já não existe — não é sucesso
+    if (!delRows?.length) { toast('A execução não foi apagada: sem permissão ou ela já não existe.', 'error'); return }
+  } else {
+    // Grupo legado (sem session_id): janela de ±1 hora em torno do executed_at para
+    // cobrir micro-variações de timestamp
+    const t    = new Date(executedAt).getTime()
+    const from = new Date(t - 3600000).toISOString()
+    const to   = new Date(t + 3600000).toISOString()
+
+    const { error } = await sb.from('workout_executions')
+      .delete()
+      .eq('workout_id', workoutId)
+      .gte('executed_at', from)
+      .lte('executed_at', to)
+    if (error) { toast('Erro ao apagar execução: ' + error.message, 'error'); return }
+  }
 
   // A avaliação pertence à sessão (workout_reviews.session_id), então só a desta sessão
   // sai junto. Grupo sem session_id (execução antiga/manual) não apaga avaliação nenhuma:
