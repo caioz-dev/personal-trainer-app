@@ -3632,6 +3632,10 @@ async function navigateTo(view, opts = {}) {
   // chamam clearWorkoutFormState() antes de redirecionar, e não devemos ressuscitar um
   // rascunho que acabou de ser explicitamente limpo.
   if (view !== 'workout' && currentView === 'workout') {
+    // Um autosave pendente dispararia depois daqui com active=true e desfaria a marcação
+    // abaixo (F5 em outra tela voltaria a abrir o formulário). saveWorkoutFormState(false)
+    // lê o formulário na hora, então nada digitado nos últimos 400ms se perde.
+    clearTimeout(_wfSaveDebounceTimer)
     let hasDraft = false
     try { hasDraft = !!localStorage.getItem(WF_STATE_KEY) } catch {}
     if (hasDraft) saveWorkoutFormState(false)
@@ -7020,6 +7024,10 @@ function saveWorkoutFormState(active = true) {
 }
 
 function clearWorkoutFormState() {
+  // Cancela o autosave pendente (debounce de 400ms): o 'change' disparado ao clicar em
+  // Salvar/Atualizar/Cancelar agenda um save que, sem isso, regrava o rascunho logo depois
+  // de ele ser limpo (e já sem editingWorkoutId — um F5 reabriria o treino como "novo").
+  clearTimeout(_wfSaveDebounceTimer)
   try { localStorage.removeItem(WF_STATE_KEY) } catch {}
 }
 
@@ -9981,6 +9989,11 @@ function saveManualExecutionState() {
 }
 
 function clearManualExecutionState() {
+  // Mesmo cuidado de clearWorkoutFormState: cancela o autosave pendente (debounce de 400ms)
+  // pra ele não regravar o rascunho depois do clear. Hoje closeManualExecutionModal já zera
+  // _manualExecStudentId antes (e saveManualExecutionState sai cedo sem ele), então isto é
+  // defesa extra — não depende mais da ordem dessas linhas.
+  clearTimeout(_manualExecSaveDebounceTimer)
   try { localStorage.removeItem(MANUAL_EXEC_STATE_KEY) } catch {}
 }
 
