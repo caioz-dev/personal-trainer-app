@@ -4591,13 +4591,52 @@ async function _cascadeDeleteWorkout(workoutId) {
   return null // sem erro
 }
 
+// Conta o que a exclusão em cascata leva junto dos treinos: execuções (sessões, com o mesmo
+// agrupamento dos cards do histórico — session_id, ou workout_id + executed_at no legado) e
+// avaliações. Paginado porque o PostgREST corta em 1000 linhas. Retorna null se qualquer
+// consulta falhar: quem chama aborta em vez de mostrar um aviso com número errado.
+async function _countWorkoutHistory(workoutIds) {
+  try {
+    const sessions = new Set()
+    const PAGE = 1000
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await sb.from('workout_executions')
+        .select('id, workout_id, session_id, executed_at')
+        .in('workout_id', workoutIds)
+        .order('id')
+        .range(from, from + PAGE - 1)
+      if (error) return null
+      for (const e of data || []) sessions.add(e.session_id || (e.workout_id + '|' + e.executed_at))
+      if (!data || data.length < PAGE) break
+    }
+    const { count: reviews, error: rErr } = await sb.from('workout_reviews')
+      .select('id', { count: 'exact', head: true })
+      .in('workout_id', workoutIds)
+    if (rErr || reviews == null) return null
+    return { sessions: sessions.size, reviews }
+  } catch (err) {
+    console.error('[_countWorkoutHistory]', err?.message || err)
+    return null
+  }
+}
+
+// "3 execuções registradas e 1 avaliação" — vazio quando não há histórico
+function _historyText({ sessions, reviews }) {
+  if (!sessions && !reviews) return ''
+  return `${sessions} execuç${sessions === 1 ? 'ão registrada' : 'ões registradas'} e ${reviews} avaliaç${reviews === 1 ? 'ão' : 'ões'}`
+}
+
 // Wrapper compartilhado pelos 3 deletes individuais de treino (deleteWorkout,
 // deleteWorkoutFromSheet, deleteWorkoutFromRoutine): confirmação nativa + cascade + toast
 // são idênticos nos três; só o redirecionamento pós-sucesso muda, por isso fica a cargo de
 // quem chama. confirmBulkDelete() fica de fora de propósito — tem fluxo de confirmação e
 // relatório de progresso/falha parcial próprios, incompatíveis com este wrapper.
 async function _deleteWorkoutWithConfirm(workoutId, redirectFn) {
-  if (!confirm('Tem certeza que deseja excluir este treino? Esta ação não pode ser desfeita.')) return
+  const hist = await _countWorkoutHistory([workoutId])
+  if (!hist) { toast('Não foi possível verificar o histórico do treino. Nada foi excluído — tente novamente.', 'error'); return }
+  const histTxt = _historyText(hist)
+  if (!confirm('Tem certeza que deseja excluir este treino? Esta ação não pode ser desfeita.'
+    + (histTxt ? `\n\nVão junto, permanentemente: ${histTxt}.` : ''))) return
   const err = await _cascadeDeleteWorkout(workoutId)
   if (err) { toast(err, 'error'); return }
   toast('Treino excluído com sucesso!', 'success')
@@ -4665,16 +4704,20 @@ function cancelBulkSelection() {
   updateBulkBar()
 }
 
-function showBulkDeleteConfirm() {
+async function showBulkDeleteConfirm() {
   const count = _selectedWorkoutIds.size
   if (!count) return
   const modal  = document.getElementById('bulk-delete-modal')
   const bodyEl = document.getElementById('bulk-delete-modal-body')
   if (!modal || !bodyEl) return
+  const hist = await _countWorkoutHistory([..._selectedWorkoutIds])
+  if (!hist) { toast('Não foi possível verificar o histórico dos treinos. Nada foi excluído — tente novamente.', 'error'); return }
+  const histTxt = _historyText(hist)
   const plural = count === 1
   bodyEl.innerHTML = `Você está prestes a excluir <strong>${count} treino${plural ? '' : 's'}</strong>.<br><br>
     <span style="color:var(--danger)">${icon('triangle-alert')} Esta ação é irreversível.</span><br>
     Todas as execuções e avaliações relacionadas ${plural ? 'a este treino' : 'a estes treinos'} também serão apagadas.`
+    + (histTxt ? `<br>Vão junto: <strong>${histTxt}</strong>.` : '')
   modal.style.display = 'flex'
   document.body.style.overflow = 'hidden'
 }
@@ -6212,17 +6255,25 @@ async function executeUnlink() {
 }
 
 async function deleteRoutine(routineId, studentId, studentName) {
-  const { count } = await sb.from('workouts')
-    .select('*', { count: 'exact', head: true })
-    .eq('routine_id', routineId)
+  // Excluir a rotina apaga em cascata (FK no banco) os treinos dela e, com eles, execuções e
+  // avaliações — então o aviso mostra tudo. Contagem falhou: aborta, não avisa pela metade.
+  const { data: rWorkouts, error: wErr } = await sb.from('workouts').select('id').eq('routine_id', routineId)
+  const hist = wErr ? null
+    : (rWorkouts || []).length ? await _countWorkoutHistory(rWorkouts.map(w => w.id))
+    : { sessions: 0, reviews: 0 }
+  if (!hist) { toast('Não foi possível verificar os treinos e o histórico da rotina. Nada foi excluído — tente novamente.', 'error'); return }
+  const count   = (rWorkouts || []).length
+  const histTxt = _historyText(hist)
 
   const msg = count
-    ? `Excluir esta rotina? Isso vai apagar permanentemente ${count} treino(s) vinculado(s) a ela. Esta ação não pode ser desfeita.`
+    ? `Excluir esta rotina? Isso vai apagar permanentemente ${count} treino(s) vinculado(s) a ela${histTxt ? `, com ${histTxt}` : ''}. Esta ação não pode ser desfeita.`
     : 'Excluir esta rotina? Esta ação não pode ser desfeita.'
   if (!confirm(msg)) return
 
-  const { error } = await sb.from('routines').delete().eq('id', routineId)
+  const { data: delRows, error } = await sb.from('routines').delete().eq('id', routineId).select('id')
   if (error) { toast('Erro ao excluir: ' + error.message, 'error'); return }
+  // 0 linhas = o RLS (só quem criou a rotina apaga) barrou ou ela já não existe — não é sucesso
+  if (!delRows?.length) { toast('A rotina não foi excluída: só quem a criou pode excluir (ou ela já não existe).', 'error'); return }
   toast('Rotina excluída.', 'success')
   if (historyCtx?.view === 'my-workout') navigateTo('my-workout')
   else openStudentSheet(studentId, studentName)
@@ -10334,12 +10385,19 @@ async function removeLiveExercise(exerciseId) {
   if (!ex) return
   if (!canEditWorkout(_liveWorkoutData)) { toast(NO_EDIT_PERMISSION_MSG, 'error'); return }
 
-  let historyCount = 0
+  // Contagem falhou: aborta (como saveWorkout) — antes o catch vazio zerava a contagem e o
+  // aviso de que o histórico do exercício seria apagado simplesmente não aparecia.
+  let historyCount
   try {
-    const { count } = await sb.from('workout_executions')
+    const { count, error } = await sb.from('workout_executions')
       .select('id', { count: 'exact', head: true }).eq('exercise_id', exerciseId)
-    historyCount = count || 0
-  } catch {}
+    if (error || count == null) throw error || new Error('contagem indisponível')
+    historyCount = count
+  } catch (err) {
+    console.error('[removeLiveExercise] erro ao contar histórico:', err?.message || err)
+    toast('Não foi possível verificar o histórico deste exercício. Nada foi removido — tente novamente.', 'error')
+    return
+  }
 
   const warnMsg = historyCount > 0
     ? `"${ex.exercise_name}" já tem ${historyCount} série${historyCount > 1 ? 's' : ''} registrada${historyCount > 1 ? 's' : ''} (de hoje e/ou sessões anteriores). Remover esse exercício apaga esse histórico também, permanentemente. Remover mesmo assim?`
