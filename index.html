@@ -3068,6 +3068,7 @@ let _execSessionId        = null   // uuid gerado ao iniciar; escopa as séries 
 let _execPhase            = null   // 'running' (tela de execução) | 'review' (finalizado, falta avaliação/comparativo) — vai no snapshot pra o restore saber o que reabrir
 let _execFinishedAt       = null   // Date.now() de quando o aluno clicou "Finalizar Treino"
 const REVIEW_RESTORE_MAX_AGE_MS = 12 * 60 * 60 * 1000   // acima disso o restore não reabre a avaliação (só grava os "Não executado")
+const EXEC_RESTORE_MAX_AGE_MS   = 12 * 60 * 60 * 1000   // execução guiada / Registro ao Vivo iniciados há mais que isso não são retomados
 const EXEC_STATE_KEY      = 'personalpro-exec-state'   // localStorage: snapshot do treino guiado em andamento, para retomar após F5/fechamento
 let restTimers            = {}
 
@@ -3130,6 +3131,40 @@ function resetAppState() {
   stopMetronome()
   for (const id in restTimers) { if (restTimers[id]?.intervalId) clearInterval(restTimers[id].intervalId) }
   restTimers = {}
+  _pendingExecutionsSave  = null
+
+  // Registro ao Vivo (personal): o overlay fica fora de #app-section, então sem isto ele
+  // continuava visível — com o cronômetro rodando e o aluno do usuário anterior — por cima
+  // do login, e o próximo usuário (se vinculado ao mesmo aluno) gravava séries na sessão dele.
+  // O snapshot no localStorage não é tocado aqui: o restore do boot decide se é do novo usuário.
+  if (_liveTimerInterval) { clearInterval(_liveTimerInterval); _liveTimerInterval = null }
+  _liveTimerSeconds    = 0
+  _liveWorkoutData     = null
+  _liveExecStudentId   = null
+  _liveExecStudentName = null
+  _liveSessionId       = null
+  _liveSavedSets       = {}
+  _liveStartTimestamp  = null
+
+  // Rascunho do retroativo e modais de duplicar: estado do usuário anterior em memória.
+  clearTimeout(_manualExecSaveDebounceTimer)
+  _manualExecStudentId   = null
+  _manualExecStudentName = null
+  _dupWorkoutId          = null
+  _dupRoutineId          = null
+
+  // Overlays/modais que ficam FORA de #app-section (showAuthSection não os esconde).
+  // password-reset-overlay fica de fora de propósito: o fluxo de recuperação controla ele.
+  ;['live-execution-overlay', 'live-exec-picker-overlay', 'manual-exec-modal-overlay',
+    'dup-modal-overlay', 'dup-routine-modal-overlay', 'reorder-modal-overlay',
+    'replicate-modal-overlay', 'bulk-delete-modal', 'unlink-modal', 'notif-panel-overlay', 'overlay']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none' })
+
+  // Toasts com "Tentar novamente" guardam closures do usuário anterior (ex.: saveLiveSet,
+  // insertWorkoutExecutions com student_id dele) — clicar depois do login de outro usuário
+  // executaria a gravação com a sessão nova. Descarta todos.
+  const toastsEl = document.getElementById('toasts')
+  if (toastsEl) toastsEl.innerHTML = ''
 
   // Navegação
   historyCtx      = null
@@ -3142,6 +3177,15 @@ function resetAppState() {
   exerciseCounter = 0
   window._workoutsCache    = {}
   window._progressWorkouts = []
+  window._progressExecutions  = []
+  window._manualExecCtx       = {}
+  window._compChartData       = {}
+  window._dupRoutineSource    = null
+  window._wfExerciseCatalog   = null
+  window._liveExerciseCatalog = null
+  _routineExCache             = {}
+  for (const k in compCharts) { try { compCharts[k].destroy() } catch {} }
+  compCharts = {}
 
   // Charts: destroir instâncias para liberar memória e evitar erros em novo login
   if (chart)         { try { chart.destroy() }         catch {} ; chart         = null }
@@ -3480,7 +3524,31 @@ async function doSignup(e) {
   btn.textContent = 'Criar Conta'; btn.disabled = false
 }
 
-async function doLogout() { await sb.auth.signOut() }
+// "Sair da conta" explícito: apaga os snapshots locais (têm nome de aluno, treino e séries)
+// para o próximo usuário do aparelho não herdar nada. Logout automático (refresh token
+// inválido → SIGNED_OUT) não passa por aqui, então nesse caso o mesmo usuário ainda retoma
+// tudo depois de logar de novo. Se ainda há "Não executado" sendo gravados (fase de
+// avaliação), espera até 3s antes de sair — depois disso o snapshot some de qualquer forma.
+// Limitações conhecidas: com duas abas abertas, sair numa apaga os snapshots que a outra
+// usaria (o supabase-js propaga o logout e a outra aba também recebe SIGNED_OUT); snapshots
+// gravados por versões antigas, sem dono, são descartados uma vez pelos restores.
+async function doLogout() {
+  let saveTimedOut = false
+  if (_pendingExecutionsSave) {
+    saveTimedOut = !(await Promise.race([
+      _pendingExecutionsSave.then(() => true),
+      new Promise(r => setTimeout(() => r(false), 3000))
+    ]))
+  }
+  clearExecutionState()
+  clearLiveExecutionState()
+  clearWorkoutFormState()
+  clearManualExecutionState()
+  await sb.auth.signOut()
+  // Depois do signOut: o SIGNED_OUT roda resetAppState, que esvazia #toasts — mostrado antes,
+  // o aviso sumiria na hora. Aqui ele aparece por cima da tela de login.
+  if (saveTimedOut) toast('Saída concluída, mas os exercícios "Não executado" do último treino podem não ter sido salvos.', 'error')
+}
 
 /* ---- THEME ---- */
 function _updateThemeUI() {
@@ -7059,15 +7127,16 @@ async function restoreWorkoutFormState() {
     clearWorkoutFormState()
     return false
   }
-  // Personal já tinha navegado pra outra tela antes de recarregar — não sequestra a
-  // navegação de volta pro formulário; os dados continuam salvos, só não reabrem sozinhos.
-  if (state.active === false) {
+  // Rascunho de outro personal (ou sem dono conhecido) no mesmo navegador — descarta antes
+  // de qualquer outra regra, inclusive do rascunho inativo abaixo, para não ficar guardado.
+  if (!state.personalId || !me?.id || state.personalId !== me.id) {
+    clearWorkoutFormState()
     return false
   }
 
-  // Rascunho de outro personal no mesmo navegador — não restaura no lugar errado.
-  if (state.personalId && me?.id && state.personalId !== me.id) {
-    clearWorkoutFormState()
+  // Personal já tinha navegado pra outra tela antes de recarregar — não sequestra a
+  // navegação de volta pro formulário; os dados continuam salvos, só não reabrem sozinhos.
+  if (state.active === false) {
     return false
   }
 
@@ -9159,7 +9228,8 @@ function restoreExecutionState() {
     return false
   }
   // Estado de outro aluno/conta no mesmo navegador — não retoma silenciosamente no lugar errado.
-  if (state.studentId && me?.id && state.studentId !== me.id) {
+  // Snapshot sem studentId (versão antiga) também não é retomado: não dá para saber de quem é.
+  if (!state.studentId || !me?.id || state.studentId !== me.id) {
     clearExecutionState()
     return false
   }
@@ -9211,6 +9281,13 @@ function restoreExecutionState() {
       clearExecutionState()
       return false
     }
+  }
+
+  // Execução "em andamento" iniciada há mais de 12h: não reabre a tela com um cronômetro de
+  // dias. As séries já salvas estão no banco; só a tela é descartada.
+  if (Date.now() - state.startTimestamp > EXEC_RESTORE_MAX_AGE_MS) {
+    clearExecutionState()
+    return false
   }
 
   try {
@@ -9981,7 +10058,7 @@ async function restoreManualExecutionState() {
 
   const MANUAL_EXEC_DRAFT_MAX_AGE_MS = 60 * 60 * 1000
   if (!state.savedAt || (Date.now() - state.savedAt) > MANUAL_EXEC_DRAFT_MAX_AGE_MS) { clearManualExecutionState(); return false }
-  if (state.personalId && me?.id && state.personalId !== me.id) { clearManualExecutionState(); return false }
+  if (!state.personalId || !me?.id || state.personalId !== me.id) { clearManualExecutionState(); return false }
 
   await navigateTo('student-sheet', { studentId: state.studentId, studentName: state.studentName })
 
@@ -10705,7 +10782,11 @@ function restoreLiveExecutionState() {
     clearLiveExecutionState()
     return false
   }
-  if (state.personalId && profile?.id && state.personalId !== profile.id) {
+  // Só retoma a sessão do próprio personal (snapshot sem personalId não tem dono conhecido),
+  // com session_id válido e iniciada há menos de 12h.
+  if (!state.personalId || !profile?.id || state.personalId !== profile.id
+      || !UUID_V4_RE.test(state.sessionId || '')
+      || Date.now() - state.startTimestamp > EXEC_RESTORE_MAX_AGE_MS) {
     clearLiveExecutionState()
     return false
   }
