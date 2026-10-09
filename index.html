@@ -3065,6 +3065,9 @@ let currentWorkoutData    = null
 let exerciseExecutions    = {}
 let _execStartTimestamp   = null   // Date.now() de quando a execução guiada começou — usado para recalcular timerSeconds mesmo após reload
 let _execSessionId        = null   // uuid gerado ao iniciar; escopa as séries desta sessão específica (mesmo padrão do Registro ao Vivo do personal — permite repetir o treino em outro dia sem colidir)
+let _execPhase            = null   // 'running' (tela de execução) | 'review' (finalizado, falta avaliação/comparativo) — vai no snapshot pra o restore saber o que reabrir
+let _execFinishedAt       = null   // Date.now() de quando o aluno clicou "Finalizar Treino"
+const REVIEW_RESTORE_MAX_AGE_MS = 12 * 60 * 60 * 1000   // acima disso o restore não reabre a avaliação (só grava os "Não executado")
 const EXEC_STATE_KEY      = 'personalpro-exec-state'   // localStorage: snapshot do treino guiado em andamento, para retomar após F5/fechamento
 let restTimers            = {}
 
@@ -3115,6 +3118,8 @@ function resetAppState() {
   exerciseExecutions      = {}
   _execStartTimestamp     = null
   _execSessionId          = null
+  _execPhase              = null
+  _execFinishedAt         = null
   editingWorkoutId        = null
   _wfEditingCreatedBy     = null
   clearTimeout(_wfSaveDebounceTimer)
@@ -9189,6 +9194,9 @@ function saveExecutionState() {
       exerciseExecutions,
       startTimestamp:     _execStartTimestamp,
       sessionId:          _execSessionId,
+      phase:              _execPhase || 'running',
+      finishedAt:         _execFinishedAt,
+      finalTime:          _pendingReviewFinalTime,
       restTimers:         restSnapshot
     }
     localStorage.setItem(EXEC_STATE_KEY, JSON.stringify(state))
@@ -9222,10 +9230,61 @@ function restoreExecutionState() {
     return false
   }
 
+  // Treino já finalizado (phase 'review'): o aluno fechou/recarregou com a avaliação ou o
+  // comparativo aberto. Não reabre a tela de execução nem o cronômetro — reabre a avaliação
+  // da MESMA sessão e refaz a gravação dos "Não executado" (idempotente: checa por
+  // session_id e grava com upsert ignoreDuplicates). Estado sem `phase` (salvo antes desta
+  // versão) cai no fluxo normal abaixo, como execução em andamento.
+  if (state.phase === 'review') {
+    // Sem sessionId válido não há como ligar avaliação e placeholders à sessão certa.
+    if (!UUID_V4_RE.test(state.sessionId || '')) { clearExecutionState(); return false }
+    try {
+      currentWorkoutData     = state.currentWorkoutData
+      exerciseExecutions     = state.exerciseExecutions || {}
+      _execStartTimestamp    = state.startTimestamp
+      _execSessionId         = state.sessionId
+      _execPhase             = 'review'
+      _execFinishedAt        = state.finishedAt || null
+
+      // Avaliação velha (mais de 12h desde o "Finalizar"): não reabre "Como foi o seu treino
+      // hoje?" para uma sessão de outro dia. Só garante os "Não executado" e encerra.
+      // saveWorkoutExecutions captura os globais na hora da chamada, então dá pra zerá-los logo
+      // em seguida. O snapshot só sai quando a gravação resolver (se falhar e o app fechar, o
+      // próximo boot tenta de novo) — e só se ainda for desta sessão, porque o aluno pode ter
+      // iniciado outro treino nesse meio-tempo.
+      if (state.finishedAt && Date.now() - state.finishedAt > REVIEW_RESTORE_MAX_AGE_MS) {
+        const staleSessionId = state.sessionId
+        saveWorkoutExecutions(state.workoutId).then(() => {
+          try {
+            const current = JSON.parse(localStorage.getItem(EXEC_STATE_KEY) || 'null')
+            if (current?.sessionId === staleSessionId) clearExecutionState()
+          } catch {}
+        })
+        currentWorkoutData  = null
+        exerciseExecutions  = {}
+        _execStartTimestamp = null
+        _execSessionId      = null
+        _execPhase          = null
+        _execFinishedAt     = null
+        return false
+      }
+
+      _pendingExecutionsSave = saveWorkoutExecutions(state.workoutId)
+      showReviewModal(state.finalTime || '00:00:00')
+      return true
+    } catch (err) {
+      console.error('[restoreExecutionState] falhou ao restaurar avaliação pendente, descartando estado salvo:', err)
+      clearExecutionState()
+      return false
+    }
+  }
+
   try {
     currentWorkoutData  = state.currentWorkoutData
     exerciseExecutions  = state.exerciseExecutions || {}
     _execStartTimestamp = state.startTimestamp
+    _execPhase          = 'running'
+    _execFinishedAt     = null
     // state.sessionId pode faltar num estado salvo antes desta versão (ou ser o fallback
     // antigo, que não era UUID e nunca gravava) — gera um novo pra não quebrar o restore.
     _execSessionId      = UUID_V4_RE.test(state.sessionId || '') ? state.sessionId : uuidv4()
@@ -9287,6 +9346,8 @@ async function startWorkoutExecution(workoutId) {
   exerciseExecutions  = {}
   _execStartTimestamp = Date.now()
   _execSessionId      = uuidv4()
+  _execPhase          = 'running'
+  _execFinishedAt     = null
   renderExecutionScreen(workout)
   document.getElementById('execution-overlay').style.display = 'flex'
   document.body.style.overflow = 'hidden'
@@ -9458,6 +9519,11 @@ function updateExecExerciseProgress(exerciseId) {
 
 function finishWorkout() {
   if (!timerInterval) return
+  // Sem nenhuma série salva, finalizar grava "Não executado" em todos os exercícios — confirma
+  // antes (evita Iniciar/Finalizar sem querer). Cancelar não mexe em nada: timer, descanso e
+  // tela de execução seguem como estavam.
+  const hasSavedSet = Object.values(exerciseExecutions || {}).some(sets => sets && Object.keys(sets).length > 0)
+  if (currentWorkoutData && !hasSavedSet && !confirm('Nenhuma série foi registrada. Finalizar mesmo assim?')) return
   stopMetronome()
   for (const id in restTimers) { if (restTimers[id]?.intervalId) clearInterval(restTimers[id].intervalId) }
   restTimers = {}
@@ -9467,7 +9533,16 @@ function finishWorkout() {
   document.getElementById('execution-overlay').style.display = 'none'
   document.body.style.overflow = ''
   syncTimerButtons()
-  clearExecutionState()
+  // O snapshot NÃO é apagado aqui: passa para phase 'review' e só sai em dismissComparison.
+  // Assim, se o app fechar com a avaliação/comparativo aberto, o restore reabre a avaliação
+  // da mesma sessão em vez de perder os "Não executado".
+  _execPhase              = 'review'
+  _execFinishedAt         = Date.now()
+  _pendingReviewFinalTime = finalTime
+  saveExecutionState()
+  // Os "Não executado" são gravados já agora, antes da avaliação — não dependem mais de o
+  // aluno chegar ao comparativo. finishAndCloseComparison continua esperando esta Promise.
+  if (currentWorkoutData) _pendingExecutionsSave = saveWorkoutExecutions(currentWorkoutData.id)
   showReviewModal(finalTime)
 }
 
@@ -9665,10 +9740,11 @@ function showComparisonModal(finalTime) {
   document.getElementById('comp-final-time').textContent = finalTime
   document.getElementById('comparison-modal').style.display = 'flex'
 
-  // Dispara o salvamento em segundo plano; a Promise só resolve quando o insert
-  // realmente tiver sucesso (com retry), e é isso que finishAndCloseComparison espera
-  // antes de liberar a tela "Treino Concluído".
-  _pendingExecutionsSave = saveWorkoutExecutions(workout.id)
+  // O salvamento dos "Não executado" já foi disparado em finishWorkout (ou no restore da
+  // fase 'review'); a Promise só resolve quando a gravação realmente tiver sucesso (com
+  // retry), e é isso que finishAndCloseComparison espera antes de liberar "Treino Concluído".
+  // Fallback defensivo: se por algum caminho ainda não houver Promise, dispara aqui.
+  if (!_pendingExecutionsSave) _pendingExecutionsSave = saveWorkoutExecutions(workout.id)
 }
 
 async function finishAndCloseComparison() {
@@ -9689,80 +9765,104 @@ function dismissComparison() {
   currentWorkoutData      = null
   exerciseExecutions      = {}
   _pendingExecutionsSave  = null
+  _execPhase              = null
+  _execFinishedAt         = null
+  // Só aqui a sessão está encerrada de fato (placeholders gravados, avaliação enviada ou pulada).
+  clearExecutionState()
 }
 
 // Cada série já foi salva no banco individualmente (via saveExecSet) assim que o aluno
 // clicou "Salvar" nela — esta função só entra em ação para exercícios que ficaram
 // completamente sem nenhuma série registrada, gravando a linha "Não executado" pra
 // aparecer certo na tela do personal. Não reprocessa o que já foi salvo ao vivo.
-async function saveWorkoutExecutions(workoutId) {
-  const exes      = currentWorkoutData?.workout_exercises || []
-  const sessionId = _execSessionId   // captura antes do await abaixo
-  if (!exes.length) return
+// Chamada em finishWorkout (antes da avaliação) e de novo no restore da fase 'review':
+// é idempotente — checa por session_id e grava com upsert ignoreDuplicates.
+function saveWorkoutExecutions(workoutId) {
+  // Captura tudo antes de qualquer await: dismissComparison/logout zeram esses globais.
+  const exes       = currentWorkoutData?.workout_exercises || []
+  const sessionId  = _execSessionId
+  const studentId  = profile?.id
+  // executed_at = momento do "Finalizar Treino" (não o da gravação): num restore dias depois,
+  // o "Não executado" continua com a data da sessão.
+  const executedAt = new Date(_execFinishedAt || Date.now()).toISOString()
 
   const pendingIds = exes
     .filter(ex => !(exerciseExecutions[ex.id] && Object.keys(exerciseExecutions[ex.id]).length > 0))
     .map(ex => ex.id)
-  if (!pendingIds.length) return
+  if (!pendingIds.length) return Promise.resolve()
 
-  // exerciseExecutions (memória local) pode estar vazio mesmo já havendo séries reais no
-  // banco pra esse exercício — ex: o aluno fechou/reabriu o app no meio do treino e a
-  // execução recomeçou do zero em memória. Sem checar o banco aqui, a linha "Não executado"
-  // era inserida por cima de séries já registradas, duplicando o exercício no histórico.
-  // Essa checagem também evita conflito com a UNIQUE (session_id, exercise_id, set_number):
-  // se já existe série real do exercício nesta sessão, ele não entra em records.
-  //
-  // Restrito ao dia desta execução (a partir de _execStartTimestamp): workoutId é o slot
-  // recorrente do treino (mesmo id toda semana), não uma ocorrência única — sem esse filtro,
-  // uma série real de 3 semanas atrás faria esta função achar (erroneamente) que o exercício
-  // "já foi registrado" e pular o "Não executado" de hoje pra sempre.
-  // Meia-noite de SP do dia em que a execução começou (offset fixo −03:00: o Brasil não
-  // tem horário de verão desde 2019), independente do fuso do navegador.
-  const dayStart = new Date(`${localDateStr(new Date(_execStartTimestamp))}T00:00:00${APP_TZ_OFFSET}`)
-  const { data: existing, error: existingErr } = await sb.from('workout_executions')
-    .select('exercise_id')
-    .eq('workout_id', workoutId)
-    .eq('student_id', profile.id)
-    .in('exercise_id', pendingIds)
-    .gte('executed_at', dayStart.toISOString())
-  if (existingErr) {
-    console.error('[saveWorkoutExecutions] erro ao checar execuções já existentes, abortando para não duplicar:', existingErr.message)
-    return
+  // Sem session_id válido não há como deduplicar (NULL nunca conflita na UNIQUE) nem
+  // agrupar com a sessão no histórico — não grava em vez de criar linha solta.
+  if (!UUID_V4_RE.test(sessionId || '') || !studentId) {
+    console.warn('[saveWorkoutExecutions] sessão sem id válido; "Não executado" não gravado')
+    return Promise.resolve()
   }
-  const alreadyRecorded = new Set((existing || []).map(r => r.exercise_id))
 
-  // Mesmo session_id e um executed_at do cliente (como nas séries salvas em saveExecSet),
-  // pra o "Não executado" agrupar com a sessão no histórico em vez de virar outro card.
-  const executedAt = new Date().toISOString()
-  const records = pendingIds
-    .filter(id => !alreadyRecorded.has(id))
-    .map(id => ({
-      workout_id:            workoutId,
-      exercise_id:           id,
-      student_id:            profile.id,
-      set_number:            1,
-      session_id:            sessionId,
-      is_manual:             false,
-      executed_at:           executedAt,
-      weight_executed:       null,
-      reps_executed:         null,
-      duration_executed_min: null,
-      distance_executed_km:  null,
-      speed_executed_kmh:    null
-    }))
+  // Só resolve quando a checagem e a gravação tiverem sucesso; falha na checagem mostra
+  // toast com "Tentar novamente" (antes era um return silencioso que perdia os placeholders).
+  return new Promise(resolve => {
+    const attempt = async () => {
+      // exerciseExecutions (memória local) pode estar vazio mesmo já havendo séries reais no
+      // banco pra esse exercício nesta sessão (ex: série salva por outra aba). A checagem é
+      // por session_id: só olha esta ocorrência do treino, sem janela de dia.
+      let existing
+      try {
+        const { data, error } = await sb.from('workout_executions')
+          .select('exercise_id')
+          .eq('session_id', sessionId)
+          .in('exercise_id', pendingIds)
+        if (error) throw error
+        existing = data || []
+      } catch (err) {
+        console.error('[saveWorkoutExecutions] erro ao checar execuções já existentes:', err?.message || err)
+        toast('Não foi possível conferir os dados do seu treino. Verifique sua conexão e tente novamente.', 'error', {
+          actionLabel: 'Tentar novamente',
+          onAction: attempt
+        })
+        return
+      }
+      const alreadyRecorded = new Set(existing.map(r => r.exercise_id))
 
-  if (!records.length) return
-  await insertWorkoutExecutions(records)
+      // Mesmo session_id e um executed_at do cliente (como nas séries salvas em saveExecSet),
+      // pra o "Não executado" agrupar com a sessão no histórico em vez de virar outro card.
+      const records = pendingIds
+        .filter(id => !alreadyRecorded.has(id))
+        .map(id => ({
+          workout_id:            workoutId,
+          exercise_id:           id,
+          student_id:            studentId,
+          set_number:            1,
+          session_id:            sessionId,
+          is_manual:             false,
+          executed_at:           executedAt,
+          weight_executed:       null,
+          reps_executed:         null,
+          duration_executed_min: null,
+          distance_executed_km:  null,
+          speed_executed_kmh:    null
+        }))
+
+      // ignoreDuplicates (ON CONFLICT DO NOTHING): se a série 1 já existir — real, ou o
+      // placeholder de uma tentativa cuja resposta se perdeu — não sobrescreve nem duplica.
+      if (records.length) await insertWorkoutExecutions(records, { onConflict: 'session_id,exercise_id,set_number' })
+      resolve()
+    }
+    attempt()
+  })
 }
 
 // Só resolve quando o insert tiver sucesso; em falha real (inclusive erro de rede,
 // que rejeita a Promise em vez de resolver com {error}) mostra toast com "Tentar novamente"
 // e tenta de novo somente quando o usuário clicar.
-function insertWorkoutExecutions(records) {
+// Com onConflict vira upsert ignoreDuplicates (placeholders da sessão guiada); sem ele
+// segue insert puro (registro retroativo, que não tem session_id).
+function insertWorkoutExecutions(records, { onConflict } = {}) {
   return new Promise(resolve => {
     const attempt = async () => {
       try {
-        const { error } = await sb.from('workout_executions').insert(records)
+        const { error } = onConflict
+          ? await sb.from('workout_executions').upsert(records, { onConflict, ignoreDuplicates: true })
+          : await sb.from('workout_executions').insert(records)
         if (error) throw error
         resolve()
       } catch (err) {
