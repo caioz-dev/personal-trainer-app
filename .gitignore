@@ -1,3 +1,6 @@
 AUDITORIA.md
 .playwright-mcp/
 backup-policies.sql
+.claude/settings.local.json
+supabase/.temp/
+backup-policies-*.sql
