@@ -2243,6 +2243,14 @@
     .prog-ex-item input { margin: 0; accent-color: var(--accent); cursor: inherit; }
     .prog-ex-swatch { width: .6rem; height: .6rem; border-radius: 50%; flex-shrink: 0; }
 
+    /* ---- PROGRESSO: filtro de período (Tudo / Mês / De-Até) ---- */
+    .prog-period-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .6rem; }
+    .prog-period-modes { display: flex; gap: .4rem; flex-wrap: wrap; }
+    .prog-period-fields { flex-wrap: wrap; gap: .6rem; margin-top: .75rem; }
+    .prog-period-fields select { width: auto; min-width: 12rem; max-width: 100%; }
+    .prog-period-fields label { display: flex; align-items: center; gap: .4rem; font-size: .82rem; margin: 0; }
+    .prog-period-fields input[type="date"] { width: auto; max-width: 100%; }
+
     /* ---- REST TIMER (descanso por exercício) ---- */
     .rest-timer-wrap {
       margin-top: .75rem;
@@ -3209,6 +3217,8 @@ function resetAppState() {
   window._progressExecutions  = []
   _progCatalog                = { musculacao: [], aerobico: [] }
   _progSel                    = { type: 'musculacao', musculacao: [], aerobico: [] }
+  _progPeriod                 = { ...PROG_PERIOD_ALL }
+  _progMonths                 = []
   window._manualExecCtx       = {}
   window._compChartData       = {}
   window._dupRoutineSource    = null
@@ -6878,7 +6888,7 @@ async function renderProgress(studentIdOverride) {
       .from('workout_executions')
       // workouts!inner só pra forçar a RLS de workouts a excluir execuções de treinos de
       // outro personal (evita colisão de nome de exercício poluindo o gráfico deste aluno).
-      .select('executed_at, weight_executed, reps_executed, duration_executed_min, distance_executed_km, speed_executed_kmh, workout_exercises(exercise_name, exercise_type), workouts!inner()')
+      .select('executed_at, session_id, weight_executed, reps_executed, duration_executed_min, distance_executed_km, speed_executed_kmh, workout_exercises(exercise_name, exercise_type), workouts!inner()')
       .eq('student_id', studentId)
       .order('executed_at', { ascending: true })
     if (execErr) throw execErr
@@ -6894,6 +6904,9 @@ async function renderProgress(studentIdOverride) {
     const firstType = _progCatalog.musculacao.length ? 'musculacao' : 'aerobico'
     _progSel = { type: firstType, musculacao: [], aerobico: [] }
     if (_progCatalog[firstType].length) progressToggleSelection(_progSel, firstType, _progCatalog[firstType][0], true)
+    // Cada carga da página (inclusive ao trocar de aluno) começa em "Tudo".
+    _progPeriod = { ...PROG_PERIOD_ALL }
+    _progMonths = progressMonthOptions(window._progressExecutions)
 
     if (!_progCatalog.musculacao.length && !_progCatalog.aerobico.length) {
       body.innerHTML = studentSelectorHTML + `<div class="empty-state"><div class="empty-icon">${icon('dumbbell')}</div>
@@ -6903,6 +6916,7 @@ async function renderProgress(studentIdOverride) {
 
     body.innerHTML = `
       ${studentSelectorHTML}
+      ${progressPeriodHTML()}
       <div class="card reveal" style="margin-bottom:1.5rem">
         <div class="card-header"><div class="card-title">${icon('trending-up')} Evolução do Volume</div></div>
         <div class="chart-container" style="height:320px"><canvas id="progress-volume-chart"></canvas></div>
@@ -6943,6 +6957,7 @@ async function renderProgress(studentIdOverride) {
         </p>
       </div>`
 
+    syncProgressPeriodUI()
     renderProgressVolumeChart()
     observeRevealElements()
     renderProgressExerciseList()
@@ -6973,15 +6988,197 @@ function progressVolumeByDay(executions) {
 }
 
 function renderProgressVolumeChart() {
-  const days   = progressVolumeByDay(window._progressExecutions || [])
+  const days   = progressVolumeByDay(progressFilteredExecutions())
   const noData = document.getElementById('prog-volume-no-data')
-  if (noData) noData.style.display = days.length ? 'none' : 'block'
+  if (noData) {
+    const when = progressPeriodText(_progPeriod)
+    noData.textContent   = when ? `Nenhuma execução de musculação ${when}.` : 'Nenhuma execução de musculação registrada ainda.'
+    noData.style.display = days.length ? 'none' : 'block'
+  }
   if (!days.length) {
     if (chart) { chart.destroy(); chart = null }
     return
   }
   // initChart lê date e total_volume (formato de workouts); aqui cada "treino" é um dia executado.
   initChart('progress-volume-chart', days.map(d => ({ date: d.date, total_volume: d.volume })))
+}
+
+// ── Filtro de período (Tudo / Mês / De-Até), um controle só para os dois gráficos do Progresso ──
+// O dia de cada execução é sempre o de SP (localDateStr) e a comparação é entre strings
+// 'YYYY-MM-DD', com as duas bordas inclusivas. O filtro só recorta window._progressExecutions:
+// nenhuma query nova.
+const PROG_MONTH_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+const PROG_PERIOD_ALL = { mode: 'all', month: '', from: '', to: '' }
+let _progPeriod = { ...PROG_PERIOD_ALL }
+let _progMonths = []   // [{ month: 'YYYY-MM', label: 'Nov/2026', sessions }], do mais recente para o mais antigo
+
+const isProgDay   = s => /^\d{4}-\d{2}-\d{2}$/.test(s || '')
+const isProgMonth = s => /^\d{4}-\d{2}$/.test(s || '')
+
+function progressMonthLabel(month) {
+  const [y, m] = month.split('-')
+  return `${PROG_MONTH_ABBR[Number(m) - 1]}/${y}`
+}
+
+// Execução com algum valor registrado. O placeholder de "Não executado" (tudo nulo) não é dado.
+function progressExecHasData(ex) {
+  return [ex.weight_executed, ex.reps_executed, ex.distance_executed_km, ex.speed_executed_kmh, ex.duration_executed_min]
+    .some(v => v != null)
+}
+
+// Meses que têm dados, com o número de sessões. Registro retroativo (sem session_id) conta
+// 1 sessão por dia.
+function progressMonthOptions(executions) {
+  const byMonth = new Map()
+  for (const ex of executions) {
+    if (!ex.executed_at || !progressExecHasData(ex)) continue
+    const day   = localDateStr(new Date(ex.executed_at))
+    const month = day.slice(0, 7)
+    if (!byMonth.has(month)) byMonth.set(month, new Set())
+    byMonth.get(month).add(ex.session_id || 'dia:' + day)
+  }
+  return [...byMonth.keys()].sort().reverse()
+    .map(month => ({ month, label: progressMonthLabel(month), sessions: byMonth.get(month).size }))
+}
+
+// Primeiro e último dia com dados (preenche o De/Até na primeira vez).
+function progressDataBounds(executions) {
+  let first = '', last = ''
+  for (const ex of executions) {
+    if (!ex.executed_at || !progressExecHasData(ex)) continue
+    const day = localDateStr(new Date(ex.executed_at))
+    if (!first || day < first) first = day
+    if (!last  || day > last)  last  = day
+  }
+  return { first, last }
+}
+
+// null = sem recorte. No De/Até, um lado vazio deixa aquele lado aberto.
+function progressPeriodRange(period) {
+  if (period.mode === 'month' && isProgMonth(period.month)) {
+    const [y, m] = period.month.split('-').map(Number)
+    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate()
+    return { from: `${period.month}-01`, to: `${period.month}-${String(lastDay).padStart(2, '0')}` }
+  }
+  if (period.mode === 'range') {
+    const from = isProgDay(period.from) ? period.from : ''
+    const to   = isProgDay(period.to)   ? period.to   : ''
+    if (from || to) return { from, to }
+  }
+  return null
+}
+
+function progressPeriodError(period) {
+  if (period.mode === 'range' && isProgDay(period.from) && isProgDay(period.to) && period.from > period.to)
+    return '"De" não pode ser depois de "Até".'
+  return ''
+}
+
+// Trecho de frase para as mensagens de vazio: "em Nov/2026", "entre 01/11/2026 e 30/11/2026"…
+function progressPeriodText(period) {
+  const range = progressPeriodRange(period)
+  if (!range) return ''
+  if (period.mode === 'month') return 'em ' + progressMonthLabel(period.month)
+  if (range.from && range.to) return `entre ${fmtDate(range.from)} e ${fmtDate(range.to)}`
+  return range.from ? 'a partir de ' + fmtDate(range.from) : 'até ' + fmtDate(range.to)
+}
+
+function filterExecutionsByPeriod(executions, period) {
+  const range = progressPeriodRange(period)
+  if (!range) return executions
+  return executions.filter(ex => {
+    if (!ex.executed_at) return false
+    const day = localDateStr(new Date(ex.executed_at))
+    return (!range.from || day >= range.from) && (!range.to || day <= range.to)
+  })
+}
+
+function progressFilteredExecutions() {
+  return filterExecutionsByPeriod(window._progressExecutions || [], _progPeriod)
+}
+
+function progressPeriodHTML() {
+  const off = _progMonths.length ? '' : ' disabled'
+  // Valores e rótulos do select são gerados aqui ('YYYY-MM' e 'Nov/2026'), não vêm do usuário.
+  return `
+      <div class="card reveal prog-period" style="margin-bottom:1.5rem">
+        <div class="prog-period-row">
+          <div class="section-label" style="margin:0">Período</div>
+          <div class="prog-period-modes" role="group" aria-label="Período dos gráficos">
+            <button type="button" class="btn btn-sm" data-mode="all" onclick="setProgressPeriodMode('all')">Tudo</button>
+            <button type="button" class="btn btn-sm" data-mode="month" onclick="setProgressPeriodMode('month')"${off}>Mês</button>
+            <button type="button" class="btn btn-sm" data-mode="range" onclick="setProgressPeriodMode('range')"${off}>De/Até</button>
+          </div>
+        </div>
+        <div id="prog-period-month-wrap" class="prog-period-fields" style="display:none">
+          <select class="form-control" id="prog-period-month" aria-label="Mês" onchange="onProgressPeriodInput()">
+            ${_progMonths.map(o => `<option value="${o.month}">${o.label} (${o.sessions} ${o.sessions === 1 ? 'sessão' : 'sessões'})</option>`).join('')}
+          </select>
+        </div>
+        <div id="prog-period-range-wrap" class="prog-period-fields" style="display:none">
+          <label>De <input type="date" class="form-control" id="prog-period-from" onchange="onProgressPeriodInput()"></label>
+          <label>Até <input type="date" class="form-control" id="prog-period-to" onchange="onProgressPeriodInput()"></label>
+        </div>
+        <p id="prog-period-error" role="alert" style="display:none;font-size:.8rem;color:var(--danger);margin:.5rem 0 0"></p>
+      </div>`
+}
+
+function syncProgressPeriodUI() {
+  const p = _progPeriod
+  document.querySelectorAll('.prog-period-modes [data-mode]').forEach(b => {
+    const active = b.dataset.mode === p.mode
+    b.classList.toggle('btn-primary', active)
+    b.classList.toggle('btn-outline', !active)
+    b.setAttribute('aria-pressed', active ? 'true' : 'false')
+  })
+  const monthWrap = document.getElementById('prog-period-month-wrap')
+  const rangeWrap = document.getElementById('prog-period-range-wrap')
+  if (monthWrap) monthWrap.style.display = p.mode === 'month' ? 'flex' : 'none'
+  if (rangeWrap) rangeWrap.style.display = p.mode === 'range' ? 'flex' : 'none'
+  const monthSel = document.getElementById('prog-period-month')
+  if (monthSel && p.month) monthSel.value = p.month
+  const fromEl = document.getElementById('prog-period-from')
+  const toEl   = document.getElementById('prog-period-to')
+  if (fromEl) { fromEl.value = p.from; fromEl.max = p.to || ''; fromEl.removeAttribute('aria-invalid') }
+  if (toEl)   { toEl.value   = p.to;   toEl.min   = p.from || ''; toEl.removeAttribute('aria-invalid') }
+}
+
+// Período inválido (De > Até) não é aplicado: os gráficos ficam no último período válido.
+function applyProgressPeriod(next) {
+  const err   = progressPeriodError(next)
+  const errEl = document.getElementById('prog-period-error')
+  if (errEl) { errEl.textContent = err; errEl.style.display = err ? 'block' : 'none' }
+  if (err) {
+    for (const id of ['prog-period-from', 'prog-period-to']) document.getElementById(id)?.setAttribute('aria-invalid', 'true')
+    return false
+  }
+  _progPeriod = next
+  syncProgressPeriodUI()
+  renderProgressVolumeChart()
+  updateProgressChart()
+  return true
+}
+
+function setProgressPeriodMode(mode) {
+  if (mode === _progPeriod.mode) return
+  const next = { ..._progPeriod, mode }
+  if (mode === 'month' && !isProgMonth(next.month)) next.month = _progMonths[0]?.month || ''
+  if (mode === 'range' && !next.from && !next.to) {
+    const b = progressDataBounds(window._progressExecutions || [])
+    next.from = b.first
+    next.to   = b.last
+  }
+  applyProgressPeriod(next)
+}
+
+function onProgressPeriodInput() {
+  const next = { ..._progPeriod }
+  if (next.mode === 'month') next.month = document.getElementById('prog-period-month')?.value || ''
+  if (next.mode === 'range') {
+    next.from = document.getElementById('prog-period-from')?.value || ''
+    next.to   = document.getElementById('prog-period-to')?.value   || ''
+  }
+  applyProgressPeriod(next)
 }
 
 // ── Progressão de Carga: até 6 exercícios no mesmo gráfico ──
@@ -7156,7 +7353,7 @@ function updateProgressMetrics() {
 function updateProgressChart() {
   const metric    = document.getElementById('prog-metric')?.value || 'weight'
   const selection = _progSel[_progSel.type] || []
-  const { dates, series } = progressSeries(window._progressExecutions || [], selection, metric)
+  const { dates, series } = progressSeries(progressFilteredExecutions(), selection, metric)
   const withData  = series.filter(s => s.count)
 
   const noData = document.getElementById('prog-no-data')
@@ -7168,11 +7365,13 @@ function updateProgressChart() {
   // textContent: nomes de exercício são texto livre.
   if (noData) {
     const missing = series.filter(s => !s.count).map(s => s.name)
+    const when    = progressPeriodText(_progPeriod)
+    const sp      = when ? ' ' + when : ''
     noData.textContent =
       !selection.length ? 'Selecione ao menos um exercício.' :
-      !withData.length  ? (selection.length === 1 ? 'Nenhum dado encontrado para o exercício selecionado.'
-                                                  : 'Nenhum dado encontrado para os exercícios selecionados.') :
-      missing.length    ? `Sem registros nesta métrica: ${missing.join(', ')}.` : ''
+      !withData.length  ? (selection.length === 1 ? `Nenhum dado encontrado${sp} para o exercício selecionado.`
+                                                  : `Nenhum dado encontrado${sp} para os exercícios selecionados.`) :
+      missing.length    ? `Sem registros nesta métrica${sp}: ${missing.join(', ')}.` : ''
     noData.style.display = noData.textContent ? 'block' : 'none'
   }
   if (!withData.length) return
