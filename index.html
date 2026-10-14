@@ -6850,7 +6850,7 @@ async function renderProgress(studentIdOverride) {
       .from('workout_executions')
       // workouts!inner só pra forçar a RLS de workouts a excluir execuções de treinos de
       // outro personal (evita colisão de nome de exercício poluindo o gráfico deste aluno).
-      .select('executed_at, weight_executed, reps_executed, duration_executed_min, distance_executed_km, speed_executed_kmh, workout_exercises(exercise_name), workouts!inner()')
+      .select('executed_at, weight_executed, reps_executed, duration_executed_min, distance_executed_km, speed_executed_kmh, workout_exercises(exercise_name, exercise_type), workouts!inner()')
       .eq('student_id', studentId)
       .order('executed_at', { ascending: true })
     if (execErr) throw execErr
@@ -6877,6 +6877,10 @@ async function renderProgress(studentIdOverride) {
       <div class="card reveal" style="margin-bottom:1.5rem">
         <div class="card-header"><div class="card-title">${icon('trending-up')} Evolução do Volume</div></div>
         <div class="chart-container" style="height:320px"><canvas id="progress-volume-chart"></canvas></div>
+        <p id="prog-volume-no-data" style="display:none;text-align:center;color:var(--text-muted);
+           font-size:.85rem;margin-top:1rem;padding-bottom:.5rem">
+          Nenhuma execução de musculação registrada ainda.
+        </p>
       </div>
       <div class="card reveal">
         <div class="card-header" style="flex-wrap:wrap;gap:.75rem">
@@ -6904,7 +6908,7 @@ async function renderProgress(studentIdOverride) {
         </p>
       </div>`
 
-    initChart('progress-volume-chart', [...workouts].reverse())
+    renderProgressVolumeChart()
     observeRevealElements()
     updateProgressMetrics()
   } catch (err) {
@@ -6915,6 +6919,33 @@ async function renderProgress(studentIdOverride) {
         <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
                 onclick="renderProgress()">Tentar novamente</button></div>`
   }
+}
+
+// Volume executado por dia de treino: soma de peso × reps das execuções de musculação,
+// agrupadas pelo dia em SP (várias sessões no mesmo dia viram 1 ponto só).
+// Placeholders de "Não executado" (peso e reps nulos) não contam: um dia só com eles some.
+function progressVolumeByDay(executions) {
+  const byDay = {}
+  for (const ex of executions) {
+    if ((ex.workout_exercises?.exercise_type || 'musculacao') === 'aerobico') continue
+    if (ex.weight_executed == null && ex.reps_executed == null) continue
+    const day = ex.executed_at ? localDateStr(new Date(ex.executed_at)) : ''
+    if (!day) continue
+    byDay[day] = (byDay[day] || 0) + (parseFloat(ex.weight_executed) || 0) * (parseFloat(ex.reps_executed) || 0)
+  }
+  return Object.keys(byDay).sort().map(date => ({ date, volume: Math.round(byDay[date] * 100) / 100 }))
+}
+
+function renderProgressVolumeChart() {
+  const days   = progressVolumeByDay(window._progressExecutions || [])
+  const noData = document.getElementById('prog-volume-no-data')
+  if (noData) noData.style.display = days.length ? 'none' : 'block'
+  if (!days.length) {
+    if (chart) { chart.destroy(); chart = null }
+    return
+  }
+  // initChart lê date e total_volume (formato de workouts); aqui cada "treino" é um dia executado.
+  initChart('progress-volume-chart', days.map(d => ({ date: d.date, total_volume: d.volume })))
 }
 
 function getSelectedExerciseType() {
