@@ -2215,9 +2215,33 @@
       .exec-set-reps { padding: .4rem .5rem !important; font-size: .82rem; }
 
       /* Progress dropdowns: full width */
-      #prog-exercise,
       #prog-metric { width: 100% !important; max-width: none; }
     }
+
+    /* ---- PROGRESSÃO DE CARGA: lista de exercícios (até 6) ---- */
+    .prog-type-toggle { display: flex; gap: .4rem; margin-bottom: .6rem; }
+    .prog-ex-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .4rem .5rem;
+      max-height: 11rem;
+      overflow-y: auto;
+    }
+    .prog-ex-item {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .3rem .65rem;
+      border: 1px solid var(--neutral-a08);
+      border-radius: 999px;
+      font-size: .82rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .prog-ex-item.is-checked { border-color: var(--accent-a40); background: var(--accent-a07); }
+    .prog-ex-item.is-disabled { opacity: .45; cursor: not-allowed; }
+    .prog-ex-item input { margin: 0; accent-color: var(--accent); cursor: inherit; }
+    .prog-ex-swatch { width: .6rem; height: .6rem; border-radius: 50%; flex-shrink: 0; }
 
     /* ---- REST TIMER (descanso por exercício) ---- */
     .rest-timer-wrap {
@@ -3183,6 +3207,8 @@ function resetAppState() {
   window._workoutsCache    = {}
   window._progressWorkouts = []
   window._progressExecutions  = []
+  _progCatalog                = { musculacao: [], aerobico: [] }
+  _progSel                    = { type: 'musculacao', musculacao: [], aerobico: [] }
   window._manualExecCtx       = {}
   window._compChartData       = {}
   window._dupRoutineSource    = null
@@ -3568,6 +3594,8 @@ function toggleTheme() {
   const isLight = document.documentElement.classList.toggle('light')
   localStorage.setItem('personalpro-theme', isLight ? 'light' : 'dark')
   _updateThemeUI()
+  // A paleta da Progressão de Carga tem um passo por tema: redesenha com as cores do novo tema.
+  if (document.getElementById('progress-chart')) { renderProgressExerciseList(); updateProgressChart() }
 }
 
 function xlErr(m) {
@@ -6862,11 +6890,12 @@ async function renderProgress(studentIdOverride) {
       return
     }
 
-    const exerciseNames = [...new Set(
-      workouts.flatMap(w => (w.workout_exercises || []).map(ex => ex.exercise_name))
-    )].sort()
+    _progCatalog = progressExerciseCatalog(workouts)
+    const firstType = _progCatalog.musculacao.length ? 'musculacao' : 'aerobico'
+    _progSel = { type: firstType, musculacao: [], aerobico: [] }
+    if (_progCatalog[firstType].length) progressToggleSelection(_progSel, firstType, _progCatalog[firstType][0], true)
 
-    if (!exerciseNames.length) {
+    if (!_progCatalog.musculacao.length && !_progCatalog.aerobico.length) {
       body.innerHTML = studentSelectorHTML + `<div class="empty-state"><div class="empty-icon">${icon('dumbbell')}</div>
         <p>Nenhum exercício encontrado nos treinos registrados.</p></div>`
       return
@@ -6895,11 +6924,17 @@ async function renderProgress(studentIdOverride) {
             <option value="volume">Volume total (kg)</option>
           </select>
         </div>
-        <div class="form-group" style="margin:.75rem 0 1.25rem;max-width:400px">
-          <label>Exercício</label>
-          <select class="form-control" id="prog-exercise" onchange="updateProgressMetrics()">
-            ${exerciseNames.map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('')}
-          </select>
+        <div class="form-group" style="margin:.75rem 0 1.25rem">
+          <label>Exercícios <span id="prog-ex-count" style="font-weight:400;color:var(--text-muted)"></span></label>
+          ${_progCatalog.musculacao.length && _progCatalog.aerobico.length ? `
+          <div class="prog-type-toggle" role="group" aria-label="Tipo de exercício">
+            <button type="button" class="btn btn-sm" data-type="musculacao" onclick="setProgressType('musculacao')">Musculação</button>
+            <button type="button" class="btn btn-sm" data-type="aerobico" onclick="setProgressType('aerobico')">Aeróbico</button>
+          </div>` : ''}
+          <div id="prog-exercise-list" class="prog-ex-list"></div>
+          <p id="prog-ex-limit" style="display:none;font-size:.78rem;color:var(--text-muted);margin:.5rem 0 0">
+            Limite de 6 exercícios atingido. Desmarque um para escolher outro.
+          </p>
         </div>
         <div class="chart-container" style="height:320px"><canvas id="progress-chart"></canvas></div>
         <p id="prog-no-data" style="display:none;text-align:center;color:var(--text-muted);
@@ -6910,6 +6945,7 @@ async function renderProgress(studentIdOverride) {
 
     renderProgressVolumeChart()
     observeRevealElements()
+    renderProgressExerciseList()
     updateProgressMetrics()
   } catch (err) {
     console.error('[renderProgress]', err)
@@ -6948,20 +6984,156 @@ function renderProgressVolumeChart() {
   initChart('progress-volume-chart', days.map(d => ({ date: d.date, total_volume: d.volume })))
 }
 
-function getSelectedExerciseType() {
-  const exerciseName = document.getElementById('prog-exercise')?.value
-  const workouts     = window._progressWorkouts || []
+// ── Progressão de Carga: até 6 exercícios no mesmo gráfico ──
+// Musculação e aeróbico não se misturam (kg × km/min no mesmo eixo Y): a seleção é por tipo,
+// e o tipo ativo decide as métricas. Cada exercício guarda o slot de cor que pegou ao ser
+// marcado, então desmarcar outro não repinta os que ficaram (a cor segue o exercício).
+const PROG_MAX_EXERCISES = 6
+// Paleta categórica validada (6 slots, vizinhos com ΔE CVD ≥ 8,4) para cada tema. No claro, 3
+// cores ficam abaixo de 3:1 no fundo branco: por isso legenda, marcador por série e a cor ao
+// lado do nome na lista.
+const PROG_COLORS = {
+  dark:  ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300'],
+  light: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300']
+}
+const PROG_POINT_STYLES = ['circle', 'rect', 'triangle', 'rectRot', 'crossRot', 'star']
+let _progCatalog = { musculacao: [], aerobico: [] }
+let _progSel     = { type: 'musculacao', musculacao: [], aerobico: [] }   // listas de { name, slot }
+
+function progressPalette() {
+  return PROG_COLORS[document.documentElement.classList.contains('light') ? 'light' : 'dark']
+}
+
+// Nomes de exercício por tipo, em ordem alfabética. O tipo vem da ocorrência mais recente
+// (workouts chega do mais novo para o mais antigo), como no seletor de 1 exercício.
+function progressExerciseCatalog(workouts) {
+  const typeByName = new Map()
   for (const w of workouts) {
-    const ex = (w.workout_exercises || []).find(e => e.exercise_name === exerciseName)
-    if (ex) return ex.exercise_type || 'musculacao'
+    for (const ex of (w.workout_exercises || [])) {
+      if (!ex.exercise_name || typeByName.has(ex.exercise_name)) continue
+      typeByName.set(ex.exercise_name, ex.exercise_type === 'aerobico' ? 'aerobico' : 'musculacao')
+    }
   }
-  return 'musculacao'
+  const catalog = { musculacao: [], aerobico: [] }
+  for (const [name, type] of typeByName) catalog[type].push(name)
+  catalog.musculacao.sort()
+  catalog.aerobico.sort()
+  return catalog
+}
+
+// Marca/desmarca um exercício. Marcar além do limite falha com reason 'limit'.
+// O slot novo é o menor livre, para a cor dos que já estão marcados não mudar.
+function progressToggleSelection(sel, type, name, checked, max = PROG_MAX_EXERCISES) {
+  const list = sel[type]
+  const i = list.findIndex(s => s.name === name)
+  if (!checked) {
+    if (i >= 0) list.splice(i, 1)
+    return { ok: true }
+  }
+  if (i >= 0) return { ok: true }
+  if (list.length >= max) return { ok: false, reason: 'limit' }
+  const used = new Set(list.map(s => s.slot))
+  let slot = 0
+  while (used.has(slot)) slot++
+  list.push({ name, slot })
+  return { ok: true }
+}
+
+// 1 ponto por dia de treino do exercício (mesma regra do seletor de 1 exercício).
+function progressPointsFor(executions, exerciseName, metric) {
+  const byDate = {}
+  for (const ex of executions) {
+    if ((ex.workout_exercises?.exercise_name) !== exerciseName) continue
+    const day = ex.executed_at ? localDateStr(new Date(ex.executed_at)) : ''
+    if (!day) continue
+    if (!byDate[day]) byDate[day] = []
+    byDate[day].push(ex)
+  }
+
+  const points = []
+  for (const day of Object.keys(byDate).sort()) {
+    const exes = byDate[day]
+    let value
+    if      (metric === 'weight')   value = Math.max(0, ...exes.map(ex => parseFloat(ex.weight_executed)    || 0))
+    else if (metric === 'volume')   value = exes.reduce((s, ex) => s + (parseFloat(ex.weight_executed) || 0) * (parseFloat(ex.reps_executed) || 0), 0)
+    else if (metric === 'distance') value = Math.max(0, ...exes.map(ex => parseFloat(ex.distance_executed_km)  || 0))
+    else if (metric === 'speed')    value = Math.max(0, ...exes.map(ex => parseFloat(ex.speed_executed_kmh)    || 0))
+    else if (metric === 'duration') value = Math.max(0, ...exes.map(ex => parseFloat(ex.duration_executed_min) || 0))
+    if (value > 0) points.push({ date: day, value })
+  }
+  return points
+}
+
+// Eixo X = união dos dias de todos os exercícios; quem não treinou num dia fica com null
+// (o gráfico liga a linha por cima do buraco com spanGaps).
+function progressSeries(executions, selection, metric) {
+  const withPoints = selection.map(s => ({ ...s, points: progressPointsFor(executions, s.name, metric) }))
+  const dates = [...new Set(withPoints.flatMap(s => s.points.map(p => p.date)))].sort()
+  const series = withPoints.map(s => {
+    const byDate = new Map(s.points.map(p => [p.date, p.value]))
+    return { name: s.name, slot: s.slot, count: s.points.length, values: dates.map(d => byDate.has(d) ? byDate.get(d) : null) }
+  })
+  return { dates, series }
+}
+
+function renderProgressExerciseList(focusIdx) {
+  const listEl = document.getElementById('prog-exercise-list')
+  if (!listEl) return
+  const type   = _progSel.type
+  const names  = _progCatalog[type] || []
+  const sel    = _progSel[type]
+  const full   = sel.length >= PROG_MAX_EXERCISES
+  const colors = progressPalette()
+
+  // Só o índice vai no atributo (nada de texto livre em handler inline; ver B6).
+  listEl.innerHTML = names.map((n, i) => {
+    const s        = sel.find(x => x.name === n)
+    const disabled = !s && full
+    return `<label class="prog-ex-item${s ? ' is-checked' : ''}${disabled ? ' is-disabled' : ''}">
+        <input type="checkbox" data-idx="${i}"${s ? ' checked' : ''}${disabled ? ' disabled' : ''} onchange="onProgressExerciseToggle(this)">
+        ${s ? `<span class="prog-ex-swatch" style="background:${colors[s.slot]}"></span>` : ''}
+        <span>${escHtml(n)}</span>
+      </label>`
+  }).join('')
+
+  const countEl = document.getElementById('prog-ex-count')
+  if (countEl) countEl.textContent = `(${sel.length} de ${PROG_MAX_EXERCISES})`
+  const limitEl = document.getElementById('prog-ex-limit')
+  if (limitEl) limitEl.style.display = full ? 'block' : 'none'
+  document.querySelectorAll('.prog-type-toggle [data-type]').forEach(b => {
+    const active = b.dataset.type === type
+    b.classList.toggle('btn-primary', active)
+    b.classList.toggle('btn-outline', !active)
+    b.setAttribute('aria-pressed', active ? 'true' : 'false')
+  })
+  if (focusIdx != null) listEl.querySelector(`input[data-idx="${focusIdx}"]`)?.focus()
+}
+
+function onProgressExerciseToggle(input) {
+  const name = (_progCatalog[_progSel.type] || [])[Number(input.dataset.idx)]
+  if (name == null) return
+  const r = progressToggleSelection(_progSel, _progSel.type, name, input.checked)
+  if (!r.ok) {
+    input.checked = false
+    toast(`Escolha no máximo ${PROG_MAX_EXERCISES} exercícios.`, 'error')
+  }
+  renderProgressExerciseList(input.dataset.idx)
+  updateProgressChart()
+}
+
+function setProgressType(type) {
+  if (!_progCatalog[type]?.length || _progSel.type === type) return
+  _progSel.type = type
+  // Primeira vez no tipo: começa com o primeiro exercício marcado. A seleção do outro tipo fica guardada.
+  if (!_progSel[type].length) progressToggleSelection(_progSel, type, _progCatalog[type][0], true)
+  renderProgressExerciseList()
+  updateProgressMetrics()
 }
 
 function updateProgressMetrics() {
   const metricSel = document.getElementById('prog-metric')
   if (!metricSel) return
-  const type       = getSelectedExerciseType()
+  const type       = _progSel.type
   const currentVal = metricSel.value
 
   if (type === 'aerobico') {
@@ -6982,34 +7154,10 @@ function updateProgressMetrics() {
 }
 
 function updateProgressChart() {
-  const exerciseName = document.getElementById('prog-exercise')?.value
-  const metric       = document.getElementById('prog-metric')?.value || 'weight'
-  const executions   = window._progressExecutions || []
-
-  const byDate = {}
-  for (const ex of executions) {
-    if ((ex.workout_exercises?.exercise_name) !== exerciseName) continue
-    const day = ex.executed_at ? localDateStr(new Date(ex.executed_at)) : ''
-    if (!day) continue
-    if (!byDate[day]) byDate[day] = []
-    byDate[day].push(ex)
-  }
-
-  const sortedDates = Object.keys(byDate).sort()
-  const points  = []
-
-  for (const day of sortedDates) {
-    const exes = byDate[day]
-
-    let value
-    if      (metric === 'weight')   value = Math.max(0, ...exes.map(ex => parseFloat(ex.weight_executed)    || 0))
-    else if (metric === 'volume')   value = exes.reduce((s, ex) => s + (parseFloat(ex.weight_executed) || 0) * (parseFloat(ex.reps_executed) || 0), 0)
-    else if (metric === 'distance') value = Math.max(0, ...exes.map(ex => parseFloat(ex.distance_executed_km)  || 0))
-    else if (metric === 'speed')    value = Math.max(0, ...exes.map(ex => parseFloat(ex.speed_executed_kmh)    || 0))
-    else if (metric === 'duration') value = Math.max(0, ...exes.map(ex => parseFloat(ex.duration_executed_min) || 0))
-
-    if (value > 0) points.push({ date: day, value })
-  }
+  const metric    = document.getElementById('prog-metric')?.value || 'weight'
+  const selection = _progSel[_progSel.type] || []
+  const { dates, series } = progressSeries(window._progressExecutions || [], selection, metric)
+  const withData  = series.filter(s => s.count)
 
   const noData = document.getElementById('prog-no-data')
   const ctx    = document.getElementById('progress-chart')
@@ -7017,41 +7165,50 @@ function updateProgressChart() {
 
   if (progressChart) { progressChart.destroy(); progressChart = null }
 
-  if (!points.length) {
-    if (noData) noData.style.display = 'block'
-    return
+  // textContent: nomes de exercício são texto livre.
+  if (noData) {
+    const missing = series.filter(s => !s.count).map(s => s.name)
+    noData.textContent =
+      !selection.length ? 'Selecione ao menos um exercício.' :
+      !withData.length  ? (selection.length === 1 ? 'Nenhum dado encontrado para o exercício selecionado.'
+                                                  : 'Nenhum dado encontrado para os exercícios selecionados.') :
+      missing.length    ? `Sem registros nesta métrica: ${missing.join(', ')}.` : ''
+    noData.style.display = noData.textContent ? 'block' : 'none'
   }
-  if (noData) noData.style.display = 'none'
+  if (!withData.length) return
 
-  const unitMap  = { weight: 'kg', volume: 'kg', distance: 'km', speed: 'km/h', duration: 'min' }
-  const labelMap = { weight: 'Carga máx (kg)', volume: 'Volume (kg)',
-                     distance: 'Distância (km)', speed: 'Velocidade (km/h)', duration: 'Tempo (min)' }
-  const unit  = unitMap[metric]  || 'kg'
-  const label = labelMap[metric] || metric
+  const unitMap = { weight: 'kg', volume: 'kg', distance: 'km', speed: 'km/h', duration: 'min' }
+  const unit    = unitMap[metric] || 'kg'
+  const colors  = progressPalette()
 
   progressChart = new Chart(ctx, {
     type: 'line',
     data: {
-      labels:   points.map(p => fmtDate(p.date)),
-      datasets: [{
-        label:               label,
-        data:                points.map(p => p.value),
-        borderColor:         '#4ADE80',
-        backgroundColor:     'rgba(74,222,128,0.07)',
-        borderWidth:         2,
-        pointBackgroundColor:'#4ADE80',
-        pointRadius:         5,
-        pointHoverRadius:    8,
-        fill:                true,
-        tension:             0.3
-      }]
+      labels:   dates.map(fmtDate),
+      datasets: withData.map(s => ({
+        label:                s.name,
+        data:                 s.values,
+        borderColor:          colors[s.slot],
+        backgroundColor:      colors[s.slot],
+        pointBackgroundColor: colors[s.slot],
+        pointStyle:           PROG_POINT_STYLES[s.slot],
+        borderWidth:          2,
+        pointRadius:          4,
+        pointHoverRadius:     7,
+        fill:                 false,
+        spanGaps:             true,
+        tension:              0.3
+      }))
     },
     options: {
       responsive:          true,
       maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: c => ` ${c.parsed.y.toLocaleString('pt-BR')} ${unit}` } }
+        legend: { display: withData.length > 1,
+                  labels: { usePointStyle: true, boxWidth: 8, color: 'rgb(143,154,178)', font: { size: 11, family: 'Montserrat' } } },
+        tooltip: { filter: item => item.parsed.y != null,
+                   callbacks: { label: c => ` ${c.dataset.label}: ${c.parsed.y.toLocaleString('pt-BR')} ${unit}` } }
       },
       scales: {
         x: { grid: { color: 'rgba(144,158,186,0.06)' }, ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)', maxRotation: 45 } },
