@@ -3219,6 +3219,7 @@ function resetAppState() {
   _progSel                    = { type: 'musculacao', musculacao: [], aerobico: [] }
   _progPeriod                 = { ...PROG_PERIOD_ALL }
   _progMonths                 = []
+  _progCompareEx              = { musculacao: '', aerobico: '' }
   window._manualExecCtx       = {}
   window._compChartData       = {}
   window._dupRoutineSource    = null
@@ -3605,7 +3606,8 @@ function toggleTheme() {
   localStorage.setItem('personalpro-theme', isLight ? 'light' : 'dark')
   _updateThemeUI()
   // A paleta da Progressão de Carga tem um passo por tema: redesenha com as cores do novo tema.
-  if (document.getElementById('progress-chart')) { renderProgressExerciseList(); updateProgressChart() }
+  // No Comparar, o Volume também usa a paleta.
+  if (document.getElementById('progress-chart')) { renderProgressExerciseList(); renderProgressVolumeChart(); updateProgressChart() }
 }
 
 function xlErr(m) {
@@ -6907,6 +6909,7 @@ async function renderProgress(studentIdOverride) {
     // Cada carga da página (inclusive ao trocar de aluno) começa em "Tudo".
     _progPeriod = { ...PROG_PERIOD_ALL }
     _progMonths = progressMonthOptions(window._progressExecutions)
+    _progCompareEx = { musculacao: '', aerobico: '' }
 
     if (!_progCatalog.musculacao.length && !_progCatalog.aerobico.length) {
       body.innerHTML = studentSelectorHTML + `<div class="empty-state"><div class="empty-icon">${icon('dumbbell')}</div>
@@ -6949,6 +6952,9 @@ async function renderProgress(studentIdOverride) {
           <p id="prog-ex-limit" style="display:none;font-size:.78rem;color:var(--text-muted);margin:.5rem 0 0">
             Limite de 6 exercícios atingido. Desmarque um para escolher outro.
           </p>
+          <p id="prog-compare-note" style="display:none;font-size:.78rem;color:var(--text-muted);margin:.5rem 0 0">
+            Na comparação de meses, 1 exercício por vez. Os outros marcados voltam ao sair.
+          </p>
         </div>
         <div class="chart-container" style="height:320px"><canvas id="progress-chart"></canvas></div>
         <p id="prog-no-data" style="display:none;text-align:center;color:var(--text-muted);
@@ -6988,6 +6994,7 @@ function progressVolumeByDay(executions) {
 }
 
 function renderProgressVolumeChart() {
+  if (_progPeriod.mode === 'compare') return renderProgressVolumeCompare()
   const days   = progressVolumeByDay(progressFilteredExecutions())
   const noData = document.getElementById('prog-volume-no-data')
   if (noData) {
@@ -7008,7 +7015,7 @@ function renderProgressVolumeChart() {
 // 'YYYY-MM-DD', com as duas bordas inclusivas. O filtro só recorta window._progressExecutions:
 // nenhuma query nova.
 const PROG_MONTH_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
-const PROG_PERIOD_ALL = { mode: 'all', month: '', from: '', to: '' }
+const PROG_PERIOD_ALL = { mode: 'all', month: '', from: '', to: '', monthA: '', monthB: '' }
 let _progPeriod = { ...PROG_PERIOD_ALL }
 let _progMonths = []   // [{ month: 'YYYY-MM', label: 'Nov/2026', sessions }], do mais recente para o mais antigo
 
@@ -7071,6 +7078,10 @@ function progressPeriodRange(period) {
 function progressPeriodError(period) {
   if (period.mode === 'range' && isProgDay(period.from) && isProgDay(period.to) && period.from > period.to)
     return '"De" não pode ser depois de "Até".'
+  if (period.mode === 'compare') {
+    if (!isProgMonth(period.monthA) || !isProgMonth(period.monthB)) return 'Escolha os dois meses.'
+    if (period.monthA === period.monthB) return 'Escolha dois meses diferentes.'
+  }
   return ''
 }
 
@@ -7098,8 +7109,11 @@ function progressFilteredExecutions() {
 }
 
 function progressPeriodHTML() {
-  const off = _progMonths.length ? '' : ' disabled'
+  const off        = _progMonths.length ? '' : ' disabled'
+  // Comparar precisa de 2 meses com dados.
+  const offCompare = _progMonths.length >= 2 ? '' : ' disabled title="Precisa de pelo menos 2 meses com dados"'
   // Valores e rótulos do select são gerados aqui ('YYYY-MM' e 'Nov/2026'), não vêm do usuário.
+  const monthOptions = _progMonths.map(o => `<option value="${o.month}">${o.label} (${o.sessions} ${o.sessions === 1 ? 'sessão' : 'sessões'})</option>`).join('')
   return `
       <div class="card reveal prog-period" style="margin-bottom:1.5rem">
         <div class="prog-period-row">
@@ -7108,12 +7122,17 @@ function progressPeriodHTML() {
             <button type="button" class="btn btn-sm" data-mode="all" onclick="setProgressPeriodMode('all')">Tudo</button>
             <button type="button" class="btn btn-sm" data-mode="month" onclick="setProgressPeriodMode('month')"${off}>Mês</button>
             <button type="button" class="btn btn-sm" data-mode="range" onclick="setProgressPeriodMode('range')"${off}>De/Até</button>
+            <button type="button" class="btn btn-sm" data-mode="compare" onclick="setProgressPeriodMode('compare')"${offCompare}>Comparar</button>
           </div>
         </div>
         <div id="prog-period-month-wrap" class="prog-period-fields" style="display:none">
           <select class="form-control" id="prog-period-month" aria-label="Mês" onchange="onProgressPeriodInput()">
-            ${_progMonths.map(o => `<option value="${o.month}">${o.label} (${o.sessions} ${o.sessions === 1 ? 'sessão' : 'sessões'})</option>`).join('')}
+            ${monthOptions}
           </select>
+        </div>
+        <div id="prog-period-compare-wrap" class="prog-period-fields" style="display:none">
+          <label>Mês A <select class="form-control" id="prog-period-month-a" onchange="onProgressPeriodInput()">${monthOptions}</select></label>
+          <label>Mês B <select class="form-control" id="prog-period-month-b" onchange="onProgressPeriodInput()">${monthOptions}</select></label>
         </div>
         <div id="prog-period-range-wrap" class="prog-period-fields" style="display:none">
           <label>De <input type="date" class="form-control" id="prog-period-from" onchange="onProgressPeriodInput()"></label>
@@ -7141,19 +7160,34 @@ function syncProgressPeriodUI() {
   const toEl   = document.getElementById('prog-period-to')
   if (fromEl) { fromEl.value = p.from; fromEl.max = p.to || ''; fromEl.removeAttribute('aria-invalid') }
   if (toEl)   { toEl.value   = p.to;   toEl.min   = p.from || ''; toEl.removeAttribute('aria-invalid') }
+  const compareWrap = document.getElementById('prog-period-compare-wrap')
+  if (compareWrap) compareWrap.style.display = p.mode === 'compare' ? 'flex' : 'none'
+  // O mês escolhido num select fica desabilitado no outro.
+  for (const [id, own, other] of [['prog-period-month-a', p.monthA, p.monthB], ['prog-period-month-b', p.monthB, p.monthA]]) {
+    const sel = document.getElementById(id)
+    if (!sel) continue
+    for (const opt of sel.options || []) opt.disabled = opt.value === other
+    if (own) sel.value = own
+    sel.removeAttribute('aria-invalid')
+  }
 }
 
-// Período inválido (De > Até) não é aplicado: os gráficos ficam no último período válido.
+// Período inválido (De > Até, ou o mesmo mês dos dois lados) não é aplicado: os gráficos ficam
+// no último período válido.
 function applyProgressPeriod(next) {
   const err   = progressPeriodError(next)
   const errEl = document.getElementById('prog-period-error')
   if (errEl) { errEl.textContent = err; errEl.style.display = err ? 'block' : 'none' }
   if (err) {
-    for (const id of ['prog-period-from', 'prog-period-to']) document.getElementById(id)?.setAttribute('aria-invalid', 'true')
+    const ids = next.mode === 'compare' ? ['prog-period-month-a', 'prog-period-month-b'] : ['prog-period-from', 'prog-period-to']
+    for (const id of ids) document.getElementById(id)?.setAttribute('aria-invalid', 'true')
     return false
   }
+  const compareChanged = (next.mode === 'compare') !== (_progPeriod.mode === 'compare')
   _progPeriod = next
   syncProgressPeriodUI()
+  // Entrar/sair do Comparar troca a lista de exercícios (1 por vez × até 6).
+  if (compareChanged) renderProgressExerciseList()
   renderProgressVolumeChart()
   updateProgressChart()
   return true
@@ -7168,6 +7202,14 @@ function setProgressPeriodMode(mode) {
     next.from = b.first
     next.to   = b.last
   }
+  if (mode === 'compare') {
+    if (_progMonths.length < 2) return
+    // Padrão: A = penúltimo mês com dados, B = último (_progMonths vem do mais recente).
+    if (!isProgMonth(next.monthA) || !isProgMonth(next.monthB) || next.monthA === next.monthB) {
+      next.monthA = _progMonths[1].month
+      next.monthB = _progMonths[0].month
+    }
+  }
   applyProgressPeriod(next)
 }
 
@@ -7178,7 +7220,150 @@ function onProgressPeriodInput() {
     next.from = document.getElementById('prog-period-from')?.value || ''
     next.to   = document.getElementById('prog-period-to')?.value   || ''
   }
+  if (next.mode === 'compare') {
+    next.monthA = document.getElementById('prog-period-month-a')?.value || ''
+    next.monthB = document.getElementById('prog-period-month-b')?.value || ''
+  }
   applyProgressPeriod(next)
+}
+
+// ── Comparar dois meses: eixo X = dia do mês (1 a 31), uma linha por mês ──
+// Mês e dia vêm de localDateStr (SP): 23h30 de 31/01 é dia 31 de janeiro. A Carga compara
+// 1 exercício por vez; a seleção de até 6 (_progSel) não é mexida e volta ao sair do modo.
+let _progCompareEx = { musculacao: '', aerobico: '' }
+
+function progressCompareSplit(executions, monthA, monthB) {
+  const a = [], b = []
+  for (const ex of executions) {
+    if (!ex.executed_at) continue
+    const month = localDateStr(new Date(ex.executed_at)).slice(0, 7)
+    if (month === monthA) a.push(ex)
+    else if (month === monthB) b.push(ex)
+  }
+  return { a, b }
+}
+
+// [{ date: 'YYYY-MM-DD', value }] → pontos { x: dia do mês, y, date } para a escala linear.
+function progressComparePoints(points) {
+  return points.map(p => ({ x: Number(p.date.slice(8, 10)), y: p.value, date: p.date }))
+}
+
+// Exercício da comparação no tipo ativo: o escolhido antes, se ainda existir; senão o primeiro
+// marcado na seleção normal; senão o primeiro do catálogo.
+function progressCompareExercise() {
+  const type  = _progSel.type
+  const names = _progCatalog[type] || []
+  if (names.includes(_progCompareEx[type])) return _progCompareEx[type]
+  _progCompareEx[type] = _progSel[type][0]?.name || names[0] || ''
+  return _progCompareEx[type]
+}
+
+function onProgressCompareExercise(input) {
+  const name = (_progCatalog[_progSel.type] || [])[Number(input.dataset.idx)]
+  if (name == null) return
+  _progCompareEx[_progSel.type] = name
+  renderProgressExerciseList(input.dataset.idx)
+  updateProgressChart()
+}
+
+// Desenha a comparação num canvas. series: [{ label, points: [{ x, y, date }] }] na ordem A, B.
+// Cores e marcadores dos dois primeiros slots da paleta validada (azul e laranja, par vizinho
+// que passa no teste de daltonismo).
+function buildProgressCompareChart(ctx, series, unit) {
+  const colors = progressPalette()
+  return new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: series.map((s, i) => ({
+        label:                s.label,
+        data:                 s.points,
+        borderColor:          colors[i],
+        backgroundColor:      colors[i],
+        pointBackgroundColor: colors[i],
+        pointStyle:           PROG_POINT_STYLES[i],
+        borderWidth:          2,
+        pointRadius:          4,
+        pointHoverRadius:     7,
+        fill:                 false,
+        tension:              0.3
+      }))
+    },
+    options: {
+      responsive:          true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'nearest', axis: 'x', intersect: false },
+      plugins: {
+        legend: { display: true,
+                  labels: { usePointStyle: true, boxWidth: 8, color: 'rgb(143,154,178)', font: { size: 11, family: 'Montserrat' } } },
+        tooltip: { callbacks: {
+          title: items => items.length ? `Dia ${items[0].parsed.x}` : '',
+          label: c => ` ${c.dataset.label} · ${fmtDate(c.raw.date)}: ${c.parsed.y.toLocaleString('pt-BR')} ${unit}`
+        } }
+      },
+      scales: {
+        x: { type: 'linear', min: 1, max: 31,
+             grid: { color: 'rgba(144,158,186,0.06)' },
+             title: { display: true, text: 'Dia do mês', color: 'rgb(143,154,178)', font: { size: 11, family: 'Montserrat' } },
+             ticks: { stepSize: 1, precision: 0, maxRotation: 0, font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)' } },
+        y: { grid: { color: 'rgba(144,158,186,0.06)' }, beginAtZero: false,
+             ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)',
+                      callback: v => v.toLocaleString('pt-BR') + ' ' + unit } }
+      }
+    }
+  })
+}
+
+// Mensagem de vazio da comparação: nada nos dois meses, ou só um lado sem dados.
+// none: "Nenhuma execução de musculação"; missing: "Sem execuções de musculação".
+function progressCompareMessage(none, missing, labelA, countA, labelB, countB) {
+  if (!countA && !countB) return `${none} em ${labelA} nem em ${labelB}.`
+  if (!countA) return `${missing} em ${labelA}.`
+  if (!countB) return `${missing} em ${labelB}.`
+  return ''
+}
+
+function renderProgressVolumeCompare() {
+  const { monthA, monthB } = _progPeriod
+  const { a, b } = progressCompareSplit(window._progressExecutions || [], monthA, monthB)
+  const ptsA = progressComparePoints(progressVolumeByDay(a).map(d => ({ date: d.date, value: d.volume })))
+  const ptsB = progressComparePoints(progressVolumeByDay(b).map(d => ({ date: d.date, value: d.volume })))
+  const labelA = progressMonthLabel(monthA), labelB = progressMonthLabel(monthB)
+  const noData = document.getElementById('prog-volume-no-data')
+  if (noData) {
+    noData.textContent   = progressCompareMessage('Nenhuma execução de musculação', 'Sem execuções de musculação',
+                                                  labelA, ptsA.length, labelB, ptsB.length)
+    noData.style.display = noData.textContent ? 'block' : 'none'
+  }
+  if (chart) { chart.destroy(); chart = null }
+  const ctx = document.getElementById('progress-volume-chart')
+  if (!ctx || (!ptsA.length && !ptsB.length)) return
+  chart = buildProgressCompareChart(ctx, [{ label: labelA, points: ptsA }, { label: labelB, points: ptsB }], 'kg')
+}
+
+function updateProgressCompareChart(metric) {
+  const { monthA, monthB } = _progPeriod
+  const name   = progressCompareExercise()
+  const noData = document.getElementById('prog-no-data')
+  const ctx    = document.getElementById('progress-chart')
+  if (!ctx) return
+  if (progressChart) { progressChart.destroy(); progressChart = null }
+  if (!name) {
+    if (noData) { noData.textContent = 'Selecione um exercício.'; noData.style.display = 'block' }
+    return
+  }
+  const { a, b } = progressCompareSplit(window._progressExecutions || [], monthA, monthB)
+  const ptsA   = progressComparePoints(progressPointsFor(a, name, metric))
+  const ptsB   = progressComparePoints(progressPointsFor(b, name, metric))
+  const labelA = progressMonthLabel(monthA), labelB = progressMonthLabel(monthB)
+  // textContent: nome do exercício é texto livre.
+  if (noData) {
+    noData.textContent   = progressCompareMessage(`Nenhum dado de ${name}`, `Sem registros de ${name}`,
+                                                  labelA, ptsA.length, labelB, ptsB.length)
+    noData.style.display = noData.textContent ? 'block' : 'none'
+  }
+  if (!ptsA.length && !ptsB.length) return
+  const unitMap = { weight: 'kg', volume: 'kg', distance: 'km', speed: 'km/h', duration: 'min' }
+  progressChart = buildProgressCompareChart(ctx, [{ label: labelA, points: ptsA }, { label: labelB, points: ptsB }], unitMap[metric] || 'kg')
 }
 
 // ── Progressão de Carga: até 6 exercícios no mesmo gráfico ──
@@ -7281,22 +7466,34 @@ function renderProgressExerciseList(focusIdx) {
   const sel    = _progSel[type]
   const full   = sel.length >= PROG_MAX_EXERCISES
   const colors = progressPalette()
+  const compare = _progPeriod.mode === 'compare'
 
   // Só o índice vai no atributo (nada de texto livre em handler inline; ver B6).
-  listEl.innerHTML = names.map((n, i) => {
-    const s        = sel.find(x => x.name === n)
-    const disabled = !s && full
-    return `<label class="prog-ex-item${s ? ' is-checked' : ''}${disabled ? ' is-disabled' : ''}">
+  if (compare) {
+    // Comparar: 1 exercício por vez (rádio). _progSel fica como está e volta ao sair do modo.
+    const current = progressCompareExercise()
+    listEl.innerHTML = names.map((n, i) => `<label class="prog-ex-item${n === current ? ' is-checked' : ''}">
+        <input type="radio" name="prog-compare-ex" data-idx="${i}"${n === current ? ' checked' : ''} onchange="onProgressCompareExercise(this)">
+        <span>${escHtml(n)}</span>
+      </label>`).join('')
+  } else {
+    listEl.innerHTML = names.map((n, i) => {
+      const s        = sel.find(x => x.name === n)
+      const disabled = !s && full
+      return `<label class="prog-ex-item${s ? ' is-checked' : ''}${disabled ? ' is-disabled' : ''}">
         <input type="checkbox" data-idx="${i}"${s ? ' checked' : ''}${disabled ? ' disabled' : ''} onchange="onProgressExerciseToggle(this)">
         ${s ? `<span class="prog-ex-swatch" style="background:${colors[s.slot]}"></span>` : ''}
         <span>${escHtml(n)}</span>
       </label>`
-  }).join('')
+    }).join('')
+  }
 
   const countEl = document.getElementById('prog-ex-count')
-  if (countEl) countEl.textContent = `(${sel.length} de ${PROG_MAX_EXERCISES})`
+  if (countEl) countEl.textContent = compare ? '(1 por vez na comparação)' : `(${sel.length} de ${PROG_MAX_EXERCISES})`
   const limitEl = document.getElementById('prog-ex-limit')
-  if (limitEl) limitEl.style.display = full ? 'block' : 'none'
+  if (limitEl) limitEl.style.display = full && !compare ? 'block' : 'none'
+  const noteEl = document.getElementById('prog-compare-note')
+  if (noteEl) noteEl.style.display = compare ? 'block' : 'none'
   document.querySelectorAll('.prog-type-toggle [data-type]').forEach(b => {
     const active = b.dataset.type === type
     b.classList.toggle('btn-primary', active)
@@ -7352,6 +7549,7 @@ function updateProgressMetrics() {
 
 function updateProgressChart() {
   const metric    = document.getElementById('prog-metric')?.value || 'weight'
+  if (_progPeriod.mode === 'compare') return updateProgressCompareChart(metric)
   const selection = _progSel[_progSel.type] || []
   const { dates, series } = progressSeries(progressFilteredExecutions(), selection, metric)
   const withData  = series.filter(s => s.count)
