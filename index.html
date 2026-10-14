@@ -3353,6 +3353,9 @@ async function handleDeepLink() {
   const id = params.get('id')
   if (!dl || !id) return
   history.replaceState(null, '', location.pathname)
+  // id vem da URL (link de e-mail): só UUID segue adiante — vai para .eq() e para o
+  // seletor do querySelector, onde um valor malformado lançaria erro.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return
 
   try {
     if (dl === 'student' && profile.role === 'personal') {
@@ -4663,12 +4666,12 @@ function bindWorkoutRowClicks(container) {
 }
 
 function toggleWorkoutDetail(uid) {
-  const row  = document.getElementById(`wd-${uid}`)
-  const icon = document.getElementById(`wi-${uid}`)
+  const row     = document.getElementById(`wd-${uid}`)
+  const chevron = document.getElementById(`wi-${uid}`)
   if (!row) return
   const isOpen = row.style.display !== 'none'
   row.style.display = isOpen ? 'none' : 'table-row'
-  if (icon) icon.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)'
+  if (chevron) chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)'
 }
 
 async function _cascadeDeleteWorkout(workoutId) {
@@ -6203,18 +6206,18 @@ function _routineExercisesHTML(exes) {
 
 async function toggleRoutineWorkoutAccordion(uid, workoutId) {
   const content = document.getElementById('rdd-' + uid)
-  const icon    = document.getElementById('rdi-' + uid)
-  if (!content || !icon) return
+  const chevron = document.getElementById('rdi-' + uid)
+  if (!content || !chevron) return
 
   const isOpen = content.style.display !== 'none'
   if (isOpen) {
     content.style.display = 'none'
-    icon.classList.remove('expanded')
+    chevron.classList.remove('expanded')
     return
   }
 
   content.style.display = 'block'
-  icon.classList.add('expanded')
+  chevron.classList.add('expanded')
 
   if (_routineExCache[workoutId] !== undefined) {
     content.innerHTML = _routineExercisesHTML(_routineExCache[workoutId])
