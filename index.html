@@ -7230,9 +7230,11 @@ function onProgressPeriodInput() {
   applyProgressPeriod(next)
 }
 
-// ── Comparar dois meses: eixo X = dia do mês (1 a 31), uma linha por mês ──
-// Mês e dia vêm de localDateStr (SP): 23h30 de 31/01 é dia 31 de janeiro. A Carga compara
-// 1 exercício por vez; a seleção de até 6 (_progSel) não é mexida e volta ao sair do modo.
+// ── Comparar dois meses: eixo X = nº da sessão no mês (1ª de A com 1ª de B…), uma linha por mês ──
+// Volume: sessão = dia treinado. Carga: sessão = N-ésimo dia em que aquele exercício teve valor
+// no mês. Mês e dia vêm de localDateStr (SP): 23h30 de 31/01 é a última sessão de janeiro.
+// A Carga compara 1 exercício por vez; a seleção de até 6 (_progSel) não é mexida e volta ao
+// sair do modo.
 let _progCompareEx = { musculacao: '', aerobico: '' }
 
 function progressCompareSplit(executions, monthA, monthB) {
@@ -7246,9 +7248,10 @@ function progressCompareSplit(executions, monthA, monthB) {
   return { a, b }
 }
 
-// [{ date: 'YYYY-MM-DD', value }] → pontos { x: dia do mês, y, date } para a escala linear.
+// [{ date: 'YYYY-MM-DD', value }] (1 por dia) → pontos { x: nº da sessão, y, date } em ordem de data.
 function progressComparePoints(points) {
-  return points.map(p => ({ x: Number(p.date.slice(8, 10)), y: p.value, date: p.date }))
+  return [...points].sort((p, q) => p.date.localeCompare(q.date))
+    .map((p, i) => ({ x: i + 1, y: p.value, date: p.date }))
 }
 
 // Exercício da comparação no tipo ativo: o escolhido antes, se ainda existir; senão o primeiro
@@ -7272,8 +7275,11 @@ function onProgressCompareExercise(input) {
 // Desenha a comparação num canvas. series: [{ label, points: [{ x, y, date }] }] na ordem A, B.
 // Cores e marcadores dos dois primeiros slots da paleta validada (azul e laranja, par vizinho
 // que passa no teste de daltonismo).
+// Eixo X de 1 até N = maior nº de sessões entre os dois meses. Com N = 1 o eixo vai de 0 a 2
+// (min = max deixa a escala sem largura) e só o tick 1 aparece.
 function buildProgressCompareChart(ctx, series, unit) {
   const colors = progressPalette()
+  const n      = Math.max(1, ...series.map(s => s.points.length))
   return new Chart(ctx, {
     type: 'line',
     data: {
@@ -7299,15 +7305,17 @@ function buildProgressCompareChart(ctx, series, unit) {
         legend: { display: true,
                   labels: { usePointStyle: true, boxWidth: 8, color: 'rgb(143,154,178)', font: { size: 11, family: 'Montserrat' } } },
         tooltip: { callbacks: {
-          title: items => items.length ? `Dia ${items[0].parsed.x}` : '',
-          label: c => ` ${c.dataset.label} · ${fmtDate(c.raw.date)}: ${c.parsed.y.toLocaleString('pt-BR')} ${unit}`
+          // A sessão já vai em cada linha (com a data real); título repetiria o número.
+          title: () => '',
+          label: c => ` ${c.dataset.label} · sessão ${c.raw.x} · ${fmtDate(c.raw.date)}: ${c.parsed.y.toLocaleString('pt-BR')} ${unit}`
         } }
       },
       scales: {
-        x: { type: 'linear', min: 1, max: 31,
+        x: { type: 'linear', min: n > 1 ? 1 : 0, max: n > 1 ? n : 2,
              grid: { color: 'rgba(144,158,186,0.06)' },
-             title: { display: true, text: 'Dia do mês', color: 'rgb(143,154,178)', font: { size: 11, family: 'Montserrat' } },
-             ticks: { stepSize: 1, precision: 0, maxRotation: 0, font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)' } },
+             title: { display: true, text: 'Nª sessão', color: 'rgb(143,154,178)', font: { size: 11, family: 'Montserrat' } },
+             ticks: { stepSize: 1, precision: 0, maxRotation: 0, font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)',
+                      callback: v => Number.isInteger(v) && v >= 1 && v <= n ? String(v) : '' } },
         y: { grid: { color: 'rgba(144,158,186,0.06)' }, beginAtZero: false,
              ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)',
                       callback: v => v.toLocaleString('pt-BR') + ' ' + unit } }
