@@ -9811,6 +9811,15 @@ function clearExecutionState() {
   try { localStorage.removeItem(EXEC_STATE_KEY) } catch {}
 }
 
+// Restore que desiste de um treino salvo neste aparelho: apaga o snapshot e avisa num toast
+// curto (antes sumia em silêncio e parecia que o treino tinha "concluído sozinho"). Não
+// grava nada no banco — as séries já salvas continuam lá.
+function _discardExecutionState(msg) {
+  clearExecutionState()
+  toast(msg, 'info')
+}
+const EXEC_DISCARD_INVALID_MSG = 'Não foi possível retomar o treino em andamento (dados locais inválidos). As séries já salvas estão no histórico.'
+
 // Chamada no boot, depois que `me`/`profile` já estão resolvidos. Retorna true se
 // restaurou uma execução salva (e já deixou a tela pronta), false caso contrário —
 // nesse caso o chamador segue o fluxo normal de navegação.
@@ -9822,16 +9831,18 @@ function restoreExecutionState() {
   if (!raw) return false
 
   let state
-  try { state = JSON.parse(raw) } catch (err) { console.error('[restoreExecutionState DEBUG] JSON.parse falhou:', err, 'raw:', raw); clearExecutionState(); return false }
+  try { state = JSON.parse(raw) } catch (err) { console.error('[restoreExecutionState DEBUG] JSON.parse falhou:', err, 'raw:', raw); _discardExecutionState(EXEC_DISCARD_INVALID_MSG); return false }
 
   if (!state || typeof state !== 'object' || !state.workoutId || !state.currentWorkoutData || !state.startTimestamp) {
-    clearExecutionState()
+    _discardExecutionState(EXEC_DISCARD_INVALID_MSG)
     return false
   }
   // Estado de outro aluno/conta no mesmo navegador — não retoma silenciosamente no lugar errado.
   // Snapshot sem studentId (versão antiga) também não é retomado: não dá para saber de quem é.
   if (!state.studentId || !me?.id || state.studentId !== me.id) {
-    clearExecutionState()
+    _discardExecutionState(state.studentId && me?.id
+      ? 'Um treino em andamento de outra conta neste aparelho foi descartado.'
+      : EXEC_DISCARD_INVALID_MSG)
     return false
   }
 
@@ -9887,7 +9898,7 @@ function restoreExecutionState() {
   // Execução "em andamento" iniciada há mais de 12h: não reabre a tela com um cronômetro de
   // dias. As séries já salvas estão no banco; só a tela é descartada.
   if (Date.now() - state.startTimestamp > EXEC_RESTORE_MAX_AGE_MS) {
-    clearExecutionState()
+    _discardExecutionState(`O treino iniciado em ${fmtDateTime(state.startTimestamp)} não foi retomado (mais de 12h). As séries salvas estão no histórico.`)
     return false
   }
 
@@ -9945,7 +9956,7 @@ function restoreExecutionState() {
     return true
   } catch (err) {
     console.error('[restoreExecutionState] falhou ao restaurar, descartando estado salvo:', err)
-    clearExecutionState()
+    _discardExecutionState(EXEC_DISCARD_INVALID_MSG)
     return false
   }
 }
@@ -10129,13 +10140,30 @@ function updateExecExerciseProgress(exerciseId) {
   if (card) card.classList.toggle('done', done >= total)
 }
 
+// Texto da confirmação do "Finalizar Treino": séries salvas x previstas, contadas como em
+// updateExecExerciseProgress (aeróbico conta 1). Só lê a memória local, não consulta o banco.
+function _finishWorkoutConfirmMsg() {
+  const exes = currentWorkoutData?.workout_exercises || []
+  let total = 0, done = 0, withoutSets = 0
+  exes.forEach(ex => {
+    const saved = Object.keys(exerciseExecutions[ex.id] || {}).length
+    total += ex.exercise_type === 'aerobico' ? 1 : Math.max(1, parseInt(ex.sets) || 1)
+    done  += saved
+    if (!saved) withoutSets++
+  })
+  if (!done) return 'Nenhuma série foi registrada. Finalizar mesmo assim?'
+  let msg = `Finalizar o treino? ${done} de ${total} ${total === 1 ? 'série salva' : 'séries salvas'}.`
+  if (withoutSets) msg += `\n${withoutSets} exercício${withoutSets > 1 ? 's' : ''} sem nenhuma série ${withoutSets > 1 ? 'ficarão' : 'ficará'} como "Não executado".`
+  return msg
+}
+
 function finishWorkout() {
   if (!timerInterval) return
-  // Sem nenhuma série salva, finalizar grava "Não executado" em todos os exercícios — confirma
-  // antes (evita Iniciar/Finalizar sem querer). Cancelar não mexe em nada: timer, descanso e
-  // tela de execução seguem como estavam.
-  const hasSavedSet = Object.values(exerciseExecutions || {}).some(sets => sets && Object.keys(sets).length > 0)
-  if (currentWorkoutData && !hasSavedSet && !confirm('Nenhuma série foi registrada. Finalizar mesmo assim?')) return
+  // Sempre confirma antes de finalizar: com série salva, um toque sem querer (ex.: ao voltar
+  // para o app com a lista rolada até o botão) encerrava o treino direto. Sem nenhuma série,
+  // mantém o aviso de antes. Cancelar não mexe em nada: timer, descanso e tela de execução
+  // seguem como estavam.
+  if (currentWorkoutData && !confirm(_finishWorkoutConfirmMsg())) return
   stopMetronome()
   for (const id in restTimers) { if (restTimers[id]?.intervalId) clearInterval(restTimers[id].intervalId) }
   restTimers = {}
