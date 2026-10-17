@@ -2520,6 +2520,20 @@
           <label>Senha</label>
           <input id="s-pass" type="password" class="form-control" placeholder="Mínimo 6 caracteres" minlength="6" required>
         </div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem">
+          <div class="form-group">
+            <label>Idade</label>
+            <input id="s-age" type="number" class="form-control" placeholder="anos" min="1" max="120" step="1" required>
+          </div>
+          <div class="form-group">
+            <label>Altura</label>
+            <input id="s-height" type="number" class="form-control" placeholder="cm" min="50" max="250" step="1" required>
+          </div>
+          <div class="form-group">
+            <label>Peso</label>
+            <input id="s-weight" type="number" class="form-control" placeholder="kg" min="1" max="500" step="0.1" required>
+          </div>
+        </div>
         <button id="signup-btn" type="submit" class="btn btn-primary btn-block">Criar Conta</button>
       </form>
 
@@ -2984,6 +2998,33 @@
   </div>
 </div>
 
+<!-- COMPLETE SEU PERFIL (aluno sem idade/altura/peso) -->
+<div id="body-data-modal" class="routine-modal-overlay" style="display:none">
+  <div class="routine-modal-card" style="max-width:420px" role="dialog" aria-modal="true" aria-labelledby="bd-title">
+    <div id="bd-title" style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em;margin-bottom:.5rem">Complete seu perfil</div>
+    <p style="font-size:.88rem;color:var(--text-secondary);line-height:1.6;margin:0 0 1rem">Seu personal usa idade, altura e peso para montar e acompanhar seus treinos.</p>
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem">
+      <div class="form-group">
+        <label for="bd-age">Idade</label>
+        <input id="bd-age" type="number" class="form-control" placeholder="anos" min="1" max="120" step="1">
+      </div>
+      <div class="form-group">
+        <label for="bd-height">Altura</label>
+        <input id="bd-height" type="number" class="form-control" placeholder="cm" min="50" max="250" step="1">
+      </div>
+      <div class="form-group">
+        <label for="bd-weight">Peso</label>
+        <input id="bd-weight" type="number" class="form-control" placeholder="kg" min="1" max="500" step="0.1">
+      </div>
+    </div>
+    <div id="bd-msg" role="alert" style="font-size:.8rem;color:var(--danger);min-height:1.2em;margin:.25rem 0 .75rem"></div>
+    <div style="display:flex;gap:.75rem;justify-content:flex-end;flex-wrap:wrap">
+      <button type="button" class="btn btn-outline btn-sm" onclick="remindBodyDataLater()">Lembrar depois</button>
+      <button type="button" id="bd-save-btn" class="btn btn-primary btn-sm" onclick="saveBodyDataModal()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ─────────────────────────────────────────────
 // ÍCONES — Lucide (lucide-static v1.52.0, ISC) como SVG inline.
@@ -3194,8 +3235,10 @@ function resetAppState() {
   // password-reset-overlay fica de fora de propósito: o fluxo de recuperação controla ele.
   ;['live-execution-overlay', 'live-exec-picker-overlay', 'manual-exec-modal-overlay',
     'dup-modal-overlay', 'dup-routine-modal-overlay', 'reorder-modal-overlay',
-    'replicate-modal-overlay', 'bulk-delete-modal', 'unlink-modal', 'notif-panel-overlay', 'overlay']
+    'replicate-modal-overlay', 'bulk-delete-modal', 'unlink-modal', 'notif-panel-overlay', 'overlay',
+    'body-data-modal']
     .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none' })
+  _bodyDataPromptPending = false
 
   // Toasts com "Tentar novamente" guardam closures do usuário anterior (ex.: saveLiveSet,
   // insertWorkoutExecutions com student_id dele) — clicar depois do login de outro usuário
@@ -3340,6 +3383,8 @@ async function boot() {
   await restoreManualExecutionState()
   if (profile.role === 'student') await checkNewWorkout()
   await handleDeepLink()
+  // Depois dos restores: se um treino foi retomado, a janela fica para o fim dele.
+  if (profile.role === 'student') await checkBodyDataPrompt()
 }
 
 // Links dos e-mails de notificação (workout/routine/aluno) chegam como
@@ -3518,6 +3563,10 @@ async function doSignup(e) {
   // Cadastro público cria sempre aluno — o trigger profiles_enforce_role força isso no
   // banco de qualquer forma. Contas de personal são promovidas manualmente pelo admin.
   const role  = 'student'
+  // Validado antes do signUp: com erro aqui, a conta nem chega a ser criada.
+  const body    = readBodyData('s-age', 's-height', 's-weight')
+  const bodyErr = validateBodyData(body)
+  if (bodyErr) { setMsg(bodyErr); btn.textContent = 'Criar Conta'; btn.disabled = false; return }
 
   let authResult
   try {
@@ -3549,6 +3598,13 @@ async function doSignup(e) {
   const { error: pe } = await sb.from('profiles').insert({ id: userId, name, role, email })
   if (pe) { setMsg('Conta criada, mas erro ao salvar perfil: ' + pe.message, 'error') }
   else {
+    // Depois do profiles (FK). Se falhar, a conta segue válida: a janela "Complete seu
+    // perfil" do login cobra os dados de novo.
+    const { error: spErr } = await sb.from('student_profiles').insert({
+      student_id: userId, age: body.age, height_cm: body.height, weight_kg: body.weight,
+      updated_at: new Date().toISOString()
+    })
+    if (spErr) console.error('[doSignup] student_profiles falhou:', spErr.message)
     // Fire-and-forget: avisa o personal padrão que um novo aluno se cadastrou,
     // antes mesmo de qualquer vínculo. A sessão do signUp já está ativa aqui,
     // então authHeader() tem um token válido do próprio aluno recém-criado.
@@ -6433,6 +6489,112 @@ async function openNewWorkoutForRoutine(studentId, studentName, routineId, routi
   })
 }
 
+// ── Dados corporais (idade, altura, peso) ──
+// Faixas iguais às dos campos (min/max) do Meu Perfil. Campo vazio vira NaN e cai na validação.
+function readBodyData(ageId, heightId, weightId) {
+  return {
+    age:    parseInt(document.getElementById(ageId)?.value),
+    height: parseFloat(document.getElementById(heightId)?.value),
+    weight: parseFloat(document.getElementById(weightId)?.value)
+  }
+}
+
+function validateBodyData({ age, height, weight }) {
+  if (!Number.isInteger(age) || age < 1 || age > 120)          return 'Informe sua idade (entre 1 e 120 anos).'
+  if (!Number.isFinite(height) || height < 50 || height > 250) return 'Informe sua altura em centímetros (entre 50 e 250).'
+  if (!Number.isFinite(weight) || weight < 1 || weight > 500)  return 'Informe seu peso em kg (entre 1 e 500).'
+  return null
+}
+
+function isBodyDataMissing(sp) {
+  return !sp || sp.age == null || sp.height_cm == null || sp.weight_kg == null
+}
+
+// "Lembrar depois" vale 24h por conta, só neste aparelho (localStorage; se falhar, a janela
+// simplesmente volta no próximo login).
+const BODY_DATA_SNOOZE_KEY = 'personalpro-bodydata-snooze'
+const BODY_DATA_SNOOZE_MS  = 24 * 60 * 60 * 1000
+let _bodyDataPromptPending = false   // faltam dados, mas havia treino em andamento: mostra ao fechar o "Treino Concluído"
+
+function _bodyDataSnoozed(userId) {
+  try {
+    const until = JSON.parse(localStorage.getItem(BODY_DATA_SNOOZE_KEY) || '{}')[userId]
+    return typeof until === 'number' && Date.now() < until
+  } catch { return false }
+}
+
+function _setBodyDataSnooze(userId, until) {
+  try {
+    const all = JSON.parse(localStorage.getItem(BODY_DATA_SNOOZE_KEY) || '{}')
+    if (until) all[userId] = until; else delete all[userId]
+    localStorage.setItem(BODY_DATA_SNOOZE_KEY, JSON.stringify(all))
+  } catch {}
+}
+
+// Chamada no fim do boot (só aluno). Não abre por cima de um treino em andamento nem da
+// avaliação/comparativo: a janela de modais (z-index 9000) cobriria a execução (1500).
+async function checkBodyDataPrompt() {
+  const uid = profile?.id
+  if (!uid || profile.role !== 'student' || _bodyDataSnoozed(uid)) return
+  let sp
+  try {
+    const { data, error } = await sb.from('student_profiles').select('age, height_cm, weight_kg').eq('student_id', uid).maybeSingle()
+    if (error) return
+    sp = data
+  } catch { return }
+  // Logout ou troca de conta durante a consulta.
+  if (profile?.id !== uid || !isBodyDataMissing(sp)) return
+  if (timerInterval || _execPhase) { _bodyDataPromptPending = true; return }
+  openBodyDataModal(sp)
+}
+
+function _maybeShowPendingBodyDataPrompt() {
+  if (!_bodyDataPromptPending) return
+  _bodyDataPromptPending = false
+  checkBodyDataPrompt()
+}
+
+function openBodyDataModal(sp) {
+  document.getElementById('bd-age').value    = sp?.age       ?? ''
+  document.getElementById('bd-height').value = sp?.height_cm ?? ''
+  document.getElementById('bd-weight').value = sp?.weight_kg ?? ''
+  document.getElementById('bd-msg').textContent = ''
+  document.getElementById('body-data-modal').style.display = 'flex'
+}
+
+function closeBodyDataModal() {
+  document.getElementById('body-data-modal').style.display = 'none'
+}
+
+function remindBodyDataLater() {
+  if (profile?.id) _setBodyDataSnooze(profile.id, Date.now() + BODY_DATA_SNOOZE_MS)
+  closeBodyDataModal()
+}
+
+async function saveBodyDataModal() {
+  const body = readBodyData('bd-age', 'bd-height', 'bd-weight')
+  const err  = validateBodyData(body)
+  const msg  = document.getElementById('bd-msg')
+  if (err) { msg.textContent = err; return }
+  const btn = document.getElementById('bd-save-btn')
+  btn.disabled = true; btn.textContent = 'Salvando…'
+  try {
+    const { error } = await sb.from('student_profiles').upsert(
+      { student_id: profile.id, age: body.age, height_cm: body.height, weight_kg: body.weight, updated_at: new Date().toISOString() },
+      { onConflict: 'student_id' }
+    )
+    if (error) throw error
+    _setBodyDataSnooze(profile.id, null)
+    closeBodyDataModal()
+    toast('Perfil completo. Obrigado!', 'success')
+    if (currentView === 'profile') renderProfile()
+  } catch (e) {
+    msg.textContent = 'Não foi possível salvar. Verifique sua conexão e tente novamente.'
+    console.error('[saveBodyDataModal]', e?.message || e)
+  }
+  btn.disabled = false; btn.textContent = 'Salvar'
+}
+
 async function checkNewWorkout() {
   try {
     const { data, error } = await sb
@@ -6499,15 +6661,15 @@ async function renderProfile() {
           <div class="form-grid">
             <div class="form-group">
               <label>Idade (anos)</label>
-              <input id="prof-age" type="number" class="form-control" placeholder="Ex: 25" min="1" max="120" value="${data?.age ?? ''}">
+              <input id="prof-age" type="number" class="form-control" placeholder="Ex: 25" min="1" max="120" step="1" required value="${data?.age ?? ''}">
             </div>
             <div class="form-group">
               <label>Altura (cm)</label>
-              <input id="prof-height" type="number" class="form-control" placeholder="Ex: 173 (em cm)" step="1" min="50" max="250" value="${data?.height_cm ?? ''}">
+              <input id="prof-height" type="number" class="form-control" placeholder="Ex: 173 (em cm)" step="1" min="50" max="250" required value="${data?.height_cm ?? ''}">
             </div>
             <div class="form-group">
               <label>Peso (kg)</label>
-              <input id="prof-weight" type="number" class="form-control" placeholder="Ex: 75.5" step="0.1" min="1" max="500" value="${data?.weight_kg ?? ''}">
+              <input id="prof-weight" type="number" class="form-control" placeholder="Ex: 75.5" step="0.1" min="1" max="500" required value="${data?.weight_kg ?? ''}">
             </div>
           </div>
           <button type="submit" id="prof-btn" class="btn btn-primary" style="margin-top:.5rem">Salvar</button>
@@ -6524,11 +6686,11 @@ async function renderProfile() {
 async function saveProfile(e) {
   e.preventDefault()
   const btn      = document.getElementById('prof-btn')
-  btn.textContent = 'Salvando…'; btn.disabled = true
   const username = (document.getElementById('prof-username')?.value || '').trim() || null
-  const age      = parseInt(document.getElementById('prof-age')?.value)      ?? null
-  const height   = parseFloat(document.getElementById('prof-height')?.value) ?? null
-  const weight   = parseFloat(document.getElementById('prof-weight')?.value) ?? null
+  const { age, height, weight } = readBodyData('prof-age', 'prof-height', 'prof-weight')
+  const bodyErr  = validateBodyData({ age, height, weight })
+  if (bodyErr) { toast(bodyErr, 'error'); return }
+  btn.textContent = 'Salvando…'; btn.disabled = true
   try {
     const [spRes, profRes] = await Promise.all([
       sb.from('student_profiles').upsert(
@@ -6540,6 +6702,7 @@ async function saveProfile(e) {
     if (spRes.error) throw spRes.error
     if (profRes.error) throw profRes.error
     profile.username = username
+    _setBodyDataSnooze(profile.id, null)
     toast('Perfil salvo com sucesso!', 'success')
   } catch (err) {
     toast('Erro ao salvar perfil: ' + err.message, 'error')
@@ -6642,6 +6805,10 @@ async function renderPersonalProfile() {
   const body = document.getElementById('personal-profile-body')
   body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando perfil…</div>'
   try {
+    // RLS student_profiles_own (student_id = auth.uid()) vale para qualquer papel.
+    const { data: sp, error: spErr } = await sb.from('student_profiles').select('weight_kg').eq('student_id', profile.id).maybeSingle()
+    if (spErr) throw spErr
+    _personalHadWeight = sp?.weight_kg != null
     body.innerHTML = `
       <div class="card reveal" style="max-width:480px">
         <div class="card-header">
@@ -6672,6 +6839,11 @@ async function renderPersonalProfile() {
             <input id="personal-prof-username" type="text" class="form-control" placeholder="Ex: prof_joao, Mestre Fitness…" value="${escHtml(profile.username || '')}">
             <div style="font-size:.75rem;color:var(--text-muted);margin-top:.3rem">Aparece para seus alunos no lugar do nome completo. Deixe em branco para usar o nome completo.</div>
           </div>
+          <div class="form-group" style="margin-bottom:1rem">
+            <label>Peso (kg)</label>
+            <input id="personal-prof-weight" type="number" class="form-control" placeholder="Ex: 75.5" step="0.1" min="1" max="500" value="${sp?.weight_kg ?? ''}">
+            <div style="font-size:.75rem;color:var(--text-muted);margin-top:.3rem">Usado como carga nos exercícios de peso corporal dos treinos que você faz.</div>
+          </div>
           <button type="submit" id="personal-prof-btn" class="btn btn-primary" style="margin-top:.5rem">Salvar</button>
         </form>
       </div>`
@@ -6683,14 +6855,31 @@ async function renderPersonalProfile() {
   }
 }
 
+let _personalHadWeight = false   // havia peso salvo ao abrir o perfil: campo vazio então apaga
+
 async function savePersonalProfile(e) {
   e.preventDefault()
   const btn = document.getElementById('personal-prof-btn')
+  const username  = (document.getElementById('personal-prof-username')?.value || '').trim() || null
+  const weightRaw = (document.getElementById('personal-prof-weight')?.value || '').trim()
+  const weight    = weightRaw === '' ? null : parseFloat(weightRaw)
+  if (weight !== null && (!Number.isFinite(weight) || weight < 1 || weight > 500)) {
+    toast('Informe seu peso em kg (entre 1 e 500) ou deixe em branco.', 'error'); return
+  }
   btn.textContent = 'Salvando…'; btn.disabled = true
-  const username = (document.getElementById('personal-prof-username')?.value || '').trim() || null
   try {
-    const { error } = await sb.from('profiles').update({ username }).eq('id', profile.id)
-    if (error) throw error
+    // Só o peso: upsert com essas colunas não mexe em idade/altura. Sem peso e sem linha,
+    // não cria registro vazio.
+    const writes = [sb.from('profiles').update({ username }).eq('id', profile.id)]
+    if (weight !== null || _personalHadWeight) {
+      writes.push(sb.from('student_profiles').upsert(
+        { student_id: profile.id, weight_kg: weight, updated_at: new Date().toISOString() },
+        { onConflict: 'student_id' }
+      ))
+    }
+    const results = await Promise.all(writes)
+    for (const r of results) if (r.error) throw r.error
+    _personalHadWeight = weight !== null
     profile.username = username
     toast('Perfil salvo com sucesso!', 'success')
   } catch (err) {
@@ -9510,6 +9699,7 @@ function dismissTimerModal() {
   if (el) el.textContent = '00:00:00'
   const el2 = document.getElementById('exec-timer-display')
   if (el2) el2.textContent = '00:00:00'
+  _maybeShowPendingBodyDataPrompt()
 }
 
 // ─────────────────────────────────────────────
