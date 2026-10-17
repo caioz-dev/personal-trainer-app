@@ -2830,7 +2830,7 @@
   <div class="timer-modal-card" style="max-width:420px;width:calc(100% - 2rem);text-align:left;max-height:90vh;overflow-y:auto;overflow-x:hidden">
     <div style="font-size:2rem;text-align:center;margin-bottom:.5rem;color:var(--warning);line-height:1"><span data-icon="star"></span></div>
     <div class="timer-modal-title" style="text-align:center;margin-bottom:.2rem">Autoavaliação</div>
-    <div class="timer-modal-sub" style="text-align:center;margin-bottom:1.5rem">Como foi o seu treino hoje?</div>
+    <div id="review-modal-sub" class="timer-modal-sub" style="text-align:center;margin-bottom:1.5rem">Como foi o seu treino hoje?</div>
 
     <div class="form-group">
       <label>Como você se sentiu?</label>
@@ -10200,6 +10200,7 @@ function restoreExecutionState() {
       // próximo boot tenta de novo) — e só se ainda for desta sessão, porque o aluno pode ter
       // iniciado outro treino nesse meio-tempo.
       if (state.finishedAt && Date.now() - state.finishedAt > REVIEW_RESTORE_MAX_AGE_MS) {
+        toast(`A avaliação do treino finalizado em ${fmtDateTime(state.finishedAt)} não foi reaberta (mais de 12h). Os exercícios sem série ficaram como "Não executado".`, 'info')
         const staleSessionId = state.sessionId
         saveWorkoutExecutions(state.workoutId).then(() => {
           try {
@@ -10217,7 +10218,11 @@ function restoreExecutionState() {
       }
 
       _pendingExecutionsSave = saveWorkoutExecutions(state.workoutId)
-      showReviewModal(state.finalTime || '00:00:00')
+      // Avisa que é a avaliação de um treino JÁ finalizado (antes reabria sem explicação e
+      // parecia que o treino tinha concluído sozinho ao voltar para o app).
+      const when = state.finishedAt ? ` em ${fmtDateTime(state.finishedAt)}` : ''
+      toast(`Você finalizou um treino${when} e a avaliação ficou pendente. Avalie agora ou toque em Pular.`, 'info')
+      showReviewModal(state.finalTime || '00:00:00', { pendingSince: state.finishedAt || null })
       return true
     } catch (err) {
       console.error('[restoreExecutionState] falhou ao restaurar avaliação pendente, descartando estado salvo:', err)
@@ -10612,10 +10617,19 @@ function finishWorkout() {
 // ─────────────────────────────────────────────
 // WORKOUT REVIEW
 // ─────────────────────────────────────────────
-function showReviewModal(finalTime) {
+// opts.pendingSince (só no restore da fase 'review'): o subtítulo diz qual treino e quando foi
+// finalizado. Sem opts, volta ao texto padrão (o elemento é reaproveitado entre sessões).
+function showReviewModal(finalTime, opts = {}) {
   _pendingReviewFinalTime = finalTime
   _selectedFeeling        = null
   _selectedEffort         = null
+  const sub = document.getElementById('review-modal-sub')
+  if (sub) {
+    const name = currentWorkoutData?.name ? ` "${currentWorkoutData.name}"` : ''
+    sub.textContent = opts.pendingSince !== undefined
+      ? `Avaliação pendente do treino${name}${opts.pendingSince ? `, finalizado em ${fmtDateTime(opts.pendingSince)}` : ''}.`
+      : 'Como foi o seu treino hoje?'
+  }
   document.getElementById('review-modal-notes').value = ''
   document.querySelectorAll('.review-feeling-btn').forEach(b => b.classList.remove('selected'))
   document.querySelectorAll('.review-effort-btn').forEach(b => b.classList.remove('selected'))
@@ -11942,6 +11956,14 @@ function clearLiveExecutionState() {
   try { localStorage.removeItem(LIVE_EXEC_STATE_KEY) } catch {}
 }
 
+// Como _discardExecutionState, para o ao vivo: antes o snapshot sumia em silêncio e o
+// registro parecia ter sido finalizado sozinho. Não grava nada — as séries já estão no banco.
+function _discardLiveExecutionState(msg) {
+  clearLiveExecutionState()
+  toast(msg, 'info')
+}
+const LIVE_DISCARD_INVALID_MSG = 'Não foi possível retomar o registro ao vivo (dados locais inválidos). As séries já salvas estão no histórico.'
+
 // Chamada no boot, depois que `me`/`profile` já estão resolvidos. Séries já confirmadas
 // aqui já estão salvas no banco (upsert é por série) — isto só restaura a TELA para o
 // personal continuar de onde parou, não é uma segunda fonte de verdade dos dados.
@@ -11952,17 +11974,26 @@ function restoreLiveExecutionState() {
   if (!raw) return false
 
   let state
-  try { state = JSON.parse(raw) } catch { clearLiveExecutionState(); return false }
-  if (!state || !state.workoutId || !state.liveWorkoutData || !state.startTimestamp) {
-    clearLiveExecutionState()
+  try { state = JSON.parse(raw) } catch { _discardLiveExecutionState(LIVE_DISCARD_INVALID_MSG); return false }
+  if (!state || typeof state !== 'object' || !state.workoutId || !state.liveWorkoutData || !state.startTimestamp) {
+    _discardLiveExecutionState(LIVE_DISCARD_INVALID_MSG)
     return false
   }
   // Só retoma a sessão do próprio personal (snapshot sem personalId não tem dono conhecido),
   // com session_id válido e iniciada há menos de 12h.
-  if (!state.personalId || !profile?.id || state.personalId !== profile.id
-      || !UUID_V4_RE.test(state.sessionId || '')
-      || Date.now() - state.startTimestamp > EXEC_RESTORE_MAX_AGE_MS) {
-    clearLiveExecutionState()
+  if (!state.personalId || !profile?.id || state.personalId !== profile.id) {
+    _discardLiveExecutionState(state.personalId && profile?.id
+      ? 'Um registro ao vivo de outra conta neste aparelho foi descartado.'
+      : LIVE_DISCARD_INVALID_MSG)
+    return false
+  }
+  if (!UUID_V4_RE.test(state.sessionId || '')) {
+    _discardLiveExecutionState(LIVE_DISCARD_INVALID_MSG)
+    return false
+  }
+  const liveWho = state.studentName ? ` de ${state.studentName}` : ''
+  if (Date.now() - state.startTimestamp > EXEC_RESTORE_MAX_AGE_MS) {
+    _discardLiveExecutionState(`O registro ao vivo${liveWho}, iniciado em ${fmtDateTime(state.startTimestamp)}, não foi retomado (mais de 12h). As séries salvas estão no histórico.`)
     return false
   }
 
@@ -11991,16 +12022,39 @@ function restoreLiveExecutionState() {
       updateLiveTimerDisplay()
     }, 1000)
 
+    // Deixa claro que a tela voltou e que nada foi finalizado.
+    toast(`Registro ao vivo${liveWho} retomado (iniciado em ${fmtDateTime(state.startTimestamp)}).`, 'info')
     return true
   } catch (err) {
     console.error('[restoreLiveExecutionState] falhou ao restaurar, descartando estado salvo:', err)
-    clearLiveExecutionState()
+    _discardLiveExecutionState(LIVE_DISCARD_INVALID_MSG)
     return false
   }
 }
 
+// Texto da confirmação do "Finalizar Registro": séries salvas x previstas, contadas como em
+// updateLiveExerciseProgress (aeróbico conta 1). Só lê a memória local, não consulta o banco.
+function _finishLiveConfirmMsg() {
+  const exes = _liveWorkoutData?.workout_exercises || []
+  let total = 0, done = 0, withoutSets = 0
+  exes.forEach(ex => {
+    const saved = Object.keys(_liveSavedSets[ex.id] || {}).length
+    total += ex.exercise_type === 'aerobico' ? 1 : Math.max(1, parseInt(ex.sets) || 1)
+    done  += saved
+    if (!saved) withoutSets++
+  })
+  const who = _liveExecStudentName ? ` de ${_liveExecStudentName}` : ''
+  if (!done) return `Finalizar o registro ao vivo${who}? Nenhuma série foi salva.`
+  let msg = `Finalizar o registro ao vivo${who}? ${done} de ${total} ${total === 1 ? 'série salva' : 'séries salvas'}.`
+  if (withoutSets) msg += `\n${withoutSets} exercício${withoutSets > 1 ? 's' : ''} sem nenhuma série.`
+  return msg
+}
+
 function finishLiveExecution() {
   if (!_liveTimerInterval) return
+  // Sempre confirma: ao voltar para o app, um toque que "atravessa" até o botão encerrava o
+  // registro direto. Cancelar não mexe em nada: cronômetro, descansos e tela seguem como estavam.
+  if (_liveWorkoutData && !confirm(_finishLiveConfirmMsg())) return
   stopMetronome()
   for (const id in restTimers) { if (restTimers[id]?.intervalId) clearInterval(restTimers[id].intervalId) }
   restTimers = {}
