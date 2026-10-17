@@ -3365,6 +3365,7 @@ async function boot() {
   const { data, error } = await sb.from('profiles').select('*').eq('id', me.id).maybeSingle()
   if (error || !data) { booted = false; showAuthSection(); return }
   profile = data
+  await detectBodyweightColumns()
   buildSidebar()
   document.getElementById('boot-loading').style.display = 'none'
   document.getElementById('auth-section').style.display = 'none'
@@ -4575,12 +4576,12 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
               ${ex.method_description ? `<div style="font-size:.68rem;color:var(--text-muted);margin-top:.1rem;font-style:italic">${escHtml(ex.method_description)}</div>` : ''}
             </td>
             <td>${ex.sets} série${ex.sets > 1 ? 's' : ''}</td>
-            <td>${ex.weight_kg} kg × ${ex.reps} reps</td>
+            <td>${isTimedEx(ex) ? `${loadLabel(ex)} × ${ex.hold_seconds} s` : `${loadLabel(ex)} × ${ex.reps} reps`}</td>
             <td>${escHtml(ex.cadencia || '—')}</td>
             <td>${ex.tempo_descanso != null ? ex.tempo_descanso + 's' : '—'}</td>
             <td class="vol-cell">${parseFloat(ex.volume).toLocaleString('pt-BR')} kg</td>
           </tr>`
-          const detailLine = `${ex.sets} série${ex.sets > 1 ? 's' : ''} × ${ex.reps} reps @ ${ex.weight_kg} kg — Vol: ${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
+          const detailLine = `${ex.sets} série${ex.sets > 1 ? 's' : ''} × ${isTimedEx(ex) ? `${ex.hold_seconds} s` : `${ex.reps} reps`} @ ${loadLabel(ex)} — Vol: ${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
           const subParts = [
             ex.cadencia ? `Cadência: ${escHtml(ex.cadencia)}` : null,
             ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null
@@ -5091,7 +5092,7 @@ async function editWorkout(workoutId) {
       if (warn) warn.style.display = 'block'
       if (saveBtn) saveBtn.disabled = true
     }
-    sel.onchange = syncWfStudentInactiveWarning
+    sel.onchange = onWfStudentChange
   }
   document.getElementById('wf-name').value     = workout.name || ''
   document.getElementById('wf-date').value     = workout.date || ''
@@ -5108,6 +5109,7 @@ async function editWorkout(workoutId) {
   if (!exes.length) addExercise()
   else _populateExerciseRows(exes, { withDbId: true })
   refreshTotalVolume()
+  _refreshWfBodyweight()
 
   // Exibe campo de dia da semana se o treino pertence a uma rotina
   const _riEl  = document.getElementById('wf-routine-id')
@@ -5157,6 +5159,16 @@ function _populateExerciseRows(exesArray, { withDbId = false } = {}) {
       row.querySelector('.ex-descanso').value    = ex.tempo_descanso ?? ''
       row.querySelector('.ex-method').value      = ex.training_method ?? ''
       row.querySelector('.ex-method-desc').value = ex.method_description ?? ''
+      const bwEl = row.querySelector('.ex-bodyweight')
+      if (bwEl) bwEl.checked = ex.bodyweight === true
+      const measureEl = row.querySelector('.ex-measure')
+      if (measureEl) measureEl.value = isTimedEx(ex) ? 'tempo' : 'reps'
+      const holdEl = row.querySelector('.ex-hold')
+      if (holdEl) holdEl.value = ex.hold_seconds ?? ''
+      // Por tempo, reps é 0 no banco: deixa o campo vazio para o caso de voltar a reps.
+      if (isTimedEx(ex)) row.querySelector('.ex-reps').value = ''
+      _syncMeasureFields(exerciseCounter)
+      _applyWfBodyweightToRow(exerciseCounter)
       refreshExerciseVolume(exerciseCounter)
     }
   })
@@ -5230,7 +5242,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
         // a este personal — a RLS de workouts (created_by = auth.uid()) já faz esse filtro,
         // o !inner só transforma o embed opcional num inner join que descarta a linha inteira
         // em vez de retornar workout=null pra treinos de outro personal (ver ficha do aluno).
-        .select('*, workout_exercises(exercise_name, exercise_type, sets, reps, weight_kg, duration_min, distance_km, speed_kmh, hr_min, hr_max, training_method, method_description), workouts!inner(name, date)')
+        .select(`*, workout_exercises(${histExerciseCols()}), workouts!inner(name, date)`)
         .eq('student_id', studentId)
         .order('executed_at', { ascending: false }),
       sb.from('student_profiles').select('*').eq('student_id', studentId).maybeSingle(),
@@ -5279,7 +5291,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
               : ''
             const detail  = isAero
               ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—'
-              : `${ex.sets}×${ex.reps} @ ${ex.weight_kg} kg`
+              : compactPrescription(ex)
             const volCell = isAero ? '—' : `${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
             const row = `
               <tr>
@@ -5460,10 +5472,10 @@ async function renderStudentSheet(studentId, studentName, gen) {
               if (!notExecuted) totalExecutedMusc += executed
 
               const diff        = executed - planned
-              const plannedTxt  = planned > 0 ? `${planWeight} kg × ${planReps} reps × ${planSets} séries = ${planned.toLocaleString('pt-BR')} kg` : '—'
+              const plannedTxt  = isTimedEx(we) ? `${loadLabel(we, planWeight)} × ${we.hold_seconds} s × ${planSets} séries (por tempo)` : planned > 0 ? `${loadLabel(we, planWeight)} × ${planReps} reps × ${planSets} séries = ${planned.toLocaleString('pt-BR')} kg` : '—'
               const executedTxt = notExecuted
                 ? '<span style="color:var(--text-muted)">Não executado</span>'
-                : sortedSets.map(s => `S${s.set_number}: ${s.weight_executed}×${s.reps_executed}`).join(' · ') + ` = ${executed.toLocaleString('pt-BR')} kg`
+                : sortedSets.map(s => execSetText(s.set_number, s)).join(' · ') + ` = ${executed.toLocaleString('pt-BR')} kg`
               const diffCell    = notExecuted ? '—'
                 : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>`
                 : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>`
@@ -5780,7 +5792,7 @@ async function renderMyWorkout(gen) {
 
     const [execRes, reviewsRes, routinesRes] = await Promise.all([
       sb.from('workout_executions')
-        .select('*, workout_exercises(exercise_name, exercise_type, sets, reps, weight_kg, duration_min, distance_km, speed_kmh, hr_min, hr_max, training_method, method_description), workouts(name, date)')
+        .select(`*, workout_exercises(${histExerciseCols()}), workouts(name, date)`)
         .eq('student_id', studentId)
         .order('executed_at', { ascending: false }),
       sb.from('workout_reviews').select('*').eq('student_id', studentId).order('created_at', { ascending: false }),
@@ -5885,8 +5897,8 @@ async function renderMyWorkout(gen) {
               const notExecuted = sortedSets.length === 0
               let executed = 0; sortedSets.forEach(s => { executed += (parseFloat(s.weight_executed) || 0) * (s.reps_executed || 0) }); if (!notExecuted) totalExecutedMusc += executed
               const diff        = executed - planned
-              const plannedTxt  = planned > 0 ? `${planWeight} kg × ${planReps} reps × ${planSets} séries = ${planned.toLocaleString('pt-BR')} kg` : '—'
-              const executedTxt = notExecuted ? '<span style="color:var(--text-muted)">Não executado</span>' : sortedSets.map(s => `S${s.set_number}: ${s.weight_executed}×${s.reps_executed}`).join(' · ') + ` = ${executed.toLocaleString('pt-BR')} kg`
+              const plannedTxt  = isTimedEx(we) ? `${loadLabel(we, planWeight)} × ${we.hold_seconds} s × ${planSets} séries (por tempo)` : planned > 0 ? `${loadLabel(we, planWeight)} × ${planReps} reps × ${planSets} séries = ${planned.toLocaleString('pt-BR')} kg` : '—'
+              const executedTxt = notExecuted ? '<span style="color:var(--text-muted)">Não executado</span>' : sortedSets.map(s => execSetText(s.set_number, s)).join(' · ') + ` = ${executed.toLocaleString('pt-BR')} kg`
               const diffCell    = notExecuted ? '—' : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>` : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>` : `<span style="color:var(--text-muted)">= 0 kg</span>`
               const methodTag = we?.training_method ? `${icon('zap')} ${escHtml(we.training_method)}` : ''
               const row = `<tr><td style="font-weight:500;color:var(--text-secondary)">${escHtml(we?.exercise_name || '—')}${methodTag ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">${methodTag}</div>` : ''}</td><td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td><td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td><td style="font-size:.82rem">${diffCell}</td></tr>`
@@ -5997,7 +6009,7 @@ async function renderMyWorkout(gen) {
       const exPairs   = exes.length
         ? exes.map(ex => {
             const isAero  = ex.exercise_type === 'aerobico'
-            const detail  = isAero ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—' : `${ex.sets}×${ex.reps} @ ${ex.weight_kg} kg`
+            const detail  = isAero ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—' : compactPrescription(ex)
             const volCell = isAero ? '—' : `${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
             const row  = `<tr><td style="padding-left:1.5rem;font-weight:500;color:var(--text-secondary)">${escHtml(ex.exercise_name)}</td><td>${detail}</td><td class="vol-cell">${volCell}</td></tr>`
             const card = `<div class="ex-card"><div class="ex-card-name">${escHtml(ex.exercise_name)}</div><div class="ex-card-detail">${detail}${isAero ? '' : ` — Vol: ${volCell}`}</div></div>`
@@ -6251,7 +6263,7 @@ function _routineExercisesHTML(exes) {
     const isAero = ex.exercise_type === 'aerobico'
     const detail = isAero
       ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—'
-      : `${ex.sets}×${ex.reps} @ ${ex.weight_kg} kg`
+      : compactPrescription(ex)
     return `<div style="display:flex;align-items:baseline;gap:.5rem;padding:.35rem 1rem;border-bottom:1px solid var(--border-subtle)">
       <span style="flex:1;min-width:0;font-size:.82rem;font-weight:600;color:var(--text-secondary)">${escHtml(ex.exercise_name)}${ex.training_method ? `<span style="font-size:.68rem;color:var(--accent-soft);margin-left:.35rem">${icon('zap')} ${escHtml(ex.training_method)}</span>` : ''}</span>
       <span style="font-size:.77rem;color:var(--text-muted);white-space:nowrap">${detail}</span>
@@ -7130,7 +7142,8 @@ async function renderProgress(studentIdOverride) {
                   style="width:auto;font-size:.82rem;padding:.4rem .75rem"
                   onchange="updateProgressChart()">
             <option value="weight">Carga máx (kg)</option>
-            <option value="volume">Volume total (kg)</option>
+            <option value="volume">Volume total (kg)</option>${_bwColumnsReady ? `
+            <option value="seconds">Tempo (s)</option>` : ''}
           </select>
         </div>
         <div class="form-group" style="margin:.75rem 0 1.25rem">
@@ -7562,7 +7575,7 @@ function updateProgressCompareChart(metric) {
     noData.style.display = noData.textContent ? 'block' : 'none'
   }
   if (!ptsA.length && !ptsB.length) return
-  const unitMap = { weight: 'kg', volume: 'kg', distance: 'km', speed: 'km/h', duration: 'min' }
+  const unitMap = { weight: 'kg', volume: 'kg', distance: 'km', speed: 'km/h', duration: 'min', seconds: 's' }
   progressChart = buildProgressCompareChart(ctx, [{ label: labelA, points: ptsA }, { label: labelB, points: ptsB }], unitMap[metric] || 'kg')
 }
 
@@ -7641,6 +7654,7 @@ function progressPointsFor(executions, exerciseName, metric) {
     else if (metric === 'distance') value = Math.max(0, ...exes.map(ex => parseFloat(ex.distance_executed_km)  || 0))
     else if (metric === 'speed')    value = Math.max(0, ...exes.map(ex => parseFloat(ex.speed_executed_kmh)    || 0))
     else if (metric === 'duration') value = Math.max(0, ...exes.map(ex => parseFloat(ex.duration_executed_min) || 0))
+    else if (metric === 'seconds')  value = Math.max(0, ...exes.map(ex => parseFloat(ex.seconds_executed)      || 0))
     if (value > 0) points.push({ date: day, value })
   }
   return points
@@ -7740,9 +7754,10 @@ function updateProgressMetrics() {
   } else {
     metricSel.innerHTML = [
       {value: 'weight', label: 'Carga máx (kg)'},
-      {value: 'volume', label: 'Volume total (kg)'}
+      {value: 'volume', label: 'Volume total (kg)'},
+      ...(_bwColumnsReady ? [{value: 'seconds', label: 'Tempo (s)'}] : [])
     ].map(o => `<option value="${o.value}"${o.value === currentVal ? ' selected' : ''}>${o.label}</option>`).join('')
-    if (!['weight','volume'].includes(currentVal)) metricSel.value = 'weight'
+    if (!['weight','volume', ...(_bwColumnsReady ? ['seconds'] : [])].includes(currentVal)) metricSel.value = 'weight'
   }
   updateProgressChart()
 }
@@ -7774,7 +7789,7 @@ function updateProgressChart() {
   }
   if (!withData.length) return
 
-  const unitMap = { weight: 'kg', volume: 'kg', distance: 'km', speed: 'km/h', duration: 'min' }
+  const unitMap = { weight: 'kg', volume: 'kg', distance: 'km', speed: 'km/h', duration: 'min', seconds: 's' }
   const unit    = unitMap[metric] || 'kg'
   const colors  = progressPalette()
 
@@ -7853,7 +7868,10 @@ function saveWorkoutFormState(active = true) {
       recovery_interval_min:  row.querySelector('.ex-recovery-interval')?.value ?? '',
       recovery_speed_kmh:     row.querySelector('.ex-recovery-speed')?.value ?? '',
       hr_min:                 row.querySelector('.ex-hr-min')?.value ?? '',
-      hr_max:                 row.querySelector('.ex-hr-max')?.value ?? ''
+      hr_max:                 row.querySelector('.ex-hr-max')?.value ?? '',
+      bodyweight:             !!row.querySelector('.ex-bodyweight')?.checked,
+      measure:                row.querySelector('.ex-measure')?.value === 'tempo' ? 'tempo' : 'reps',
+      hold_seconds:           row.querySelector('.ex-hold')?.value ?? ''
     }))
 
     const redirectCtx = editingWorkoutId
@@ -7981,7 +7999,7 @@ async function restoreWorkoutFormState() {
       grp.style.display = 'none'
       sel.innerHTML = `<option value="${profile.id}" selected>${escHtml(profile.name)}</option>`
     }
-    sel.onchange = syncWfStudentInactiveWarning
+    sel.onchange = onWfStudentChange
 
     document.getElementById('wf-name').value     = state.name || ''
     document.getElementById('wf-date').value     = state.date || ''
@@ -8009,6 +8027,7 @@ async function restoreWorkoutFormState() {
     // linhas existentes como novas e os exercícios originais como removidos.
     else _populateExerciseRows(state.exercises, { withDbId: !!state.editingWorkoutId })
     refreshTotalVolume()
+    _refreshWfBodyweight()
 
     // navigateTo('workout') acima já disparou setupWorkoutForm() internamente, que reseta o
     // formulário e regrava um rascunho em branco no localStorage antes deste ponto — resalva
@@ -8135,7 +8154,7 @@ async function setupWorkoutForm(opts = {}) {
     sel.innerHTML = `<option value="${profile.id}" selected>${escHtml(profile.name)}</option>`
     sel.required = false
   }
-  sel.onchange = syncWfStudentInactiveWarning
+  sel.onchange = onWfStudentChange
 
   document.getElementById('wf-name').value     = ''
   document.getElementById('wf-date').value     = today()
@@ -8164,6 +8183,7 @@ async function setupWorkoutForm(opts = {}) {
   exerciseCounter = 0
   addExercise()
   refreshTotalVolume()
+  _refreshWfBodyweight()
   saveWorkoutFormState()
 
   // Carrega o catálogo de nomes já usados pra autocompletar e normalizar grafia ao salvar
@@ -8218,12 +8238,31 @@ function addExercise() {
           <label>Carga (kg)</label>
           <input type="number" class="form-control ex-weight" placeholder="80" step="0.5" min="0" required
                  oninput="refreshExerciseVolume(${id})">
-        </div>
+        </div>${_bwColumnsReady ? `
         <div class="form-group">
+          <label>Medida</label>
+          <select class="form-control ex-measure" onchange="onExerciseMeasureChange(${id})">
+            <option value="reps">Repetições</option>
+            <option value="tempo">Tempo (segundos)</option>
+          </select>
+        </div>` : ''}
+        <div class="form-group ex-reps-group">
           <label>Repetições</label>
           <input type="number" class="form-control ex-reps" placeholder="12" min="1" required
                  oninput="refreshExerciseVolume(${id})">
+        </div>${_bwColumnsReady ? `
+        <div class="form-group ex-hold-group" style="display:none">
+          <label>Tempo por série (s)</label>
+          <input type="number" class="form-control ex-hold" placeholder="30" min="1" max="3600" step="1"
+                 oninput="refreshExerciseVolume(${id})">
         </div>
+        <div class="form-group form-full ex-bw-group">
+          <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+            <input type="checkbox" class="ex-bodyweight" onchange="onExerciseBodyweightChange(${id})" style="width:auto;margin:0">
+            Peso corporal
+          </label>
+          <div class="ex-bw-hint" style="font-size:.75rem;color:var(--text-muted);margin-top:.3rem"></div>
+        </div>` : ''}
         <div class="form-group">
           <label>Cadência (opcional)</label>
           <input type="text" class="form-control ex-cadencia" placeholder="Ex: 2-1-2">
@@ -8292,6 +8331,7 @@ function addExercise() {
     </div>`
 
   list.appendChild(div)
+  _applyWfBodyweightToRow(id)
   updateRemoveButtons()
   updateReorderButton()
   updateReplicateButton()
@@ -8800,7 +8840,9 @@ function renderReplicateTargets() {
 function _replicateCopyField(fromRow, toRow, selector) {
   const fromEl = fromRow.querySelector(selector)
   const toEl   = toRow.querySelector(selector)
-  if (fromEl && toEl) toEl.value = fromEl.value
+  if (!fromEl || !toEl) return
+  if (fromEl.type === 'checkbox') toEl.checked = fromEl.checked
+  else toEl.value = fromEl.value
 }
 
 function confirmReplicate() {
@@ -8819,12 +8861,14 @@ function confirmReplicate() {
   const isAero = (modelRow.querySelector('.ex-type')?.value || 'musculacao') === 'aerobico'
   const fields = isAero
     ? ['.ex-duration', '.ex-distance', '.ex-speed', '.ex-recovery-interval', '.ex-recovery-speed', '.ex-hr-min', '.ex-hr-max']
-    : ['.ex-sets', '.ex-weight', '.ex-reps', '.ex-cadencia', '.ex-descanso', '.ex-method', '.ex-method-desc']
+    : ['.ex-sets', '.ex-weight', '.ex-reps', '.ex-cadencia', '.ex-descanso', '.ex-method', '.ex-method-desc',
+       '.ex-bodyweight', '.ex-measure', '.ex-hold']
 
   targets.forEach(row => {
     fields.forEach(sel => _replicateCopyField(modelRow, row, sel))
     const id = row.id.replace(/^ex-/, '')
     if (isAero) { refreshPace(id); refreshAutoCalc(id) }
+    else { _syncMeasureFields(id); _applyWfBodyweightToRow(id) }
     refreshExerciseVolume(id)
   })
 
@@ -8851,8 +8895,84 @@ function toggleExerciseType(id) {
   const isAero = type === 'aerobico'
   if (musc) musc.style.display = isAero ? 'none' : ''
   if (aero) aero.style.display = isAero ? '' : 'none'
-  row.querySelectorAll('.ex-sets, .ex-weight, .ex-reps').forEach(el => { el.required = !isAero })
+  row.querySelectorAll('.ex-sets, .ex-weight').forEach(el => { el.required = !isAero })
+  _syncMeasureFields(id)
   refreshExerciseVolume(id)
+}
+
+// Reps x tempo: mostra um campo ou o outro e só exige o visível. Sem a coluna (antes da
+// migration) não existe .ex-measure, e fica como antes (reps obrigatório na musculação).
+function _syncMeasureFields(id) {
+  const row = document.getElementById(`ex-${id}`)
+  if (!row) return
+  const isAero  = (row.querySelector('.ex-type')?.value || 'musculacao') === 'aerobico'
+  const isTimed = row.querySelector('.ex-measure')?.value === 'tempo'
+  const repsGrp = row.querySelector('.ex-reps-group')
+  const holdGrp = row.querySelector('.ex-hold-group')
+  if (repsGrp) repsGrp.style.display = isTimed ? 'none' : ''
+  if (holdGrp) holdGrp.style.display = isTimed ? '' : 'none'
+  const repsEl = row.querySelector('.ex-reps'), holdEl = row.querySelector('.ex-hold')
+  if (repsEl) repsEl.required = !isAero && !isTimed
+  if (holdEl) holdEl.required = !isAero && isTimed
+}
+
+function onExerciseMeasureChange(id) {
+  _syncMeasureFields(id)
+  refreshExerciseVolume(id)
+}
+
+function onExerciseBodyweightChange(id) {
+  _applyWfBodyweightToRow(id)
+  refreshExerciseVolume(id)
+}
+
+// Peso do aluno escolhido no formulário (#wf-student).
+let _wfWeightState = 'none'   // 'none' (sem aluno) | 'loading' | 'ok' | 'missing' | 'error'
+let _wfStudentWeight = null
+let _wfWeightToken = 0
+
+async function _refreshWfBodyweight() {
+  if (!_bwColumnsReady) return
+  const token = ++_wfWeightToken
+  const sid = document.getElementById('wf-student')?.value || ''
+  _wfStudentWeight = null
+  _wfWeightState = sid ? 'loading' : 'none'
+  _applyWfBodyweightAll()
+  if (!sid) return
+  const { state, weight } = await fetchStudentWeight(sid)
+  if (token !== _wfWeightToken) return   // trocou de aluno no meio da consulta
+  _wfWeightState = state
+  _wfStudentWeight = weight
+  _applyWfBodyweightAll()
+}
+
+function _applyWfBodyweightAll() {
+  document.querySelectorAll('#exercise-list .exercise-row').forEach(row => {
+    const id = row.id.replace(/^ex-/, '')
+    _applyWfBodyweightToRow(id)
+    refreshExerciseVolume(id)
+  })
+}
+
+// Marcada: carga só leitura com o peso do aluno. Sem peso, a caixa fica desabilitada — mas
+// uma já marcada (edição/rascunho) continua desmarcável, e o salvar acusa o campo.
+function _applyWfBodyweightToRow(id) {
+  const row = document.getElementById(`ex-${id}`)
+  const cb  = row?.querySelector('.ex-bodyweight')
+  if (!cb) return
+  const ok = _wfWeightState === 'ok'
+  cb.disabled = !ok && !cb.checked
+  const hint = row.querySelector('.ex-bw-hint')
+  if (hint) hint.textContent = bodyweightHint(_wfWeightState, _wfStudentWeight)
+  const weightEl = row.querySelector('.ex-weight')
+  if (!weightEl) return
+  weightEl.readOnly = cb.checked
+  if (cb.checked) weightEl.value = ok ? _wfStudentWeight : ''
+}
+
+function onWfStudentChange() {
+  syncWfStudentInactiveWarning()
+  _refreshWfBodyweight()
 }
 
 function refreshPace(id) {
@@ -8905,6 +9025,9 @@ function refreshExerciseVolume(id) {
   const el   = document.getElementById(`ex-vol-${id}`)
   if (type === 'aerobico') {
     // vol display is in the hidden musculacao section — no update needed
+  } else if (row.querySelector('.ex-measure')?.value === 'tempo') {
+    // Por tempo: o volume não multiplica o tempo (fica 0, como no banco).
+    if (el) el.textContent = '0 kg (por tempo)'
   } else {
     const sets   = parseInt(row.querySelector('.ex-sets')?.value)    || 0
     const weight = parseFloat(row.querySelector('.ex-weight')?.value) || 0
@@ -8925,6 +9048,7 @@ function refreshTotalVolume() {
       totalAeroKm += parseFloat(row.querySelector('.ex-distance')?.value) || 0
     } else {
       hasMusc = true
+      if (row.querySelector('.ex-measure')?.value === 'tempo') return
       const sets   = parseInt(row.querySelector('.ex-sets')?.value)    || 0
       const weight = parseFloat(row.querySelector('.ex-weight')?.value) || 0
       const reps   = parseInt(row.querySelector('.ex-reps')?.value)    || 0
@@ -9075,20 +9199,34 @@ async function saveWorkout(e) {
         hr_min:                parseInt(row.querySelector('.ex-hr-min')?.value)              || null,
         hr_max:                parseInt(row.querySelector('.ex-hr-max')?.value)              || null,
         training_method: null, method_description: null,
-        position: idx
+        position: idx,
+        // Aeróbico nunca é corporal nem por tempo (constraint workout_exercises_aero_plain).
+        ...(_bwColumnsReady ? { bodyweight: false, measure: 'reps', hold_seconds: null } : {})
       })
       dbIds.push(row.dataset.dbId || null)
     } else {
       const setsEl   = row.querySelector('.ex-sets')
       const weightEl = row.querySelector('.ex-weight')
       const repsEl   = row.querySelector('.ex-reps')
+      const holdEl   = row.querySelector('.ex-hold')
+      const bwEl     = row.querySelector('.ex-bodyweight')
+      const bodyweight = !!bwEl?.checked
+      const measure    = row.querySelector('.ex-measure')?.value === 'tempo' ? 'tempo' : 'reps'
       const sets   = parseInt(setsEl?.value)
-      const weight = parseFloat(weightEl?.value)
-      const reps   = parseInt(repsEl?.value)
+      // Corporal: a carga é o peso do aluno (o banco força o mesmo valor no trigger).
+      const weight = bodyweight ? _wfStudentWeight : parseFloat(weightEl?.value)
+      let reps = 0, hold = null
       if (!sets || sets < 1)                    { flagError(row, setsEl,   exLabel, 'Séries');      continue }
-      if (isNaN(weight) || weight < 0)          { flagError(row, weightEl, exLabel, 'Carga (kg)');  continue }
-      if (!reps || reps < 1)                    { flagError(row, repsEl,   exLabel, 'Repetições');  continue }
-      const volume   = parseFloat((sets * weight * reps).toFixed(2))
+      if (bodyweight && _wfWeightState !== 'ok') { flagError(row, bwEl,    exLabel, 'Peso corporal'); continue }
+      if (weight == null || isNaN(weight) || weight < 0) { flagError(row, weightEl, exLabel, 'Carga (kg)');  continue }
+      if (measure === 'tempo') {
+        hold = parseInt(holdEl?.value)
+        if (!hold || hold < 1 || hold > 3600)  { flagError(row, holdEl,   exLabel, 'Tempo por série (s)'); continue }
+      } else {
+        reps = parseInt(repsEl?.value)
+        if (!reps || reps < 1)                  { flagError(row, repsEl,   exLabel, 'Repetições');  continue }
+      }
+      const volume   = measure === 'tempo' ? 0 : parseFloat((sets * weight * reps).toFixed(2))
       const cadencia   = row.querySelector('.ex-cadencia').value.trim()      || null
       const descanso   = row.querySelector('.ex-descanso').value
       const method     = row.querySelector('.ex-method')?.value.trim()       || null
@@ -9102,14 +9240,17 @@ async function saveWorkout(e) {
         recovery_interval_min: null, recovery_speed_kmh: null,
         hr_min: null, hr_max: null,
         training_method: method, method_description: methodDesc,
-        position: idx
+        position: idx,
+        ...(_bwColumnsReady ? { bodyweight, measure, hold_seconds: hold } : {})
       })
       dbIds.push(row.dataset.dbId || null)
     }
   }
 
   if (firstError) {
-    toast(`Confira o campo "${firstError.fieldLabel}" no exercício "${firstError.exLabel}".`, 'error')
+    toast(firstError.fieldLabel === 'Peso corporal'
+      ? `${BW_MISSING_MSG} Desmarque "Peso corporal" no exercício "${firstError.exLabel}" ou peça para o aluno completar o perfil.`
+      : `Confira o campo "${firstError.fieldLabel}" no exercício "${firstError.exLabel}".`, 'error')
     firstError.row.classList.add('wf-row-error')
     firstError.fieldEl?.classList.add('wf-field-error')
     // O exercício pode estar recolhido (acordeão) — expande antes de rolar até o campo,
@@ -10113,6 +10254,7 @@ function restoreExecutionState() {
         if (data.weight_executed != null) {
           const wEl = document.getElementById(`exec-w-${exId}-${setNum}`); if (wEl) wEl.value = data.weight_executed
           const rEl = document.getElementById(`exec-r-${exId}-${setNum}`); if (rEl) rEl.value = data.reps_executed
+          const sEl = document.getElementById(`exec-s-${exId}-${setNum}`); if (sEl) sEl.value = data.seconds_executed ?? ''
         } else {
           const dEl  = document.getElementById(`exec-dur-${exId}`);   if (dEl)  dEl.value  = data.duration_executed_min ?? ''
           const diEl = document.getElementById(`exec-dist-${exId}`);  if (diEl) diEl.value = data.distance_executed_km  ?? ''
@@ -10192,7 +10334,7 @@ function renderExecutionScreen(workout) {
               (ex.hr_min || ex.hr_max) ? `${icon('heart-pulse')} FC: ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : null
             ].filter(Boolean).join(' &nbsp;·&nbsp; ')
           : [
-              `${ex.sets} série${ex.sets > 1 ? 's' : ''} × ${ex.reps} reps × ${ex.weight_kg} kg`,
+              setsPrescriptionText(ex, ex.sets),
               ex.cadencia          ? `Cadência: ${escHtml(ex.cadencia)}`         : null,
               ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null,
               ex.training_method   ? `Método: ${escHtml(ex.training_method)}`    : null
@@ -10222,9 +10364,11 @@ function renderExecutionScreen(workout) {
           : Array.from({length: setsCount}, (_, i) => `
              <div class="live-set-row" id="exec-set-row-${ex.id}-${i + 1}" data-exercise-id="${ex.id}" data-set-number="${i + 1}">
                <span class="live-set-label">Série ${i + 1}</span>
-               <input type="number" id="exec-w-${ex.id}-${i + 1}" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${ex.weight_kg ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">
+               <input type="number" id="exec-w-${ex.id}-${i + 1}" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${ex.weight_kg ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem"${isBodyweightEx(ex) ? ' readonly title="Peso corporal"' : ''}>
                <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
-               <input type="number" id="exec-r-${ex.id}-${i + 1}" class="form-control exec-set-reps" placeholder="reps" min="1" value="${ex.reps ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">
+               ${isTimedEx(ex)
+                 ? `<input type="number" id="exec-s-${ex.id}-${i + 1}" class="form-control exec-set-seconds" placeholder="s" min="1" max="3600" step="1" value="${ex.hold_seconds ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">`
+                 : `<input type="number" id="exec-r-${ex.id}-${i + 1}" class="form-control exec-set-reps" placeholder="reps" min="1" value="${ex.reps ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">`}
                <button class="btn-live-set-save" onclick="saveExecSet('${ex.id}',${i + 1})">${icon('check')} <span class="btn-label">Salvar</span></button>
              </div>`).join('')
 
@@ -10284,6 +10428,20 @@ async function saveExecSet(exerciseId, setNumber) {
     record.weight_executed       = null
     record.reps_executed         = null
     savedData = { duration_executed_min: duration, distance_executed_km: distance, speed_executed_kmh: speed }
+  } else if (isTimedEx(ex)) {
+    // Por tempo: segundos no lugar de reps. Corporal: a carga vem só leitura com o peso do
+    // aluno, e o banco (wexec_force_bodyweight) grava o peso atual de qualquer forma.
+    const weight  = parseFloat(document.getElementById(`exec-w-${exerciseId}-${setNumber}`).value)
+    const seconds = parseInt(document.getElementById(`exec-s-${exerciseId}-${setNumber}`).value)
+    if (isNaN(weight) || weight < 0)               { toast(`Informe a carga da série ${setNumber}.`, 'error'); return }
+    if (!seconds || seconds < 1 || seconds > 3600) { toast(`Informe o tempo (s) da série ${setNumber}.`, 'error'); return }
+    record.weight_executed       = weight
+    record.reps_executed         = null
+    record.seconds_executed      = seconds
+    record.duration_executed_min = null
+    record.distance_executed_km  = null
+    record.speed_executed_kmh    = null
+    savedData = { weight_executed: weight, reps_executed: null, seconds_executed: seconds }
   } else {
     const weight = parseFloat(document.getElementById(`exec-w-${exerciseId}-${setNumber}`).value)
     const reps   = parseInt(document.getElementById(`exec-r-${exerciseId}-${setNumber}`).value)
@@ -10328,6 +10486,81 @@ function updateExecExerciseProgress(exerciseId) {
   if (el) el.textContent = `${done}/${total} série${total > 1 ? 's' : ''}`
   const card = document.getElementById(`exec-ex-${exerciseId}`)
   if (card) card.classList.toggle('done', done >= total)
+}
+
+// ── Peso corporal / exercício por tempo (item 3) ──
+// As colunas vêm da migration v2 (bodyweight, measure, hold_seconds em workout_exercises;
+// seconds_executed em workout_executions). Sem elas, o app segue exatamente como antes: sem a
+// caixa, sem o modo por tempo e sem mandar os campos novos (o PostgREST recusaria a coluna).
+let _bwColumnsReady = false
+
+async function detectBodyweightColumns() {
+  try {
+    const [a, b] = await Promise.all([
+      sb.from('workout_exercises').select('bodyweight, measure, hold_seconds').limit(0),
+      sb.from('workout_executions').select('seconds_executed').limit(0)
+    ])
+    _bwColumnsReady = !a.error && !b.error
+  } catch { _bwColumnsReady = false }
+}
+
+// Campos ausentes (antes da migration, ou rascunho antigo) = reps e não corporal.
+const isBodyweightEx = ex => ex?.bodyweight === true
+const isTimedEx      = ex => ex?.measure === 'tempo'
+
+// Peso atual do aluno em student_profiles. { state: 'ok'|'missing'|'error', weight }
+async function fetchStudentWeight(studentId) {
+  if (!studentId) return { state: 'missing', weight: null }
+  try {
+    const { data, error } = await sb.from('student_profiles').select('weight_kg').eq('student_id', studentId).maybeSingle()
+    if (error) return { state: 'error', weight: null }
+    const w = data?.weight_kg != null ? Number(data.weight_kg) : null
+    return w != null && w > 0 ? { state: 'ok', weight: w } : { state: 'missing', weight: null }
+  } catch { return { state: 'error', weight: null } }
+}
+
+const BW_MISSING_MSG = 'Este aluno ainda não informou o peso.'
+function bodyweightHint(state, weight) {
+  if (state === 'ok')      return `Carga = peso do aluno (${weight.toLocaleString('pt-BR')} kg).`
+  if (state === 'loading') return 'Carregando o peso do aluno…'
+  if (state === 'none')    return 'Escolha o aluno para usar o peso corporal.'
+  if (state === 'error')   return 'Não foi possível carregar o peso do aluno.'
+  return BW_MISSING_MSG
+}
+
+// Textos de prescrição/execução. Sem os campos novos (antes da migration ou exercício
+// comum), devolvem exatamente o texto de antes.
+function loadLabel(ex, kg = ex?.weight_kg) {
+  return isBodyweightEx(ex) ? `Peso corporal (${kg} kg)` : `${kg} kg`
+}
+
+// "3 séries × 10 reps × 20 kg" (cards da execução guiada e do ao vivo).
+function setsPrescriptionText(ex, setsCount) {
+  const head = `${setsCount} série${setsCount > 1 ? 's' : ''}`
+  return isTimedEx(ex)
+    ? `${head} × ${ex.hold_seconds} s × ${loadLabel(ex)}`
+    : `${head} × ${ex.reps} reps × ${loadLabel(ex)}`
+}
+
+// "3×10 @ 20 kg" (listas de treino e de rotina).
+function compactPrescription(ex) {
+  return isTimedEx(ex)
+    ? `${ex.sets}×${ex.hold_seconds} s @ ${loadLabel(ex)}`
+    : `${ex.sets}×${ex.reps} @ ${loadLabel(ex)}`
+}
+
+// "S1: 20×10" / "S1: 58×35 s" (série executada).
+function execSetText(n, s) {
+  return s.seconds_executed != null
+    ? `S${n}: ${s.weight_executed}×${s.seconds_executed} s`
+    : `S${n}: ${s.weight_executed}×${s.reps_executed}`
+}
+
+// Colunas de workout_exercises embutidas no histórico; as novas só com a migration (pedir
+// coluna inexistente derrubaria a consulta inteira).
+function histExerciseCols() {
+  return 'exercise_name, exercise_type, sets, reps, weight_kg, duration_min, distance_km, speed_kmh, hr_min, hr_max, training_method, method_description'
+    + (_bwColumnsReady ? ', bodyweight, measure, hold_seconds' : '')
 }
 
 // Texto da confirmação do "Finalizar Treino": séries salvas x previstas, contadas como em
@@ -10527,7 +10760,7 @@ function showComparisonModal(finalTime) {
         if (hasExec) {
           const setNumbers = Object.keys(execMap).map(Number).sort((a, b) => a - b)
           executed = setNumbers.reduce((sum, n) => sum + (parseFloat(execMap[n].weight_executed) || 0) * (execMap[n].reps_executed || 0), 0)
-          const setsText = setNumbers.map(n => `S${n}: ${execMap[n].weight_executed}×${execMap[n].reps_executed}`).join(' · ')
+          const setsText = setNumbers.map(n => execSetText(n, execMap[n])).join(' · ')
           execCell = `<span style="font-size:.78rem">${setsText}</span> = <strong>${executed.toLocaleString('pt-BR')} kg</strong>`
         } else {
           executed = null
@@ -10538,7 +10771,9 @@ function showComparisonModal(finalTime) {
         if (executed !== null) totalExecuted += executed
         const diff = executed !== null ? executed - planned : null
 
-        plannedCell = `${sets}×${reps}×${weight} kg = ${planned.toLocaleString('pt-BR')} kg`
+        plannedCell = isTimedEx(ex) ? `${sets}×${ex.hold_seconds} s @ ${loadLabel(ex, weight)} (por tempo)`
+          : isBodyweightEx(ex) ? `${sets}×${reps} @ ${loadLabel(ex, weight)} = ${planned.toLocaleString('pt-BR')} kg`
+          : `${sets}×${reps}×${weight} kg = ${planned.toLocaleString('pt-BR')} kg`
 
         diffCell = diff === null ? '—'
           : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>`
@@ -10920,16 +11155,17 @@ function renderManualExecutionExercises() {
     }
     const sets          = Math.max(1, parseInt(ex.sets) || 1)
     const defaultWeight = ex.weight_kg ?? ''
-    const defaultReps   = ex.reps      ?? ''
+    const timed         = isTimedEx(ex)
+    const defaultReps   = timed ? (ex.hold_seconds ?? '') : (ex.reps ?? '')
     return `
-      <div class="manual-exec-ex" data-exercise-id="${ex.id}" style="margin-bottom:1rem;padding-bottom:1rem;border-bottom:1px solid var(--border-subtle)">
-        <div style="font-weight:700;font-size:.85rem;margin-bottom:.5rem">${escHtml(ex.exercise_name)}</div>
+      <div class="manual-exec-ex" data-exercise-id="${ex.id}"${timed ? ' data-timed="1"' : ''} style="margin-bottom:1rem;padding-bottom:1rem;border-bottom:1px solid var(--border-subtle)">
+        <div style="font-weight:700;font-size:.85rem;margin-bottom:.5rem">${escHtml(ex.exercise_name)}${isBodyweightEx(ex) ? ' <span style="font-weight:500;font-size:.75rem;color:var(--text-muted)">· Peso corporal (confira o peso do dia)</span>' : ''}</div>
         ${Array.from({length: sets}, (_, i) => `
           <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">
             <span style="font-size:.72rem;font-weight:700;color:var(--accent-soft);min-width:3.5rem;flex-shrink:0">Série ${i + 1}</span>
             <input type="number" class="form-control manual-exec-weight" placeholder="kg" step="0.5" min="0" value="${defaultWeight}" style="flex:1;min-width:0;padding:.5rem .75rem">
             <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
-            <input type="number" class="form-control manual-exec-reps" placeholder="reps" min="1" value="${defaultReps}" style="flex:1;min-width:0;padding:.5rem .75rem">
+            <input type="number" class="form-control manual-exec-reps${timed ? ' manual-exec-seconds' : ''}" placeholder="${timed ? 's' : 'reps'}" min="1"${timed ? ' max="3600" step="1"' : ''} value="${defaultReps}" style="flex:1;min-width:0;padding:.5rem .75rem">
           </div>`).join('')}
       </div>`
   }).join('')
@@ -10967,10 +11203,22 @@ async function confirmManualExecution() {
     } else {
       const weightInputs = block.querySelectorAll('.manual-exec-weight')
       const repsInputs   = block.querySelectorAll('.manual-exec-reps')
+      const timed        = block.dataset.timed === '1'
       for (let i = 0; i < weightInputs.length; i++) {
         const weight = parseFloat(weightInputs[i].value)
         const reps   = parseInt(repsInputs[i].value)
         if (isNaN(weight) || weight < 0) { toast(`Informe a carga da série ${i + 1}.`, 'error'); return }
+        if (timed) {
+          // Por tempo: o campo traz segundos; reps fica nulo.
+          if (!reps || reps < 1 || reps > 3600) { toast(`Informe o tempo (s) da série ${i + 1}.`, 'error'); return }
+          records.push({
+            workout_id: workoutId, exercise_id: exerciseId, student_id: studentId,
+            set_number: i + 1, weight_executed: weight, reps_executed: null, seconds_executed: reps,
+            duration_executed_min: null, distance_executed_km: null, speed_executed_kmh: null,
+            executed_at: executedAt, is_manual: true, notes
+          })
+          continue
+        }
         if (!reps || reps < 1)           { toast(`Informe as reps da série ${i + 1}.`, 'error'); return }
         records.push({
           workout_id: workoutId, exercise_id: exerciseId, student_id: studentId,
@@ -11066,9 +11314,84 @@ function renderLiveExecutionScreen(workout) {
     ? exes.map(ex => renderLiveExerciseCardHTML(ex)).join('')
     : '<div class="empty-state" style="padding:2rem"><div class="empty-icon">' + icon('dumbbell') + '</div><p>Nenhum exercício neste treino.</p></div>'
   loadLiveExerciseCatalog()
+  _refreshLiveBodyweight()
   // Mesmo catálogo usado pra normalizar grafia no Novo/Editar Treino (ver setupWorkoutForm) —
   // aqui só pra resolver o nome ao salvar; a sugestão em si continua vindo de loadLiveExerciseCatalog().
   _loadExerciseCatalog().then(catalog => { window._liveExerciseCatalog = catalog })
+}
+
+// Peso do aluno da sessão ao vivo (para "Peso corporal" ao adicionar/editar exercício).
+let _liveWeightState = 'loading'
+let _liveStudentWeight = null
+let _liveWeightToken = 0
+
+async function _refreshLiveBodyweight() {
+  toggleLiveAddExerciseType()   // mostra/esconde a linha "Medida / Peso corporal" do painel de adicionar
+  if (!_bwColumnsReady) return
+  const token = ++_liveWeightToken
+  _liveWeightState = 'loading'; _liveStudentWeight = null
+  _syncLiveBodyweightUI()
+  const { state, weight } = await fetchStudentWeight(_liveExecStudentId)
+  if (token !== _liveWeightToken) return
+  _liveWeightState = state; _liveStudentWeight = weight
+  _syncLiveBodyweightUI()
+}
+
+// Aplica o estado do peso nos painéis de adicionar e de editar exercício.
+function _syncLiveBodyweightUI() {
+  _syncLiveModeFields('live-add-ex')
+  ;(_liveWorkoutData?.workout_exercises || []).forEach(ex => _syncLiveModeFields(`live-edit-${ex.id}`))
+}
+
+// prefix: 'live-add-ex' ou 'live-edit-<id>'. Ids: <prefix>-bw, -measure, -hold, -bw-hint e
+// a carga/reps de cada painel (live-add-ex-weight/-reps, live-edit-weight-<id>/-reps-<id>).
+function _liveModeEls(prefix) {
+  const isAdd = prefix === 'live-add-ex'
+  const exId  = isAdd ? null : prefix.slice('live-edit-'.length)
+  const $ = id => document.getElementById(id)
+  return {
+    bw: $(`${prefix}-bw`), measure: $(`${prefix}-measure`), hold: $(`${prefix}-hold`), hint: $(`${prefix}-bw-hint`),
+    weight: isAdd ? $('live-add-ex-weight') : $(`live-edit-weight-${exId}`),
+    reps:   isAdd ? $('live-add-ex-reps')   : $(`live-edit-reps-${exId}`)
+  }
+}
+
+function _syncLiveModeFields(prefix) {
+  const els = _liveModeEls(prefix)
+  if (!els.bw) return
+  const ok = _liveWeightState === 'ok'
+  els.bw.disabled = !ok && !els.bw.checked
+  if (els.hint) els.hint.textContent = bodyweightHint(_liveWeightState, _liveStudentWeight)
+  if (els.weight) {
+    els.weight.readOnly = els.bw.checked
+    if (els.bw.checked) els.weight.value = ok ? _liveStudentWeight : ''
+  }
+  const timed = els.measure?.value === 'tempo'
+  if (els.reps) els.reps.style.display = timed ? 'none' : ''
+  if (els.hold) els.hold.style.display = timed ? '' : 'none'
+}
+
+// Lê carga/reps/tempo de um painel do ao vivo. Devolve { error } ou { fields } já no
+// formato de workout_exercises (com os campos novos só se a migration existir).
+// msgs: textos de carga/reps de cada painel (os mesmos de antes, em cada um).
+function _readLiveExerciseMode(prefix, msgs) {
+  const els = _liveModeEls(prefix)
+  const bodyweight = _bwColumnsReady && !!els.bw?.checked
+  const measure    = _bwColumnsReady && els.measure?.value === 'tempo' ? 'tempo' : 'reps'
+  if (bodyweight && _liveWeightState !== 'ok') return { error: BW_MISSING_MSG }
+  const weight = bodyweight ? _liveStudentWeight : parseFloat(els.weight?.value)
+  if (weight == null || isNaN(weight) || weight < 0) return { error: msgs.weight }
+  let reps = 0, hold = null
+  if (measure === 'tempo') {
+    hold = parseInt(els.hold?.value)
+    if (!hold || hold < 1 || hold > 3600) return { error: 'Informe o tempo por série (1 a 3600 s).' }
+  } else {
+    reps = parseInt(els.reps?.value)
+    if (!reps || reps < 1) return { error: msgs.reps }
+  }
+  const fields = { weight_kg: weight, reps }
+  if (_bwColumnsReady) Object.assign(fields, { bodyweight, measure, hold_seconds: hold })
+  return { fields }
 }
 
 // Gera o card de UM exercício — usada tanto na renderização inicial da lista quanto
@@ -11085,7 +11408,7 @@ function renderLiveExerciseCardHTML(ex) {
         (ex.hr_min || ex.hr_max) ? `${icon('heart-pulse')} FC: ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : null
       ].filter(Boolean).join(' &nbsp;·&nbsp; ')
     : [
-        `${setsCount} série${setsCount > 1 ? 's' : ''} × ${ex.reps} reps × ${ex.weight_kg} kg`,
+        setsPrescriptionText(ex, setsCount),
         ex.cadencia          ? `Cadência: ${escHtml(ex.cadencia)}`         : null,
         ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null,
         ex.training_method   ? `Método: ${escHtml(ex.training_method)}`    : null
@@ -11114,9 +11437,11 @@ function renderLiveExerciseCardHTML(ex) {
     : Array.from({length: setsCount}, (_, i) => `
        <div class="live-set-row" id="live-set-row-${ex.id}-${i + 1}" data-exercise-id="${ex.id}" data-set-number="${i + 1}">
          <span class="live-set-label">Série ${i + 1}</span>
-         <input type="number" id="live-w-${ex.id}-${i + 1}" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${ex.weight_kg ?? ''}" oninput="markLiveSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">
+         <input type="number" id="live-w-${ex.id}-${i + 1}" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${ex.weight_kg ?? ''}" oninput="markLiveSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem"${isBodyweightEx(ex) ? ' title="Peso corporal (pode corrigir o peso do dia)"' : ''}>
          <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
-         <input type="number" id="live-r-${ex.id}-${i + 1}" class="form-control exec-set-reps" placeholder="reps" min="1" value="${ex.reps ?? ''}" oninput="markLiveSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">
+         ${isTimedEx(ex)
+           ? `<input type="number" id="live-s-${ex.id}-${i + 1}" class="form-control exec-set-seconds" placeholder="s" min="1" max="3600" step="1" value="${ex.hold_seconds ?? ''}" oninput="markLiveSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">`
+           : `<input type="number" id="live-r-${ex.id}-${i + 1}" class="form-control exec-set-reps" placeholder="reps" min="1" value="${ex.reps ?? ''}" oninput="markLiveSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">`}
          <button class="btn-live-set-save" onclick="saveLiveSet('${ex.id}',${i + 1})">${icon('check')} <span class="btn-label">Salvar</span></button>
        </div>`).join('')
 
@@ -11144,10 +11469,21 @@ function renderLiveExerciseCardHTML(ex) {
            <input type="text" class="form-control" id="live-edit-name-${ex.id}" value="${escHtml(ex.exercise_name)}" list="live-exercise-catalog" placeholder="Nome do exercício">
          </div>
          <div class="live-ex-edit-row">
-           <input type="number" class="form-control" id="live-edit-weight-${ex.id}" value="${ex.weight_kg ?? ''}" step="0.5" min="0" placeholder="Carga planejada (kg)">
-           <input type="number" class="form-control" id="live-edit-reps-${ex.id}" value="${ex.reps ?? ''}" min="1" placeholder="Reps planejadas">
+           <input type="number" class="form-control" id="live-edit-weight-${ex.id}" value="${ex.weight_kg ?? ''}" step="0.5" min="0" placeholder="Carga planejada (kg)"${isBodyweightEx(ex) ? ' readonly' : ''}>
+           <input type="number" class="form-control" id="live-edit-reps-${ex.id}" value="${isTimedEx(ex) ? '' : (ex.reps ?? '')}" min="1" placeholder="Reps planejadas"${isTimedEx(ex) ? ' style="display:none"' : ''}>${_bwColumnsReady ? `
+           <input type="number" class="form-control" id="live-edit-${ex.id}-hold" value="${ex.hold_seconds ?? ''}" min="1" max="3600" placeholder="Tempo por série (s)"${isTimedEx(ex) ? '' : ' style="display:none"'}>` : ''}
            <input type="number" class="form-control" id="live-edit-rest-${ex.id}" value="${ex.tempo_descanso ?? ''}" min="0" placeholder="Descanso (s)">
-         </div>
+         </div>${_bwColumnsReady ? `
+         <div class="live-ex-edit-row" style="align-items:center">
+           <select class="form-control" id="live-edit-${ex.id}-measure" onchange="_syncLiveModeFields('live-edit-${ex.id}')" style="max-width:190px;flex:initial">
+             <option value="reps"${isTimedEx(ex) ? '' : ' selected'}>Repetições</option>
+             <option value="tempo"${isTimedEx(ex) ? ' selected' : ''}>Tempo (segundos)</option>
+           </select>
+           <label style="display:flex;align-items:center;gap:.4rem;font-size:.82rem;cursor:pointer">
+             <input type="checkbox" id="live-edit-${ex.id}-bw" onchange="_syncLiveModeFields('live-edit-${ex.id}')"${isBodyweightEx(ex) ? ' checked' : ''} style="margin:0"> Peso corporal
+           </label>
+           <span id="live-edit-${ex.id}-bw-hint" style="font-size:.75rem;color:var(--text-muted)">${bodyweightHint(_liveWeightState, _liveStudentWeight)}</span>
+         </div>` : ''}
          <div class="live-ex-edit-actions">
            <button type="button" class="btn btn-outline btn-sm" onclick="cancelLiveExerciseEdit('${ex.id}')">Cancelar</button>
            <button type="button" class="btn btn-primary btn-sm" onclick="saveLiveExerciseEdit('${ex.id}')">Salvar alteração</button>
@@ -11198,6 +11534,7 @@ function hydrateLiveExerciseSavedSets(exerciseId) {
     if (data.weight_executed != null) {
       const wEl = document.getElementById(`live-w-${exerciseId}-${setNum}`); if (wEl) wEl.value = data.weight_executed
       const rEl = document.getElementById(`live-r-${exerciseId}-${setNum}`); if (rEl) rEl.value = data.reps_executed
+      const sEl = document.getElementById(`live-s-${exerciseId}-${setNum}`); if (sEl) sEl.value = data.seconds_executed ?? ''
     } else {
       const dEl = document.getElementById(`live-dur-${exerciseId}`);   if (dEl) dEl.value = data.duration_executed_min ?? ''
       const diEl = document.getElementById(`live-dist-${exerciseId}`); if (diEl) diEl.value = data.distance_executed_km ?? ''
@@ -11259,13 +11596,11 @@ async function saveLiveExerciseEdit(exerciseId) {
 
   const patch = { exercise_name: name }
   if (!isAero) {
-    const weight = parseFloat(document.getElementById(`live-edit-weight-${exerciseId}`).value)
-    const reps   = parseInt(document.getElementById(`live-edit-reps-${exerciseId}`).value)
+    const mode = _readLiveExerciseMode(`live-edit-${exerciseId}`,
+      { weight: 'Informe uma carga planejada válida.', reps: 'Informe repetições planejadas válidas.' })
     const restRaw = document.getElementById(`live-edit-rest-${exerciseId}`).value.trim()
-    if (isNaN(weight) || weight < 0) { toast('Informe uma carga planejada válida.', 'error'); return }
-    if (!reps || reps < 1)           { toast('Informe repetições planejadas válidas.', 'error'); return }
-    patch.weight_kg       = weight
-    patch.reps             = reps
+    if (mode.error) { toast(mode.error, 'error'); return }
+    Object.assign(patch, mode.fields)
     patch.tempo_descanso   = restRaw === '' ? null : parseInt(restRaw)
   }
 
@@ -11390,12 +11725,15 @@ function cancelLiveAddExercise() {
 
 function _resetLiveAddExerciseForm() {
   ;['live-add-ex-name', 'live-add-ex-sets', 'live-add-ex-weight', 'live-add-ex-reps', 'live-add-ex-rest',
-    'live-add-ex-duration', 'live-add-ex-distance', 'live-add-ex-speed'].forEach(id => {
+    'live-add-ex-duration', 'live-add-ex-distance', 'live-add-ex-speed', 'live-add-ex-hold'].forEach(id => {
     const el = document.getElementById(id)
     if (el) el.value = ''
   })
   const typeSel = document.getElementById('live-add-ex-type')
   if (typeSel) typeSel.value = 'musculacao'
+  const bwEl = document.getElementById('live-add-ex-bw'); if (bwEl) bwEl.checked = false
+  const measureEl = document.getElementById('live-add-ex-measure'); if (measureEl) measureEl.value = 'reps'
+  _syncLiveModeFields('live-add-ex')
   toggleLiveAddExerciseType()
 }
 
@@ -11405,6 +11743,8 @@ function toggleLiveAddExerciseType() {
   const aeroEl = document.getElementById('live-add-ex-aero')
   if (muscEl) muscEl.style.display = isAero ? 'none' : 'flex'
   if (aeroEl) aeroEl.style.display = isAero ? 'flex' : 'none'
+  const extraEl = document.getElementById('live-add-ex-extra')
+  if (extraEl) extraEl.style.display = _bwColumnsReady && !isAero ? 'flex' : 'none'
 }
 
 async function saveLiveAddExercise() {
@@ -11431,25 +11771,28 @@ async function saveLiveAddExercise() {
       pace: null, recovery_interval_min: null, recovery_speed_kmh: null,
       hr_min: null, hr_max: null,
       training_method: null, method_description: null,
-      position
+      position,
+      ...(_bwColumnsReady ? { bodyweight: false, measure: 'reps', hold_seconds: null } : {})
     }
   } else {
     const sets   = parseInt(document.getElementById('live-add-ex-sets').value)
-    const weight = parseFloat(document.getElementById('live-add-ex-weight').value)
-    const reps   = parseInt(document.getElementById('live-add-ex-reps').value)
     if (!sets || sets < 1)           { toast('Informe o número de séries.', 'error'); return }
-    if (isNaN(weight) || weight < 0) { toast('Informe a carga planejada (kg).', 'error'); return }
-    if (!reps || reps < 1)           { toast('Informe as repetições planejadas.', 'error'); return }
+    const mode = _readLiveExerciseMode('live-add-ex',
+      { weight: 'Informe a carga planejada (kg).', reps: 'Informe as repetições planejadas.' })
+    if (mode.error) { toast(mode.error, 'error'); return }
+    // extra = { bodyweight, measure, hold_seconds } só com a migration; vai no fim do registro.
+    const { weight_kg: weight, reps, ...extra } = mode.fields
     const restRaw = document.getElementById('live-add-ex-rest').value.trim()
     record = {
       workout_id: workoutId, exercise_name: name, exercise_type: 'musculacao',
-      sets, weight_kg: weight, reps, volume: parseFloat((sets * weight * reps).toFixed(2)),
+      sets, weight_kg: weight, reps, volume: extra.measure === 'tempo' ? 0 : parseFloat((sets * weight * reps).toFixed(2)),
       cadencia: null, tempo_descanso: restRaw === '' ? null : parseInt(restRaw),
       duration_min: null, distance_km: null, speed_kmh: null, pace: null,
       recovery_interval_min: null, recovery_speed_kmh: null,
       hr_min: null, hr_max: null,
       training_method: null, method_description: null,
-      position
+      position,
+      ...extra
     }
   }
 
@@ -11519,6 +11862,19 @@ async function saveLiveSet(exerciseId, setNumber) {
     record.weight_executed       = null
     record.reps_executed         = null
     savedData = { duration_executed_min: duration, distance_executed_km: distance, speed_executed_kmh: speed }
+  } else if (isTimedEx(ex)) {
+    // Por tempo: segundos no lugar de reps. O personal pode corrigir a carga (peso do dia).
+    const weight  = parseFloat(document.getElementById(`live-w-${exerciseId}-${setNumber}`).value)
+    const seconds = parseInt(document.getElementById(`live-s-${exerciseId}-${setNumber}`).value)
+    if (isNaN(weight) || weight < 0)               { toast(`Informe a carga da série ${setNumber}.`, 'error'); return }
+    if (!seconds || seconds < 1 || seconds > 3600) { toast(`Informe o tempo (s) da série ${setNumber}.`, 'error'); return }
+    record.weight_executed       = weight
+    record.reps_executed         = null
+    record.seconds_executed      = seconds
+    record.duration_executed_min = null
+    record.distance_executed_km  = null
+    record.speed_executed_kmh    = null
+    savedData = { weight_executed: weight, reps_executed: null, seconds_executed: seconds }
   } else {
     const weight = parseFloat(document.getElementById(`live-w-${exerciseId}-${setNumber}`).value)
     const reps   = parseInt(document.getElementById(`live-r-${exerciseId}-${setNumber}`).value)
@@ -11854,7 +12210,18 @@ function finishLiveExecution() {
         <input type="number" class="form-control" id="live-add-ex-sets" placeholder="Séries" min="1" value="3">
         <input type="number" class="form-control" id="live-add-ex-weight" placeholder="Carga (kg)" step="0.5" min="0">
         <input type="number" class="form-control" id="live-add-ex-reps" placeholder="Reps">
+        <input type="number" class="form-control" id="live-add-ex-hold" placeholder="Tempo por série (s)" min="1" max="3600" style="display:none">
         <input type="number" class="form-control" id="live-add-ex-rest" placeholder="Descanso (s, opcional)" min="0">
+      </div>
+      <div class="live-ex-edit-row" id="live-add-ex-extra" style="display:none;align-items:center">
+        <select class="form-control" id="live-add-ex-measure" onchange="_syncLiveModeFields('live-add-ex')" style="max-width:190px;flex:initial">
+          <option value="reps">Repetições</option>
+          <option value="tempo">Tempo (segundos)</option>
+        </select>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.82rem;cursor:pointer">
+          <input type="checkbox" id="live-add-ex-bw" onchange="_syncLiveModeFields('live-add-ex')" style="margin:0"> Peso corporal
+        </label>
+        <span id="live-add-ex-bw-hint" style="font-size:.75rem;color:var(--text-muted)"></span>
       </div>
       <div class="live-ex-edit-row" id="live-add-ex-aero" style="display:none">
         <input type="number" class="form-control" id="live-add-ex-duration" placeholder="Duração (min)" step="0.5" min="0">
