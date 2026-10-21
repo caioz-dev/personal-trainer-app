@@ -2250,6 +2250,8 @@
     .prog-period-fields select { width: auto; min-width: 12rem; max-width: 100%; }
     .prog-period-fields label { display: flex; align-items: center; gap: .4rem; font-size: .82rem; margin: 0; }
     .prog-period-fields input[type="date"] { width: auto; max-width: 100%; }
+    .prog-workout-row { margin-bottom: .75rem; }
+    .prog-workout-row select { width: auto; min-width: 12rem; max-width: 100%; }
 
     /* ---- REST TIMER (descanso por exercício) ---- */
     .rest-timer-wrap {
@@ -7094,7 +7096,7 @@ async function renderProgress(studentIdOverride) {
       .from('workout_executions')
       // workouts!inner só pra forçar a RLS de workouts a excluir execuções de treinos de
       // outro personal (evita colisão de nome de exercício poluindo o gráfico deste aluno).
-      .select('executed_at, session_id, weight_executed, reps_executed, duration_executed_min, distance_executed_km, speed_executed_kmh, workout_exercises(exercise_name, exercise_type), workouts!inner()')
+      .select('executed_at, session_id, workout_id, weight_executed, reps_executed, duration_executed_min, distance_executed_km, speed_executed_kmh, workout_exercises(exercise_name, exercise_type), workouts!inner()')
       .eq('student_id', studentId)
       .order('executed_at', { ascending: true })
     if (execErr) throw execErr
@@ -7107,6 +7109,9 @@ async function renderProgress(studentIdOverride) {
     }
 
     _progCatalog = progressExerciseCatalog(workouts)
+    // Cada carga da página (inclusive ao trocar de aluno) começa em "Todos os treinos".
+    _progWorkoutId   = ''
+    _progWorkoutOpts = progressWorkoutOptions(workouts, window._progressExecutions)
     const firstType = _progCatalog.musculacao.length ? 'musculacao' : 'aerobico'
     _progSel = { type: firstType, musculacao: [], aerobico: [] }
     if (_progCatalog[firstType].length) progressToggleSelection(_progSel, firstType, _progCatalog[firstType][0], true)
@@ -7149,7 +7154,7 @@ async function renderProgress(studentIdOverride) {
         <div class="form-group" style="margin:.75rem 0 1.25rem">
           <label>Exercícios <span id="prog-ex-count" style="font-weight:400;color:var(--text-muted)"></span></label>
           ${_progCatalog.musculacao.length && _progCatalog.aerobico.length ? `
-          <div class="prog-type-toggle" role="group" aria-label="Tipo de exercício">
+          <div class="prog-type-toggle" id="prog-type-toggle" role="group" aria-label="Tipo de exercício">
             <button type="button" class="btn btn-sm" data-type="musculacao" onclick="setProgressType('musculacao')">Musculação</button>
             <button type="button" class="btn btn-sm" data-type="aerobico" onclick="setProgressType('aerobico')">Aeróbico</button>
           </div>` : ''}
@@ -7203,7 +7208,7 @@ function renderProgressVolumeChart() {
   const days   = progressVolumeByDay(progressFilteredExecutions())
   const noData = document.getElementById('prog-volume-no-data')
   if (noData) {
-    const when = progressPeriodText(_progPeriod)
+    const when = progressFilterText()
     noData.textContent   = when ? `Nenhuma execução de musculação ${when}.` : 'Nenhuma execução de musculação registrada ainda.'
     noData.style.display = days.length ? 'none' : 'block'
   }
@@ -7309,8 +7314,82 @@ function filterExecutionsByPeriod(executions, period) {
   })
 }
 
+// Treino primeiro, período depois: os dois filtros se combinam.
 function progressFilteredExecutions() {
-  return filterExecutionsByPeriod(window._progressExecutions || [], _progPeriod)
+  return filterExecutionsByPeriod(progressWorkoutExecutions(), _progPeriod)
+}
+
+// ── Filtro por treino (Todos / um treino), combinável com o período ──
+// Recorta window._progressExecutions por workout_id (nenhuma query nova) e a lista de
+// exercícios passa a ser só a do treino escolhido. Os meses do período continuam os de todos
+// os treinos — trocar o treino não mexe no período; um mês sem aquele treino mostra o aviso.
+let _progWorkoutId   = ''   // '' = todos os treinos
+let _progWorkoutOpts = []   // [{ id, name, label, sessions }], na ordem de fetchWorkouts (mais recente primeiro)
+
+// Só treinos com dado registrado entram no select (os outros dariam sempre gráfico vazio).
+// Sessão contada como em progressMonthOptions (retroativo sem session_id = 1 por dia).
+function progressWorkoutOptions(workouts, executions) {
+  const sessions = new Map()
+  for (const ex of executions) {
+    if (!ex.workout_id || !ex.executed_at || !progressExecHasData(ex)) continue
+    if (!sessions.has(ex.workout_id)) sessions.set(ex.workout_id, new Set())
+    sessions.get(ex.workout_id).add(ex.session_id || 'dia:' + localDateStr(new Date(ex.executed_at)))
+  }
+  return workouts.filter(w => sessions.has(w.id)).map(w => {
+    const name = w.name || fmtDate(w.date)
+    // Nome + data de início: "Treino A" costuma se repetir entre rotinas.
+    return { id: w.id, name, label: w.name ? `${w.name} · ${fmtDate(w.date)}` : name, sessions: sessions.get(w.id).size }
+  })
+}
+
+function filterExecutionsByWorkout(executions, workoutId) {
+  return workoutId ? executions.filter(ex => ex.workout_id === workoutId) : executions
+}
+
+function progressWorkoutExecutions() {
+  return filterExecutionsByWorkout(window._progressExecutions || [], _progWorkoutId)
+}
+
+// Trecho de frase para as mensagens de vazio: 'no treino "Treino A"'.
+function progressWorkoutText() {
+  const o = _progWorkoutId && _progWorkoutOpts.find(x => x.id === _progWorkoutId)
+  return o ? `no treino "${o.name}"` : ''
+}
+
+function progressFilterText() {
+  return [progressWorkoutText(), progressPeriodText(_progPeriod)].filter(Boolean).join(' ')
+}
+
+// Exercícios de um treino só (ou de todos), no mesmo formato de progressExerciseCatalog.
+function progressCatalogForWorkout(workouts, workoutId) {
+  return progressExerciseCatalog(workoutId ? workouts.filter(w => w.id === workoutId) : workouts)
+}
+
+// Ajusta a seleção ao catálogo novo: tira o que não existe mais (os que ficam mantêm a cor),
+// troca de tipo se o ativo ficou vazio e marca o 1º exercício se não sobrar nenhum.
+function progressReconcileSelection(sel, catalog) {
+  for (const type of ['musculacao', 'aerobico']) {
+    const names = new Set(catalog[type] || [])
+    sel[type] = sel[type].filter(s => names.has(s.name))
+  }
+  if (!catalog[sel.type]?.length) {
+    const other = sel.type === 'musculacao' ? 'aerobico' : 'musculacao'
+    if (catalog[other]?.length) sel.type = other
+  }
+  if (!sel[sel.type].length && catalog[sel.type]?.length) progressToggleSelection(sel, sel.type, catalog[sel.type][0], true)
+  return sel
+}
+
+function onProgressWorkoutInput() {
+  const id = document.getElementById('prog-workout')?.value || ''
+  if (id && !_progWorkoutOpts.some(o => o.id === id)) return
+  if (id === _progWorkoutId) return
+  _progWorkoutId = id
+  _progCatalog   = progressCatalogForWorkout(window._progressWorkouts || [], id)
+  progressReconcileSelection(_progSel, _progCatalog)
+  renderProgressExerciseList()
+  renderProgressVolumeChart()
+  updateProgressMetrics()   // o tipo pode ter mudado; já redesenha a Progressão de Carga
 }
 
 function progressPeriodHTML() {
@@ -7319,8 +7398,17 @@ function progressPeriodHTML() {
   const offCompare = _progMonths.length >= 2 ? '' : ' disabled title="Precisa de pelo menos 2 meses com dados"'
   // Valores e rótulos do select são gerados aqui ('YYYY-MM' e 'Nov/2026'), não vêm do usuário.
   const monthOptions = _progMonths.map(o => `<option value="${o.month}">${o.label} (${o.sessions} ${o.sessions === 1 ? 'sessão' : 'sessões'})</option>`).join('')
+  // id vem do banco (uuid), nome é texto livre: os dois escapados.
+  const workoutOptions = _progWorkoutOpts.map(o => `<option value="${escHtml(o.id)}"${o.id === _progWorkoutId ? ' selected' : ''}>${escHtml(o.label)} (${o.sessions} ${o.sessions === 1 ? 'sessão' : 'sessões'})</option>`).join('')
   return `
       <div class="card reveal prog-period" style="margin-bottom:1.5rem">
+        <div class="prog-period-row prog-workout-row">
+          <div class="section-label" style="margin:0">Treino</div>
+          <select class="form-control" id="prog-workout" aria-label="Treino" onchange="onProgressWorkoutInput()"${_progWorkoutOpts.length ? '' : ' disabled'}>
+            <option value="">Todos os treinos</option>
+            ${workoutOptions}
+          </select>
+        </div>
         <div class="prog-period-row">
           <div class="section-label" style="margin:0">Período</div>
           <div class="prog-period-modes" role="group" aria-label="Período dos gráficos">
@@ -7403,7 +7491,7 @@ function setProgressPeriodMode(mode) {
   const next = { ..._progPeriod, mode }
   if (mode === 'month' && !isProgMonth(next.month)) next.month = _progMonths[0]?.month || ''
   if (mode === 'range' && !next.from && !next.to) {
-    const b = progressDataBounds(window._progressExecutions || [])
+    const b = progressDataBounds(progressWorkoutExecutions())
     next.from = b.first
     next.to   = b.last
   }
@@ -7537,13 +7625,14 @@ function progressCompareMessage(none, missing, labelA, countA, labelB, countB) {
 
 function renderProgressVolumeCompare() {
   const { monthA, monthB } = _progPeriod
-  const { a, b } = progressCompareSplit(window._progressExecutions || [], monthA, monthB)
+  const { a, b } = progressCompareSplit(progressWorkoutExecutions(), monthA, monthB)
   const ptsA = progressComparePoints(progressVolumeByDay(a).map(d => ({ date: d.date, value: d.volume })))
   const ptsB = progressComparePoints(progressVolumeByDay(b).map(d => ({ date: d.date, value: d.volume })))
   const labelA = progressMonthLabel(monthA), labelB = progressMonthLabel(monthB)
   const noData = document.getElementById('prog-volume-no-data')
   if (noData) {
-    noData.textContent   = progressCompareMessage('Nenhuma execução de musculação', 'Sem execuções de musculação',
+    const wt = progressWorkoutText() ? ' ' + progressWorkoutText() : ''
+    noData.textContent   = progressCompareMessage('Nenhuma execução de musculação' + wt, 'Sem execuções de musculação' + wt,
                                                   labelA, ptsA.length, labelB, ptsB.length)
     noData.style.display = noData.textContent ? 'block' : 'none'
   }
@@ -7564,13 +7653,14 @@ function updateProgressCompareChart(metric) {
     if (noData) { noData.textContent = 'Selecione um exercício.'; noData.style.display = 'block' }
     return
   }
-  const { a, b } = progressCompareSplit(window._progressExecutions || [], monthA, monthB)
+  const { a, b } = progressCompareSplit(progressWorkoutExecutions(), monthA, monthB)
   const ptsA   = progressComparePoints(progressPointsFor(a, name, metric))
   const ptsB   = progressComparePoints(progressPointsFor(b, name, metric))
   const labelA = progressMonthLabel(monthA), labelB = progressMonthLabel(monthB)
   // textContent: nome do exercício é texto livre.
   if (noData) {
-    noData.textContent   = progressCompareMessage(`Nenhum dado de ${name}`, `Sem registros de ${name}`,
+    const wt = progressWorkoutText() ? ' ' + progressWorkoutText() : ''
+    noData.textContent   = progressCompareMessage(`Nenhum dado de ${name}${wt}`, `Sem registros de ${name}${wt}`,
                                                   labelA, ptsA.length, labelB, ptsB.length)
     noData.style.display = noData.textContent ? 'block' : 'none'
   }
@@ -7708,6 +7798,8 @@ function renderProgressExerciseList(focusIdx) {
   if (limitEl) limitEl.style.display = full && !compare ? 'block' : 'none'
   const noteEl = document.getElementById('prog-compare-note')
   if (noteEl) noteEl.style.display = compare ? 'block' : 'none'
+  const toggleEl = document.getElementById('prog-type-toggle')
+  if (toggleEl) toggleEl.style.display = _progCatalog.musculacao.length && _progCatalog.aerobico.length ? '' : 'none'
   document.querySelectorAll('.prog-type-toggle [data-type]').forEach(b => {
     const active = b.dataset.type === type
     b.classList.toggle('btn-primary', active)
@@ -7778,7 +7870,7 @@ function updateProgressChart() {
   // textContent: nomes de exercício são texto livre.
   if (noData) {
     const missing = series.filter(s => !s.count).map(s => s.name)
-    const when    = progressPeriodText(_progPeriod)
+    const when    = progressFilterText()
     const sp      = when ? ' ' + when : ''
     noData.textContent =
       !selection.length ? 'Selecione ao menos um exercício.' :
