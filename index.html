@@ -10428,11 +10428,11 @@ function renderExecutionScreen(workout) {
           : Array.from({length: setsCount}, (_, i) => `
              <div class="live-set-row" id="exec-set-row-${ex.id}-${i + 1}" data-exercise-id="${ex.id}" data-set-number="${i + 1}">
                <span class="live-set-label">Série ${i + 1}</span>
-               <input type="number" id="exec-w-${ex.id}-${i + 1}" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${ex.weight_kg ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem"${isBodyweightEx(ex) ? ' readonly title="Peso corporal"' : ''}>
-               <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
                ${isTimedEx(ex)
                  ? `<input type="number" id="exec-s-${ex.id}-${i + 1}" class="form-control exec-set-seconds" placeholder="s" min="1" max="3600" step="1" value="${ex.hold_seconds ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">`
                  : `<input type="number" id="exec-r-${ex.id}-${i + 1}" class="form-control exec-set-reps" placeholder="reps" min="1" value="${ex.reps ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">`}
+               <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
+               <input type="number" id="exec-w-${ex.id}-${i + 1}" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${ex.weight_kg ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem"${isBodyweightEx(ex) ? ' readonly title="Peso corporal"' : ''}>
                <button class="btn-live-set-save" onclick="saveExecSet('${ex.id}',${i + 1})">${icon('check')} <span class="btn-label">Salvar</span></button>
              </div>`).join('')
 
@@ -11236,9 +11236,9 @@ function renderManualExecutionExercises() {
         ${Array.from({length: sets}, (_, i) => `
           <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">
             <span style="font-size:.72rem;font-weight:700;color:var(--accent-soft);min-width:3.5rem;flex-shrink:0">Série ${i + 1}</span>
-            <input type="number" class="form-control manual-exec-weight" placeholder="kg" step="0.5" min="0" value="${defaultWeight}" style="flex:1;min-width:0;padding:.5rem .75rem">
-            <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
             <input type="number" class="form-control manual-exec-reps${timed ? ' manual-exec-seconds' : ''}" placeholder="${timed ? 's' : 'reps'}" min="1"${timed ? ' max="3600" step="1"' : ''} value="${defaultReps}" style="flex:1;min-width:0;padding:.5rem .75rem">
+            <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
+            <input type="number" class="form-control manual-exec-weight" placeholder="kg" step="0.5" min="0" value="${defaultWeight}" style="flex:1;min-width:0;padding:.5rem .75rem">
           </div>`).join('')}
       </div>`
   }).join('')
@@ -11510,11 +11510,11 @@ function renderLiveExerciseCardHTML(ex) {
     : Array.from({length: setsCount}, (_, i) => `
        <div class="live-set-row" id="live-set-row-${ex.id}-${i + 1}" data-exercise-id="${ex.id}" data-set-number="${i + 1}">
          <span class="live-set-label">Série ${i + 1}</span>
-         <input type="number" id="live-w-${ex.id}-${i + 1}" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${ex.weight_kg ?? ''}" oninput="markLiveSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem"${isBodyweightEx(ex) ? ' title="Peso corporal (pode corrigir o peso do dia)"' : ''}>
-         <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
          ${isTimedEx(ex)
            ? `<input type="number" id="live-s-${ex.id}-${i + 1}" class="form-control exec-set-seconds" placeholder="s" min="1" max="3600" step="1" value="${ex.hold_seconds ?? ''}" oninput="markLiveSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">`
            : `<input type="number" id="live-r-${ex.id}-${i + 1}" class="form-control exec-set-reps" placeholder="reps" min="1" value="${ex.reps ?? ''}" oninput="markLiveSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">`}
+         <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
+         <input type="number" id="live-w-${ex.id}-${i + 1}" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${ex.weight_kg ?? ''}" oninput="markLiveSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem"${isBodyweightEx(ex) ? ' title="Peso corporal (pode corrigir o peso do dia)"' : ''}>
          <button class="btn-live-set-save" onclick="saveLiveSet('${ex.id}',${i + 1})">${icon('check')} <span class="btn-label">Salvar</span></button>
        </div>`).join('')
 
