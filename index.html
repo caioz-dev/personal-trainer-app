@@ -4581,9 +4581,9 @@ function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', r
             <td>${isTimedEx(ex) ? `${loadLabel(ex)} × ${ex.hold_seconds} s` : `${loadLabel(ex)} × ${ex.reps} reps`}</td>
             <td>${escHtml(ex.cadencia || '—')}</td>
             <td>${ex.tempo_descanso != null ? ex.tempo_descanso + 's' : '—'}</td>
-            <td class="vol-cell">${parseFloat(ex.volume).toLocaleString('pt-BR')} kg</td>
+            <td class="vol-cell">${exVolumeText(ex)}</td>
           </tr>`
-          const detailLine = `${ex.sets} série${ex.sets > 1 ? 's' : ''} × ${isTimedEx(ex) ? `${ex.hold_seconds} s` : `${ex.reps} reps`} @ ${loadLabel(ex)} — Vol: ${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
+          const detailLine = `${ex.sets} série${ex.sets > 1 ? 's' : ''} × ${isTimedEx(ex) ? `${ex.hold_seconds} s` : `${ex.reps} reps`} @ ${loadLabel(ex)} — Vol: ${exVolumeText(ex)}`
           const subParts = [
             ex.cadencia ? `Cadência: ${escHtml(ex.cadencia)}` : null,
             ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null
@@ -5294,7 +5294,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
             const detail  = isAero
               ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—'
               : compactPrescription(ex)
-            const volCell = isAero ? '—' : `${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
+            const volCell = isAero ? '—' : exVolumeText(ex)
             const row = `
               <tr>
                 <td style="padding-left:1.5rem;font-weight:500;color:var(--text-secondary)">
@@ -6012,7 +6012,7 @@ async function renderMyWorkout(gen) {
         ? exes.map(ex => {
             const isAero  = ex.exercise_type === 'aerobico'
             const detail  = isAero ? [ex.duration_min ? `${ex.duration_min} min` : null, ex.distance_km ? `${ex.distance_km} km` : null].filter(Boolean).join(' / ') || '—' : compactPrescription(ex)
-            const volCell = isAero ? '—' : `${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
+            const volCell = isAero ? '—' : exVolumeText(ex)
             const row  = `<tr><td style="padding-left:1.5rem;font-weight:500;color:var(--text-secondary)">${escHtml(ex.exercise_name)}</td><td>${detail}</td><td class="vol-cell">${volCell}</td></tr>`
             const card = `<div class="ex-card"><div class="ex-card-name">${escHtml(ex.exercise_name)}</div><div class="ex-card-detail">${detail}${isAero ? '' : ` — Vol: ${volCell}`}</div></div>`
             return { row, card }
@@ -7096,7 +7096,8 @@ async function renderProgress(studentIdOverride) {
       .from('workout_executions')
       // workouts!inner só pra forçar a RLS de workouts a excluir execuções de treinos de
       // outro personal (evita colisão de nome de exercício poluindo o gráfico deste aluno).
-      .select('executed_at, session_id, workout_id, weight_executed, reps_executed, duration_executed_min, distance_executed_km, speed_executed_kmh, workout_exercises(exercise_name, exercise_type), workouts!inner()')
+      // seconds_executed só com a migration v2 (pedir coluna inexistente derruba a consulta).
+      .select(`executed_at, session_id, workout_id, weight_executed, reps_executed, duration_executed_min, distance_executed_km, speed_executed_kmh${_bwColumnsReady ? ', seconds_executed' : ''}, workout_exercises(exercise_name, exercise_type), workouts!inner()`)
       .eq('student_id', studentId)
       .order('executed_at', { ascending: true })
     if (execErr) throw execErr
@@ -7109,6 +7110,7 @@ async function renderProgress(studentIdOverride) {
     }
 
     _progCatalog = progressExerciseCatalog(workouts)
+    _progTimedNames = progressTimedNames(workouts)
     // Cada carga da página (inclusive ao trocar de aluno) começa em "Todos os treinos".
     _progWorkoutId   = ''
     _progWorkoutOpts = progressWorkoutOptions(workouts, window._progressExecutions)
@@ -7239,7 +7241,7 @@ function progressMonthLabel(month) {
 
 // Execução com algum valor registrado. O placeholder de "Não executado" (tudo nulo) não é dado.
 function progressExecHasData(ex) {
-  return [ex.weight_executed, ex.reps_executed, ex.distance_executed_km, ex.speed_executed_kmh, ex.duration_executed_min]
+  return [ex.weight_executed, ex.reps_executed, ex.seconds_executed, ex.distance_executed_km, ex.speed_executed_kmh, ex.duration_executed_min]
     .some(v => v != null)
 }
 
@@ -7386,6 +7388,7 @@ function onProgressWorkoutInput() {
   if (id === _progWorkoutId) return
   _progWorkoutId = id
   _progCatalog   = progressCatalogForWorkout(window._progressWorkouts || [], id)
+  _progTimedNames = progressTimedNames((window._progressWorkouts || []).filter(w => !id || w.id === id))
   progressReconcileSelection(_progSel, _progCatalog)
   renderProgressExerciseList()
   renderProgressVolumeChart()
@@ -7660,8 +7663,10 @@ function updateProgressCompareChart(metric) {
   // textContent: nome do exercício é texto livre.
   if (noData) {
     const wt = progressWorkoutText() ? ' ' + progressWorkoutText() : ''
-    noData.textContent   = progressCompareMessage(`Nenhum dado de ${name}${wt}`, `Sem registros de ${name}${wt}`,
-                                                  labelA, ptsA.length, labelB, ptsB.length)
+    noData.textContent   = metric === 'volume' && _progTimedNames.has(name)
+      ? progressNoDataText(1, 0, [name], metric, '', _progTimedNames)
+      : progressCompareMessage(`Nenhum dado de ${name}${wt}`, `Sem registros de ${name}${wt}`,
+                               labelA, ptsA.length, labelB, ptsB.length)
     noData.style.display = noData.textContent ? 'block' : 'none'
   }
   if (!ptsA.length && !ptsB.length) return
@@ -7704,6 +7709,33 @@ function progressExerciseCatalog(workouts) {
   catalog.musculacao.sort()
   catalog.aerobico.sort()
   return catalog
+}
+
+// Exercícios por tempo (isométricos), pela ocorrência mais recente — mesma regra do catálogo.
+let _progTimedNames = new Set()
+function progressTimedNames(workouts) {
+  const seen = new Set(), timed = new Set()
+  for (const w of workouts) {
+    for (const ex of (w.workout_exercises || [])) {
+      if (!ex.exercise_name || seen.has(ex.exercise_name)) continue
+      seen.add(ex.exercise_name)
+      if (isTimedEx(ex)) timed.add(ex.exercise_name)
+    }
+  }
+  return timed
+}
+
+// Aviso abaixo da Progressão de Carga. No Volume, exercício isométrico não tem ponto (volume 0):
+// em vez de "sem registros", explica e aponta a métrica Tempo (s).
+function progressNoDataText(selectionCount, withDataCount, missing, metric, sp, timedNames) {
+  const iso  = metric === 'volume' ? missing.filter(n => timedNames.has(n)) : []
+  const rest = missing.filter(n => !iso.includes(n))
+  const isoText = iso.length ? `${iso.join(', ')}: ${ISOMETRIC_LABEL}, volume 0 kg. Veja em Tempo (s).` : ''
+  if (!selectionCount) return 'Selecione ao menos um exercício.'
+  if (!withDataCount && !rest.length) return isoText
+  if (!withDataCount) return selectionCount === 1 ? `Nenhum dado encontrado${sp} para o exercício selecionado.`
+                                                  : `Nenhum dado encontrado${sp} para os exercícios selecionados.`
+  return [rest.length ? `Sem registros nesta métrica${sp}: ${rest.join(', ')}.` : '', isoText].filter(Boolean).join(' ')
 }
 
 // Marca/desmarca um exercício. Marcar além do limite falha com reason 'limit'.
@@ -7872,11 +7904,7 @@ function updateProgressChart() {
     const missing = series.filter(s => !s.count).map(s => s.name)
     const when    = progressFilterText()
     const sp      = when ? ' ' + when : ''
-    noData.textContent =
-      !selection.length ? 'Selecione ao menos um exercício.' :
-      !withData.length  ? (selection.length === 1 ? `Nenhum dado encontrado${sp} para o exercício selecionado.`
-                                                  : `Nenhum dado encontrado${sp} para os exercícios selecionados.`) :
-      missing.length    ? `Sem registros nesta métrica${sp}: ${missing.join(', ')}.` : ''
+    noData.textContent = progressNoDataText(selection.length, withData.length, missing, metric, sp, _progTimedNames)
     noData.style.display = noData.textContent ? 'block' : 'none'
   }
   if (!withData.length) return
@@ -9119,7 +9147,7 @@ function refreshExerciseVolume(id) {
     // vol display is in the hidden musculacao section — no update needed
   } else if (row.querySelector('.ex-measure')?.value === 'tempo') {
     // Por tempo: o volume não multiplica o tempo (fica 0, como no banco).
-    if (el) el.textContent = '0 kg (por tempo)'
+    if (el) el.textContent = `0 kg (${ISOMETRIC_LABEL})`
   } else {
     const sets   = parseInt(row.querySelector('.ex-sets')?.value)    || 0
     const weight = parseFloat(row.querySelector('.ex-weight')?.value) || 0
@@ -10703,6 +10731,14 @@ function compactPrescription(ex) {
   return isTimedEx(ex)
     ? `${ex.sets}×${ex.hold_seconds} s @ ${loadLabel(ex)}`
     : `${ex.sets}×${ex.reps} @ ${loadLabel(ex)}`
+}
+
+// Volume do exercício. Por tempo o banco grava 0 (o tempo não entra na conta, aprovado pelo
+// Luan): o rótulo explica o zero. Fora isso, o texto de antes.
+const ISOMETRIC_LABEL = 'exercício isométrico'
+function exVolumeText(ex) {
+  const kg = `${parseFloat(ex.volume).toLocaleString('pt-BR')} kg`
+  return isTimedEx(ex) ? `${kg} (${ISOMETRIC_LABEL})` : kg
 }
 
 // "S1: 20×10" / "S1: 58×35 s" (série executada).
