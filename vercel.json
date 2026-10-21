@@ -1,5 +1,5 @@
 {
-  "buildCommand": "printf '{\"version\":\"%s\"}' \"$VERCEL_GIT_COMMIT_SHA\" > version.json",
+  "buildCommand": "printf '{\"version\":\"%s\"}' \"$VERCEL_GIT_COMMIT_SHA\" > version.json && sed -i \"s/__APP_BUILD__/$VERCEL_GIT_COMMIT_SHA/\" index.html",
   "outputDirectory": ".",
   "headers": [
     {

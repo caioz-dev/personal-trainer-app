@@ -9745,22 +9745,79 @@ function toast(msg, type = 'info', opts = {}) {
 // ─────────────────────────────────────────────
 // VERIFICAÇÃO DE NOVA VERSÃO (version.json)
 // ─────────────────────────────────────────────
-let __appVersion = null
+// Versão do próprio HTML: o buildCommand da Vercel troca o marcador abaixo pelo SHA do commit,
+// o mesmo que vai para version.json. Antes, a referência era a 1ª leitura de version.json —
+// um HTML antigo vindo do cache do navegador (aba restaurada, voltar/avançar) lia o
+// version.json novo como referência e nunca avisava. Sem build (local) o marcador fica e
+// vale o comportamento antigo.
+const APP_BUILD       = '__APP_BUILD__'
+const APP_BUILD_KNOWN = /^[0-9a-f]{7,40}$/.test(APP_BUILD)
+const AUTO_RELOAD_KEY = 'personalpro-auto-reload'   // sessionStorage: versão para a qual já recarregou sozinho (evita laço se o HTML novo não vier)
+let __appVersion = APP_BUILD_KNOWN ? APP_BUILD : null
 let __updateToastShown = false
 
-async function checkAppVersion() {
+// source: 'entry' (abriu/voltou para a aba) ou 'interval' (checagem periódica com a aba aberta).
+async function checkAppVersion(source = 'entry') {
   if (__updateToastShown) return
   try {
     const res = await fetch(`version.json?t=${Date.now()}`, { cache: 'no-store' })
     if (!res.ok) return
     const { version } = await res.json()
     if (__appVersion === null) { __appVersion = version; return }
+    if (version && version === __appVersion) { try { sessionStorage.removeItem(AUTO_RELOAD_KEY) } catch {} ; return }
     if (version && version !== __appVersion) {
       if (__updateToastShown) return
+      if (_autoReloadForVersion(version, source)) return
       __updateToastShown = true
       _showUpdateToastWhenIdle()
     }
   } catch (e) { /* falha na checagem não deve incomodar o usuário */ }
+}
+
+// Algo que um reload interromperia: execução guiada / revisão, Registro ao Vivo, descanso
+// rodando, rascunho de treino ou de retroativo, gravação pendente, modal aberto ou campo em
+// edição. Na dúvida conta como "em andamento" — aí fica o toast de antes.
+const _RELOAD_BLOCKING_OVERLAYS = ['execution-overlay', 'live-execution-overlay', 'live-exec-picker-overlay',
+  'review-modal', 'comparison-modal', 'timer-modal-overlay', 'password-reset-overlay', 'manual-exec-modal-overlay',
+  'routine-modal', 'unlink-modal', 'body-data-modal', 'bulk-delete-modal', 'dup-modal-overlay',
+  'dup-routine-modal-overlay', 'reorder-modal-overlay', 'replicate-modal-overlay']
+function _hasWorkInProgress() {
+  if (timerInterval || currentWorkoutData || _execPhase || _pendingExecutionsSave) return true
+  if (_liveSessionId || _liveTimerInterval) return true
+  if (Object.values(restTimers).some(rt => rt?.intervalId)) return true
+  if (currentView === 'workout') return true
+  // Snapshots ainda não restaurados (checagem do boot). Rascunho de treino inativo (personal
+  // saiu do formulário) ou com mais de 1 h não reabre sozinho, então não segura o reload.
+  try {
+    if (localStorage.getItem(EXEC_STATE_KEY) || localStorage.getItem(LIVE_EXEC_STATE_KEY)) return true
+    for (const k of [WF_STATE_KEY, MANUAL_EXEC_STATE_KEY]) {
+      const raw = localStorage.getItem(k)
+      if (!raw) continue
+      let st = null
+      try { st = JSON.parse(raw) } catch {}
+      if (st?.active !== false && Date.now() - (st?.savedAt || 0) <= 60 * 60 * 1000) return true
+    }
+  } catch { return true }
+  if (_RELOAD_BLOCKING_OVERLAYS.some(id => { const el = document.getElementById(id); return el && getComputedStyle(el).display !== 'none' })) return true
+  const a = document.activeElement
+  if (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) return true
+  return false
+}
+
+// Recarrega sozinho quando há versão nova e nada em andamento: ao entrar/voltar na aba, ou
+// com a aba em segundo plano (ninguém vê o reload). Com a aba visível na checagem periódica
+// não: recarregar debaixo do usuário enquanto ele lê seria pior — fica o toast.
+// Só tenta 1 vez por versão na sessão da aba; se o HTML continuar velho, cai no toast.
+function _autoReloadForVersion(version, source) {
+  if (!APP_BUILD_KNOWN) return false
+  if (source !== 'entry' && !document.hidden) return false
+  if (_hasWorkInProgress()) return false
+  try {
+    if (sessionStorage.getItem(AUTO_RELOAD_KEY) === version) return false
+    sessionStorage.setItem(AUTO_RELOAD_KEY, version)
+  } catch { return false }
+  location.reload()
+  return true
 }
 
 // Adia a exibição (não só a checagem) enquanto houver um timer de descanso rodando —
@@ -9776,10 +9833,12 @@ function _showUpdateToastWhenIdle() {
 }
 
 function initUpdateCheck() {
-  checkAppVersion()
-  setInterval(checkAppVersion, 5 * 60 * 1000)
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkAppVersion() })
-  window.addEventListener('focus', checkAppVersion)
+  checkAppVersion('entry')
+  setInterval(() => checkAppVersion('interval'), 5 * 60 * 1000)
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkAppVersion('entry') })
+  window.addEventListener('focus', () => checkAppVersion('entry'))
+  // Página devolvida pelo back/forward cache: nenhum script roda de novo, então checa aqui.
+  window.addEventListener('pageshow', e => { if (e.persisted) checkAppVersion('entry') })
 }
 
 // ─────────────────────────────────────────────
