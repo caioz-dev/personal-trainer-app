@@ -2451,6 +2451,24 @@
     @media (max-width: 768px) { .offline-banner { top: 54px; } }
     @media (max-width: 480px) { .offline-banner { top: 44px; } }
     @media (max-width: 400px) { .offline-banner { top: 38px; } }
+
+    /* Base de treinos (modelos) */
+    .tpl-toolbar { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: flex-end; margin-bottom: 1rem; }
+    .tpl-folder { margin-bottom: .875rem; }
+    .tpl-folder-header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; cursor: pointer; user-select: none; }
+    .tpl-folder-title { display: flex; align-items: center; gap: .5rem; min-width: 0; font-weight: 700; color: var(--text-primary); }
+    .tpl-folder-title span.tpl-folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tpl-folder-count { font-size: .75rem; font-weight: 500; color: var(--text-muted); white-space: nowrap; }
+    .tpl-folder-actions { display: flex; gap: .35rem; flex-shrink: 0; }
+    .tpl-folder-body { display: none; margin-top: .75rem; }
+    .tpl-folder-body.open { display: flex; flex-direction: column; gap: .5rem; }
+    .tpl-item { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .625rem .75rem; border: 1px solid var(--border-subtle); border-radius: var(--radius); }
+    .tpl-item-main { min-width: 0; }
+    .tpl-item-name { font-weight: 600; font-size: .88rem; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tpl-item-meta { font-size: .75rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tpl-empty-folder { font-size: .8rem; color: var(--text-muted); padding: .25rem .125rem; }
+    /* O modelo não guarda volume: esconde a prévia de volume por exercício no editor. */
+    #tpl-exercise-list .form-group:has(> [id^="ex-vol-"]) { display: none; }
   </style>
 </head>
 <body>
@@ -2756,6 +2774,52 @@
           <div id="renewals-body"></div>
         </div>
 
+        <!-- VIEW: Base de treinos (personal) -->
+        <div id="view-templates" class="view" style="display:none">
+          <div id="templates-body"></div>
+        </div>
+
+        <!-- VIEW: Editor de modelo (personal) — reaproveita as linhas de exercício do
+             formulário de treino (addExercise), sem aluno, datas, volume nem rascunho -->
+        <div id="view-template-editor" class="view" style="display:none">
+          <div class="card reveal" style="max-width:700px">
+            <div class="card-header">
+              <div>
+                <div class="section-label">Base de treinos</div>
+                <div class="card-title" id="tpl-title">Novo Modelo</div>
+              </div>
+            </div>
+            <form id="template-form" onsubmit="saveTemplate(event)" novalidate>
+              <div class="form-grid">
+                <div class="form-group form-full">
+                  <label>Nome do modelo</label>
+                  <input id="tpl-name" type="text" class="form-control" maxlength="120" placeholder="Ex: Treino A — Peito e Tríceps" required>
+                </div>
+                <div class="form-group form-full">
+                  <label>Pasta</label>
+                  <select id="tpl-folder" class="form-control"></select>
+                </div>
+                <div class="form-group form-full">
+                  <label>Observações (opcional)</label>
+                  <textarea id="tpl-notes" class="form-control" rows="2" maxlength="2000" style="resize:vertical" placeholder="Ex: foco em força, menor volume"></textarea>
+                </div>
+              </div>
+
+              <div class="add-ex-bar">
+                <span class="add-ex-title"><span data-icon="dumbbell"></span> Exercícios</span>
+                <button type="button" class="btn btn-outline btn-sm" onclick="addExercise()">+ Adicionar exercício</button>
+              </div>
+
+              <div id="tpl-exercise-list" class="exercise-list"></div>
+
+              <div style="display:flex;gap:.625rem">
+                <button type="submit" id="tpl-btn" class="btn btn-primary">Salvar Modelo</button>
+                <button type="button" class="btn btn-outline" onclick="navigateTo('templates')">Cancelar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -2977,6 +3041,23 @@
   </div>
 </div>
 
+<!-- Modal: criar/renomear pasta de modelos -->
+<div id="tpl-folder-modal" class="routine-modal-overlay" style="display:none" onclick="if(event.target===this)closeTplFolderModal()">
+  <div class="routine-modal-card">
+    <div style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em;margin-bottom:1.25rem" id="tpl-folder-modal-title">Nova pasta</div>
+    <form id="tpl-folder-form" onsubmit="saveTplFolder(event)" novalidate>
+      <div class="form-group">
+        <label>Nome da pasta *</label>
+        <input id="tpl-folder-name" class="form-control" type="text" maxlength="60" required placeholder="Ex: Hipertrofia">
+      </div>
+      <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.5rem;flex-wrap:wrap">
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeTplFolderModal()">Cancelar</button>
+        <button type="submit" id="tpl-folder-btn" class="btn btn-primary btn-sm">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Modal: notificações in-app -->
 <div id="notif-panel-overlay" class="routine-modal-overlay" style="display:none" onclick="if(event.target===this)closeNotifPanel()">
   <div class="routine-modal-card" style="max-width:440px;max-height:80vh;display:flex;flex-direction:column">
@@ -3058,6 +3139,7 @@ const ICONS = {
   'copy': '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
   'dumbbell': '<path d="M17.596 12.768a2 2 0 1 0 2.829-2.829l-1.768-1.767a2 2 0 0 0 2.828-2.829l-2.828-2.828a2 2 0 0 0-2.829 2.828l-1.767-1.768a2 2 0 1 0-2.829 2.829z"/><path d="m2.5 21.5 1.4-1.4"/><path d="m20.1 3.9 1.4-1.4"/><path d="M5.343 21.485a2 2 0 1 0 2.829-2.828l1.767 1.768a2 2 0 1 0 2.829-2.829l-6.364-6.364a2 2 0 1 0-2.829 2.829l1.768 1.767a2 2 0 0 0-2.828 2.829z"/><path d="m9.6 14.4 4.8-4.8"/>',
   'eye': '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+  'folder': '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
   'footprints': '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>',
   'gauge': '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
   'grip-vertical': '<circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/>',
@@ -3173,6 +3255,13 @@ let _metronomeToken         = null   // { exId, cancelled }
 let _audioCtx               = null   // reused AudioContext for metronome
 let _audioUnlockWarned      = false  // evita repetir o toast de "não consegui ativar o som"
 let _routineExCache         = {}     // workout_id → workout_exercises[], populated on accordion expand
+// Base de treinos: com o editor de modelo aberto, as funções das linhas de exercício
+// (addExercise etc.) trabalham em #tpl-exercise-list e não gravam rascunho de treino.
+let _tplEditor              = null   // { templateId } enquanto o editor de modelo está aberto
+let _tplFolders             = []     // pastas do personal (última leitura da tela Modelos)
+let _tplTemplates           = []     // modelos do personal (idem), com exCount
+let _tplFolderModalId       = null   // pasta sendo renomeada (null = criando)
+const _tplClosedFolders     = new Set()   // pastas recolhidas na tela (só nesta aba)
 
 // Limpa TODO o estado da sessão anterior — chamado no logout e antes de boot de novo usuário
 function resetAppState() {
@@ -3271,6 +3360,13 @@ function resetAppState() {
   window._wfExerciseCatalog   = null
   window._liveExerciseCatalog = null
   _routineExCache             = {}
+  _tplEditor                  = null
+  _tplFolders                 = []
+  _tplTemplates               = []
+  _tplFolderModalId           = null
+  _tplClosedFolders.clear()
+  const tplList = document.getElementById('tpl-exercise-list')
+  if (tplList) tplList.innerHTML = ''
   for (const k in compCharts) { try { compCharts[k].destroy() } catch {} }
   compCharts = {}
 
@@ -3693,7 +3789,7 @@ function buildSidebar() {
   badge.className   = `role-badge ${isP ? 'role-personal' : 'role-student'}`
 
   const items = isP
-    ? [['students','users','Alunos'],['my-workout','dumbbell','Meu Treino'],['progress','trending-up','Progresso dos Alunos'],['renewals','refresh-cw','Renovação de Treinos'],['personal-profile','user-round','Meu Perfil']]
+    ? [['students','users','Alunos'],['my-workout','dumbbell','Meu Treino'],['templates','clipboard-list','Modelos de Treino'],['progress','trending-up','Progresso dos Alunos'],['renewals','refresh-cw','Renovação de Treinos'],['personal-profile','user-round','Meu Perfil']]
     : [['history','chart-column','Meu Histórico'],['profile','user-round','Meu Perfil'],['calculator','calculator','Calculadora'],['progress','trending-up','Progresso']]
 
   document.getElementById('nav-list').innerHTML = items.map(([id, iconName, label]) => `
@@ -3788,11 +3884,17 @@ const VIEW_TITLES = {
   students: 'Alunos', 'my-workout': 'Meu Treino', workout: 'Novo Treino',
   calculator: 'Calculadora', history: 'Meu Histórico',
   progress: 'Dashboard de Progresso', profile: 'Meu Perfil', 'personal-profile': 'Meu Perfil',
-  'student-sheet': 'Ficha do Aluno', 'routine-detail': 'Rotina', renewals: 'Renovação de Treinos'
+  'student-sheet': 'Ficha do Aluno', 'routine-detail': 'Rotina', renewals: 'Renovação de Treinos',
+  templates: 'Modelos de Treino', 'template-editor': 'Modelo de Treino'
 }
 
 async function navigateTo(view, opts = {}) {
   if (view === 'workout' && profile?.role !== 'personal') return
+  if ((view === 'templates' || view === 'template-editor') && profile?.role !== 'personal') return
+
+  // Saindo do editor de modelo (inclusive para abri-lo de novo): as linhas de exercício
+  // voltam a ser as do formulário de treino. Antes de qualquer setup de outra tela.
+  if (_tplEditor) _closeTemplateEditor()
 
   // Execução guiada ativa (timerInterval) não é mais descartada ao navegar para outra
   // tela — o progresso fica preservado (em memória e no localStorage) até o aluno
@@ -3845,6 +3947,8 @@ async function navigateTo(view, opts = {}) {
     else if (view === 'history')        await renderHistory(profile.id, gen)
     else if (view === 'progress')       await renderProgress()
     else if (view === 'renewals')       await renderRenewals(gen)
+    else if (view === 'templates')      await renderTemplates(gen)
+    else if (view === 'template-editor') await setupTemplateEditor(opts, gen)
     else if (view === 'profile')        await renderProfile()
     else if (view === 'personal-profile') await renderPersonalProfile()
   } catch { /* each render fn already handles its own errors */ }
@@ -7967,6 +8071,7 @@ function updateProgressChart() {
 // tela) — os dados continuam salvos, mas restoreWorkoutFormState não deve reabrir sozinho
 // nesse caso. Ver navigateTo().
 function saveWorkoutFormState(active = true) {
+  if (_tplEditor) return   // linhas do editor de modelo: não são rascunho de treino
   if (profile?.role !== 'personal') return
   const form = document.getElementById('workout-form')
   if (!form || !document.getElementById('wf-name')) return
@@ -8320,7 +8425,7 @@ async function setupWorkoutForm(opts = {}) {
 function addExercise() {
   exerciseCounter++
   const id   = exerciseCounter
-  const list = document.getElementById('exercise-list')
+  const list = document.getElementById(_tplEditor ? 'tpl-exercise-list' : 'exercise-list')
   const num  = list.children.length + 1
 
   const div = document.createElement('div')
@@ -8472,7 +8577,7 @@ function removeExercise(id) {
 }
 
 function updateExerciseNumbers() {
-  document.querySelectorAll('#exercise-list .exercise-row').forEach((row, i) => {
+  document.querySelectorAll(`${_exListSel()} .exercise-row`).forEach((row, i) => {
     const lbl = row.querySelector('.exercise-num-label')
     const inp = row.querySelector('.ex-name')
     if (!lbl) return
@@ -8491,12 +8596,410 @@ function updateExerciseHeader(id) {
   label.textContent = name || label.dataset.default || `Exercício ${id}`
 }
 
+// Lista de linhas de exercício ativa: a do editor de modelo, se aberto; senão a do treino.
+function _exListSel() { return _tplEditor ? '#tpl-exercise-list' : '#exercise-list' }
+
 function updateRemoveButtons() {
-  const rows = document.querySelectorAll('#exercise-list .exercise-row')
+  const rows = document.querySelectorAll(`${_exListSel()} .exercise-row`)
   rows.forEach(row => {
     const btn = row.querySelector('.remove-ex-btn')
     if (btn) btn.style.display = rows.length > 1 ? 'inline-flex' : 'none'
   })
+}
+
+// ─────────────────────────────────────────────
+// BASE DE TREINOS (MODELOS) — E1 lista/pastas, E2 editor
+// ─────────────────────────────────────────────
+// Modelos são privados do personal (RLS: owner_id = auth.uid()). Nada aqui grava em
+// workouts/workout_exercises nem chama edge function: sem volume, sem notificação.
+// As consultas filtram owner_id = me.id além da RLS, e os ids vindos do banco só vão
+// para onclick depois de passar por _isUuid.
+const _UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+function _isUuid(id) { return typeof id === 'string' && _UUID_RE.test(id) }
+
+function _tplErrMsg(error) { return error?.message || 'erro desconhecido' }
+
+// Agrupa modelos por pasta: pastas na ordem recebida, depois "Sem pasta" (folderId null).
+// Modelo com folder_id de pasta que não veio na lista também cai em "Sem pasta".
+function _groupTemplatesByFolder(folders, templates) {
+  const known = new Set(folders.map(f => f.id))
+  const groups = folders.map(f => ({ folder: f, items: templates.filter(t => t.folder_id === f.id) }))
+  const loose = templates.filter(t => !t.folder_id || !known.has(t.folder_id))
+  return { groups, loose }
+}
+
+function _tplCountLabel(n) { return `${n} modelo${n === 1 ? '' : 's'}` }
+
+function _renderTemplateItem(t) {
+  if (!_isUuid(t.id)) return ''
+  const n = t.exCount || 0
+  const meta = `${n} exercício${n === 1 ? '' : 's'}${t.notes ? ' · ' + t.notes : ''}`
+  return `
+    <div class="tpl-item">
+      <div class="tpl-item-main">
+        <div class="tpl-item-name">${escHtml(t.name)}</div>
+        <div class="tpl-item-meta">${escHtml(meta)}</div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="openTemplateEditor('${t.id}')">${icon('pencil')} Editar</button>
+    </div>`
+}
+
+function _renderTemplateGroup(key, title, items, folderId) {
+  const open = !_tplClosedFolders.has(key)
+  const actions = folderId ? `
+      <div class="tpl-folder-actions">
+        <button class="btn btn-sm btn-outline" title="Novo modelo nesta pasta" onclick="event.stopPropagation();openTemplateEditor(null,'${folderId}')">${icon('plus')}</button>
+        <button class="btn btn-sm btn-outline" title="Renomear pasta" onclick="event.stopPropagation();openTplFolderModal('${folderId}')">${icon('pencil')}</button>
+        <button class="btn btn-sm btn-ghost-danger" title="Apagar pasta" onclick="event.stopPropagation();deleteTplFolder('${folderId}')">${icon('trash-2')}</button>
+      </div>` : ''
+  return `
+    <div class="card tpl-folder">
+      <div class="tpl-folder-header" onclick="toggleTplFolder('${key}')">
+        <div class="tpl-folder-title">
+          <span class="ex-chevron${open ? ' open' : ''}" id="tpl-chev-${key}">${icon('chevron-right')}</span>
+          ${icon('folder')}<span class="tpl-folder-name">${escHtml(title)}</span>
+          <span class="tpl-folder-count">${_tplCountLabel(items.length)}</span>
+        </div>${actions}
+      </div>
+      <div class="tpl-folder-body${open ? ' open' : ''}" id="tpl-body-${key}">
+        ${items.length ? items.map(_renderTemplateItem).join('') : '<div class="tpl-empty-folder">Nenhum modelo nesta pasta.</div>'}
+      </div>
+    </div>`
+}
+
+async function renderTemplates(gen) {
+  const body = document.getElementById('templates-body')
+  if (!body) return
+  body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando…</div>'
+
+  const [fRes, tRes] = await Promise.all([
+    sb.from('template_folders').select('id, name, position')
+      .eq('owner_id', me.id).order('position').order('name'),
+    sb.from('workout_templates').select('id, name, notes, folder_id, position, template_exercises(count)')
+      .eq('owner_id', me.id).order('position').order('name')
+  ])
+  if (gen !== navGen) return
+  if (fRes.error || tRes.error) {
+    toast('Erro ao carregar os modelos: ' + _tplErrMsg(fRes.error || tRes.error), 'error')
+    body.innerHTML = '<div class="empty-state"><p>Não foi possível carregar os modelos.</p></div>'
+    return
+  }
+  _tplFolders   = (fRes.data || []).filter(f => _isUuid(f.id))
+  _tplTemplates = (tRes.data || []).map(t => ({ ...t, exCount: t.template_exercises?.[0]?.count || 0 }))
+
+  const { groups, loose } = _groupTemplatesByFolder(_tplFolders, _tplTemplates)
+  const toolbar = `
+    <div class="tpl-toolbar">
+      <button class="btn btn-outline btn-sm" onclick="openTplFolderModal()">${icon('folder')} Nova pasta</button>
+      <button class="btn btn-primary btn-sm" onclick="openTemplateEditor()">${icon('plus')} Novo modelo</button>
+    </div>`
+
+  if (!_tplFolders.length && !_tplTemplates.length) {
+    body.innerHTML = toolbar + `
+      <div class="card empty-state">
+        <p>Nenhum modelo ainda.</p>
+        <p style="font-size:.8rem">Crie pastas (ex: Hipertrofia, Iniciantes) e modelos para começar treinos novos mais rápido.</p>
+      </div>`
+    return
+  }
+
+  body.innerHTML = toolbar
+    + groups.map(g => _renderTemplateGroup(g.folder.id, g.folder.name, g.items, g.folder.id)).join('')
+    + (loose.length || !groups.length ? _renderTemplateGroup('loose', 'Sem pasta', loose, null) : '')
+}
+
+function toggleTplFolder(key) {
+  const open = _tplClosedFolders.has(key)
+  if (open) _tplClosedFolders.delete(key); else _tplClosedFolders.add(key)
+  document.getElementById(`tpl-body-${key}`)?.classList.toggle('open', open)
+  document.getElementById(`tpl-chev-${key}`)?.classList.toggle('open', open)
+}
+
+// ── Pastas ──
+function openTplFolderModal(folderId = null) {
+  if (folderId && !_isUuid(folderId)) return
+  const folder = folderId ? _tplFolders.find(f => f.id === folderId) : null
+  if (folderId && !folder) { toast('Pasta não encontrada. Recarregue a tela.', 'error'); return }
+  _tplFolderModalId = folder ? folder.id : null
+  document.getElementById('tpl-folder-modal-title').textContent = folder ? 'Renomear pasta' : 'Nova pasta'
+  const input = document.getElementById('tpl-folder-name')
+  input.value = folder ? folder.name : ''
+  document.getElementById('tpl-folder-btn').disabled = false
+  document.getElementById('tpl-folder-modal').style.display = 'flex'
+  input.focus()
+}
+
+function closeTplFolderModal() {
+  document.getElementById('tpl-folder-modal').style.display = 'none'
+  _tplFolderModalId = null
+}
+
+async function saveTplFolder(e) {
+  e.preventDefault()
+  const name = document.getElementById('tpl-folder-name').value.trim()
+  if (!name || name.length > 60) { toast('Dê um nome de 1 a 60 caracteres para a pasta.', 'error'); return }
+  const btn = document.getElementById('tpl-folder-btn')
+  btn.disabled = true
+
+  const renaming = _tplFolderModalId
+  const { data, error } = renaming
+    ? await sb.from('template_folders').update({ name })
+        .eq('id', renaming).eq('owner_id', me.id).select('id')
+    : await sb.from('template_folders').insert({ owner_id: me.id, name, position: _tplFolders.length }).select('id')
+  btn.disabled = false
+
+  if (error) {
+    toast(error.code === '23505' ? 'Já existe uma pasta com esse nome.' : 'Erro ao salvar a pasta: ' + _tplErrMsg(error), 'error')
+    return
+  }
+  if (!data?.length) { toast('Pasta não encontrada. Recarregue a tela.', 'error'); return }
+  closeTplFolderModal()
+  toast(renaming ? 'Pasta renomeada.' : 'Pasta criada.', 'success')
+  if (currentView === 'templates') renderTemplates(navGen)
+}
+
+// Apagar a pasta não apaga modelos: o banco zera folder_id (ON DELETE SET NULL).
+async function deleteTplFolder(folderId) {
+  if (!_isUuid(folderId)) return
+  const folder = _tplFolders.find(f => f.id === folderId)
+  if (!folder) { toast('Pasta não encontrada. Recarregue a tela.', 'error'); return }
+  const n = _tplTemplates.filter(t => t.folder_id === folderId).length
+  const msg = n
+    ? `Apagar a pasta "${folder.name}"? ${n === 1 ? 'O modelo dela vai' : `Os ${n} modelos dela vão`} para "Sem pasta".`
+    : `Apagar a pasta "${folder.name}"? Ela está vazia.`
+  if (!confirm(msg)) return
+
+  const { data, error } = await sb.from('template_folders').delete()
+    .eq('id', folderId).eq('owner_id', me.id).select('id')
+  if (error) { toast('Erro ao apagar a pasta: ' + _tplErrMsg(error), 'error'); return }
+  if (!data?.length) { toast('Pasta não encontrada. Recarregue a tela.', 'error'); return }
+  _tplClosedFolders.delete(folderId)
+  toast('Pasta apagada.', 'success')
+  if (currentView === 'templates') renderTemplates(navGen)
+}
+
+// ── Editor de modelo ──
+function openTemplateEditor(templateId = null, folderId = null) {
+  if (templateId && !_isUuid(templateId)) return
+  if (folderId && !_isUuid(folderId)) folderId = null
+  navigateTo('template-editor', { templateId, folderId })
+}
+
+// Chamada por navigateTo ao sair do editor: limpa as linhas dele e devolve as funções das
+// linhas de exercício ao formulário de treino. exerciseCounter não volta a 0 — os ids
+// ex-N continuam únicos em relação às linhas guardadas em #exercise-list.
+function _closeTemplateEditor() {
+  _tplEditor = null
+  const list = document.getElementById('tpl-exercise-list')
+  if (list) list.innerHTML = ''
+}
+
+async function setupTemplateEditor(opts = {}, gen) {
+  const templateId = _isUuid(opts.templateId) ? opts.templateId : null
+  _tplEditor = { templateId }
+  document.getElementById('tpl-exercise-list').innerHTML = ''
+  document.getElementById('tpl-title').textContent = templateId ? 'Editar Modelo' : 'Novo Modelo'
+  const btn = document.getElementById('tpl-btn')
+  btn.textContent = 'Salvar Modelo'; btn.disabled = true
+  document.getElementById('tpl-name').value  = ''
+  document.getElementById('tpl-notes').value = ''
+
+  const [fRes, tRes] = await Promise.all([
+    sb.from('template_folders').select('id, name, position')
+      .eq('owner_id', me.id).order('position').order('name'),
+    templateId
+      ? sb.from('workout_templates').select('id, name, notes, folder_id, template_exercises(*)')
+          .eq('id', templateId).eq('owner_id', me.id)
+          .order('position', { ascending: true, foreignTable: 'template_exercises' })
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null })
+  ])
+  if (gen !== navGen || !_tplEditor) return
+
+  if (fRes.error) toast('Erro ao carregar as pastas: ' + _tplErrMsg(fRes.error), 'error')
+  const folders = (fRes.data || []).filter(f => _isUuid(f.id))
+  if (templateId && (tRes.error || !tRes.data)) {
+    toast(tRes.error ? 'Erro ao carregar o modelo: ' + _tplErrMsg(tRes.error) : 'Modelo não encontrado.', 'error')
+    navigateTo('templates')
+    return
+  }
+
+  const tpl = tRes.data
+  const folderSel = document.getElementById('tpl-folder')
+  folderSel.innerHTML = '<option value="">Sem pasta</option>' +
+    folders.map(f => `<option value="${f.id}">${escHtml(f.name)}</option>`).join('')
+  const wantFolder = tpl ? tpl.folder_id : opts.folderId
+  folderSel.value = folders.some(f => f.id === wantFolder) ? wantFolder : ''
+
+  if (tpl) {
+    document.getElementById('tpl-name').value  = tpl.name || ''
+    document.getElementById('tpl-notes').value = tpl.notes || ''
+    const exes = (tpl.template_exercises || []).slice().sort((a, b) =>
+      (a.position ?? 9999) - (b.position ?? 9999) || (a.id > b.id ? 1 : -1))
+    if (exes.length) _populateExerciseRows(exes, { withDbId: false })
+    else addExercise()
+  } else {
+    addExercise()
+  }
+  btn.disabled = false
+
+  // Mesmo catálogo de nomes do formulário de treino (autocompletar e normalizar grafia).
+  if (!window._wfExerciseCatalog) {
+    _loadExerciseCatalog().then(catalog => {
+      window._wfExerciseCatalog = catalog
+      const dl = document.getElementById('wf-exercise-catalog')
+      if (dl) dl.innerHTML = catalog.names.map(n => `<option value="${escHtml(n)}">`).join('')
+    })
+  }
+}
+
+// Lê as linhas do editor como linhas de template_exercises (sem volume, sem pace — o ritmo
+// é recalculado da velocidade ao preencher o formulário). Mesmas regras do saveWorkout,
+// exceto: Peso corporal grava carga 0 (o peso do aluno entra ao usar o modelo) e carga
+// vazia vale 0 (o modelo é ponto de partida). Retorna { exercises, firstError }.
+function _collectTemplateExercises(rows, catalog) {
+  const exercises = []
+  let firstError = null
+  const flag = (row, fieldEl, exLabel, fieldLabel) => { if (!firstError) firstError = { row, fieldEl, exLabel, fieldLabel } }
+
+  rows.forEach((row, idx) => {
+    const nameEl = row.querySelector('.ex-name')
+    const exName = _resolveExerciseName(nameEl?.value, catalog)
+    const exType = row.querySelector('.ex-type')?.value === 'aerobico' ? 'aerobico' : 'musculacao'
+    const exLabel = exName || `Exercício ${idx + 1}`
+    if (!exName || exName.length > 120) { flag(row, nameEl, exLabel, 'Nome do exercício'); return }
+
+    const base = {
+      exercise_name: exName, exercise_type: exType, position: idx,
+      sets: 1, weight_kg: 0, reps: 0, cadencia: null, tempo_descanso: null,
+      duration_min: null, distance_km: null, speed_kmh: null,
+      recovery_interval_min: null, recovery_speed_kmh: null, hr_min: null, hr_max: null,
+      training_method: null, method_description: null,
+      bodyweight: false, measure: 'reps', hold_seconds: null
+    }
+
+    if (exType === 'aerobico') {
+      const durationEl = row.querySelector('.ex-duration')
+      const duration = parseFloat(durationEl?.value)
+      if (isNaN(duration) || duration < 0) { flag(row, durationEl, exLabel, 'Duração (min)'); return }
+      exercises.push({
+        ...base,
+        duration_min:          duration,
+        distance_km:           parseFloat(row.querySelector('.ex-distance')?.value)          || null,
+        speed_kmh:             parseFloat(row.querySelector('.ex-speed')?.value)             || null,
+        recovery_interval_min: parseFloat(row.querySelector('.ex-recovery-interval')?.value) || null,
+        recovery_speed_kmh:    parseFloat(row.querySelector('.ex-recovery-speed')?.value)    || null,
+        hr_min:                parseInt(row.querySelector('.ex-hr-min')?.value)              || null,
+        hr_max:                parseInt(row.querySelector('.ex-hr-max')?.value)              || null
+      })
+      return
+    }
+
+    const setsEl   = row.querySelector('.ex-sets')
+    const weightEl = row.querySelector('.ex-weight')
+    const repsEl   = row.querySelector('.ex-reps')
+    const holdEl   = row.querySelector('.ex-hold')
+    const bodyweight = !!row.querySelector('.ex-bodyweight')?.checked
+    const measure    = row.querySelector('.ex-measure')?.value === 'tempo' ? 'tempo' : 'reps'
+    const sets = parseInt(setsEl?.value)
+    if (!sets || sets < 1) { flag(row, setsEl, exLabel, 'Séries'); return }
+    const rawWeight = (weightEl?.value ?? '').trim()
+    const weight = bodyweight || rawWeight === '' ? 0 : parseFloat(rawWeight)
+    if (isNaN(weight) || weight < 0) { flag(row, weightEl, exLabel, 'Carga (kg)'); return }
+    let reps = 0, hold = null
+    if (measure === 'tempo') {
+      hold = parseInt(holdEl?.value)
+      if (!hold || hold < 1 || hold > 3600) { flag(row, holdEl, exLabel, 'Tempo por série (s)'); return }
+    } else {
+      reps = parseInt(repsEl?.value)
+      if (!reps || reps < 1) { flag(row, repsEl, exLabel, 'Repetições'); return }
+    }
+    const descanso = row.querySelector('.ex-descanso')?.value
+    exercises.push({
+      ...base,
+      sets, weight_kg: weight, reps,
+      cadencia:           row.querySelector('.ex-cadencia')?.value.trim()    || null,
+      tempo_descanso:     descanso ? parseInt(descanso) : null,
+      training_method:    row.querySelector('.ex-method')?.value.trim()      || null,
+      method_description: row.querySelector('.ex-method-desc')?.value.trim() || null,
+      bodyweight, measure, hold_seconds: hold
+    })
+  })
+  return { exercises, firstError }
+}
+
+async function saveTemplate(e) {
+  e.preventDefault()
+  if (!_tplEditor) return
+  const templateId = _tplEditor.templateId
+  const btn = document.getElementById('tpl-btn')
+  const resetBtn = () => { btn.textContent = 'Salvar Modelo'; btn.disabled = false }
+
+  const name     = document.getElementById('tpl-name').value.trim()
+  const notes    = document.getElementById('tpl-notes').value.trim() || null
+  const folderId = document.getElementById('tpl-folder').value || null
+  if (!name || name.length > 120) { toast('Dê um nome de 1 a 120 caracteres ao modelo.', 'error'); return }
+  if (notes && notes.length > 2000) { toast('As observações podem ter até 2000 caracteres.', 'error'); return }
+  if (folderId && !_isUuid(folderId)) { toast('Pasta inválida. Recarregue a tela.', 'error'); return }
+
+  document.querySelectorAll('#tpl-exercise-list .wf-field-error').forEach(el => el.classList.remove('wf-field-error'))
+  document.querySelectorAll('#tpl-exercise-list .exercise-row.wf-row-error').forEach(el => el.classList.remove('wf-row-error'))
+  const rows = [...document.querySelectorAll('#tpl-exercise-list .exercise-row')]
+  const { exercises, firstError } = _collectTemplateExercises(rows, window._wfExerciseCatalog)
+  if (firstError) {
+    toast(`Confira o campo "${firstError.fieldLabel}" no exercício "${firstError.exLabel}".`, 'error')
+    firstError.row.classList.add('wf-row-error')
+    firstError.fieldEl?.classList.add('wf-field-error')
+    const rowId = firstError.row.id.replace(/^ex-/, '')
+    document.getElementById(`ex-body-${rowId}`)?.classList.add('open')
+    document.getElementById(`ex-chevron-${rowId}`)?.classList.add('open')
+    firstError.fieldEl?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    firstError.fieldEl?.focus()
+    return
+  }
+  if (!exercises.length) { toast('Adicione pelo menos um exercício.', 'error'); return }
+
+  btn.textContent = 'Salvando…'; btn.disabled = true
+  const fields = { name, notes, folder_id: folderId }
+
+  if (!templateId) {
+    const { data: tpl, error } = await sb.from('workout_templates')
+      .insert({ owner_id: me.id, ...fields }).select('id').single()
+    if (error || !tpl) { toast('Erro ao salvar o modelo: ' + _tplErrMsg(error), 'error'); resetBtn(); return }
+    const { error: exErr } = await sb.from('template_exercises')
+      .insert(exercises.map(ex => ({ ...ex, template_id: tpl.id })))
+    if (exErr) {
+      // Sem os exercícios o modelo ficaria vazio: desfaz a linha recém-criada.
+      await sb.from('workout_templates').delete().eq('id', tpl.id).eq('owner_id', me.id)
+      toast('Erro ao salvar os exercícios do modelo: ' + _tplErrMsg(exErr), 'error')
+      resetBtn(); return
+    }
+  } else {
+    const { data: upd, error } = await sb.from('workout_templates').update(fields)
+      .eq('id', templateId).eq('owner_id', me.id).select('id')
+    if (error) { toast('Erro ao salvar o modelo: ' + _tplErrMsg(error), 'error'); resetBtn(); return }
+    if (!upd?.length) { toast('Modelo não encontrado.', 'error'); resetBtn(); return }
+
+    // Troca os exercícios: grava os novos antes de apagar os antigos, para uma falha no
+    // meio nunca deixar o modelo sem exercício (nada aponta para template_exercises).
+    const { data: oldRows, error: oldErr } = await sb.from('template_exercises')
+      .select('id').eq('template_id', templateId)
+    if (oldErr) { toast('Erro ao ler os exercícios do modelo: ' + _tplErrMsg(oldErr), 'error'); resetBtn(); return }
+    const { error: insErr } = await sb.from('template_exercises')
+      .insert(exercises.map(ex => ({ ...ex, template_id: templateId })))
+    if (insErr) { toast('Erro ao salvar os exercícios do modelo: ' + _tplErrMsg(insErr), 'error'); resetBtn(); return }
+    const oldIds = (oldRows || []).map(r => r.id)
+    if (oldIds.length) {
+      const { error: delErr } = await sb.from('template_exercises').delete().in('id', oldIds)
+      if (delErr) {
+        toast('Modelo salvo, mas os exercícios antigos não foram removidos. Abra o modelo e salve de novo.', 'error')
+        navigateTo('templates'); return
+      }
+    }
+  }
+
+  toast('Modelo salvo.', 'success')
+  navigateTo('templates')
 }
 
 // ── Duplicar treino ──────────────────────────
@@ -9081,6 +9584,15 @@ function _applyWfBodyweightToRow(id) {
   const row = document.getElementById(`ex-${id}`)
   const cb  = row?.querySelector('.ex-bodyweight')
   if (!cb) return
+  // Modelo não tem aluno: a caixa fica livre e a carga vazia; o peso entra no "Usar modelo".
+  if (_tplEditor) {
+    cb.disabled = false
+    const tplHint = row.querySelector('.ex-bw-hint')
+    if (tplHint) tplHint.textContent = cb.checked ? 'No treino, a carga será o peso do aluno.' : ''
+    const tplWeight = row.querySelector('.ex-weight')
+    if (tplWeight) { tplWeight.readOnly = cb.checked; if (cb.checked) tplWeight.value = '' }
+    return
+  }
   const ok = _wfWeightState === 'ok'
   cb.disabled = !ok && !cb.checked
   const hint = row.querySelector('.ex-bw-hint')
@@ -9161,6 +9673,7 @@ function refreshExerciseVolume(id) {
 }
 
 function refreshTotalVolume() {
+  if (_tplEditor) return   // modelo não tem volume
   let totalMusc = 0, totalAeroKm = 0, hasMusc = false, hasAero = false
   document.querySelectorAll('#exercise-list .exercise-row').forEach(row => {
     const type = row.querySelector('.ex-type')?.value || 'musculacao'
@@ -9901,12 +10414,13 @@ async function checkAppVersion(source = 'entry') {
 const _RELOAD_BLOCKING_OVERLAYS = ['execution-overlay', 'live-execution-overlay', 'live-exec-picker-overlay',
   'review-modal', 'comparison-modal', 'timer-modal-overlay', 'password-reset-overlay', 'manual-exec-modal-overlay',
   'routine-modal', 'unlink-modal', 'body-data-modal', 'bulk-delete-modal', 'dup-modal-overlay',
-  'dup-routine-modal-overlay', 'reorder-modal-overlay', 'replicate-modal-overlay']
+  'dup-routine-modal-overlay', 'reorder-modal-overlay', 'replicate-modal-overlay', 'tpl-folder-modal']
 function _hasWorkInProgress() {
   if (timerInterval || currentWorkoutData || _execPhase || _pendingExecutionsSave) return true
   if (_liveSessionId || _liveTimerInterval) return true
   if (Object.values(restTimers).some(rt => rt?.intervalId)) return true
   if (currentView === 'workout') return true
+  if (currentView === 'template-editor') return true   // editor de modelo não tem rascunho
   // Snapshots ainda não restaurados (checagem do boot). Rascunho de treino inativo (personal
   // saiu do formulário) ou com mais de 1 h não reabre sozinho, então não segura o reload.
   try {
