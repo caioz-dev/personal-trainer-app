@@ -3061,6 +3061,31 @@
   </div>
 </div>
 
+<!-- Modal: enviar/editar avaliação física (PDF) -->
+<div id="pa-modal" class="routine-modal-overlay" style="display:none" onclick="if(event.target===this)closePaModal()">
+  <div class="routine-modal-card">
+    <div style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em;margin-bottom:1.25rem" id="pa-modal-title">Enviar avaliação física</div>
+    <form id="pa-form" onsubmit="savePhysicalAssessment(event)" novalidate>
+      <div class="form-group">
+        <label>Título *</label>
+        <input id="pa-title" class="form-control" type="text" maxlength="120" required placeholder="Ex: Avaliação de novembro">
+      </div>
+      <div class="form-group">
+        <label>Data da avaliação *</label>
+        <input id="pa-date" class="form-control" type="date" required>
+      </div>
+      <div class="form-group" id="pa-file-group">
+        <label>Arquivo PDF (até 10 MB) *</label>
+        <input id="pa-file" class="form-control" type="file" accept="application/pdf,.pdf">
+      </div>
+      <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.5rem;flex-wrap:wrap">
+        <button type="button" class="btn btn-outline btn-sm" onclick="closePaModal()">Cancelar</button>
+        <button type="submit" id="pa-btn" class="btn btn-primary btn-sm">Enviar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Modal: escolher modelo para preencher o novo treino -->
 <div id="use-tpl-modal" class="routine-modal-overlay" style="display:none" onclick="if(event.target===this)closeUseTemplateModal()">
   <div class="routine-modal-card">
@@ -3296,6 +3321,10 @@ let _tplFolders             = []     // pastas do personal (última leitura da t
 let _tplTemplates           = []     // modelos do personal (idem), com exCount
 let _tplFolderModalId       = null   // pasta sendo renomeada (null = criando)
 let _tplMoveId              = null   // modelo sendo movido de pasta
+// Avaliações físicas (PDF) da ficha do aluno
+let _paList                 = []     // avaliações do aluno aberto na ficha (última leitura)
+let _paCtx                  = null   // { studentId, editId } enquanto o modal está aberto
+let _paBusy                 = false  // envio/edição/remoção em andamento
 const _tplClosedFolders     = new Set()   // pastas recolhidas na tela (só nesta aba)
 
 // Limpa TODO o estado da sessão anterior — chamado no logout e antes de boot de novo usuário
@@ -3400,6 +3429,9 @@ function resetAppState() {
   _tplTemplates               = []
   _tplFolderModalId           = null
   _tplMoveId                  = null
+  _paList                     = []
+  _paCtx                      = null
+  _paBusy                     = false
   _tplClosedFolders.clear()
   const tplList = document.getElementById('tpl-exercise-list')
   if (tplList) tplList.innerHTML = ''
@@ -5874,6 +5906,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
       </div>
       ${calcSectionHTML}
       ${routinesSectionHTML}
+      ${profile.role === 'personal' ? `<div id="sheet-assessments" data-student-id="${safeIdH}"></div>` : ''}
       <div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border-subtle)">
       <div class="section-label" style="margin-bottom:.75rem">Histórico de Treinos</div>
       ${historyTableHTML}
@@ -5888,6 +5921,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
       </div>`
     bindWorkoutRowClicks(body)
     setupSheetCalc(studentId)
+    if (profile.role === 'personal') renderSheetAssessments(studentId)
   } catch (err) {
     body.innerHTML = `${header}<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
       <p>Erro ao carregar histórico.</p>
@@ -10697,7 +10731,7 @@ const _RELOAD_BLOCKING_OVERLAYS = ['execution-overlay', 'live-execution-overlay'
   'review-modal', 'comparison-modal', 'timer-modal-overlay', 'password-reset-overlay', 'manual-exec-modal-overlay',
   'routine-modal', 'unlink-modal', 'body-data-modal', 'bulk-delete-modal', 'dup-modal-overlay',
   'dup-routine-modal-overlay', 'reorder-modal-overlay', 'replicate-modal-overlay', 'tpl-folder-modal',
-  'tpl-move-modal', 'use-tpl-modal']
+  'tpl-move-modal', 'use-tpl-modal', 'pa-modal']
 function _hasWorkInProgress() {
   if (timerInterval || currentWorkoutData || _execPhase || _pendingExecutionsSave) return true
   if (_liveSessionId || _liveTimerInterval) return true
@@ -10757,6 +10791,198 @@ function initUpdateCheck() {
   window.addEventListener('focus', () => checkAppVersion('entry'))
   // Página devolvida pelo back/forward cache: nenhum script roda de novo, então checa aqui.
   window.addEventListener('pageshow', e => { if (e.persisted) checkAppVersion('entry') })
+}
+
+// ─────────────────────────────────────────────
+// AVALIAÇÕES FÍSICAS EM PDF (item 4, fase 1) — ficha do aluno, só personal
+// ─────────────────────────────────────────────
+// Bucket privado physical-assessments, arquivo em {personal}/{aluno}/{uuid}.pdf.
+// A RLS (tabela e storage) só deixa o personal com vínculo ativo; o aluno não vê.
+// Sem consentimento nem leitura de valores ainda. Abrir = URL assinada de 60 s.
+const PA_BUCKET    = 'physical-assessments'
+const PA_MAX_BYTES = 10 * 1024 * 1024
+
+function _paErrMsg(error) {
+  const m = error?.message || ''
+  if (error?.code === '42501' || /row-level security|violates row-level/i.test(m))
+    return 'Sem vínculo ativo com este aluno.'
+  if (/exceeded the maximum allowed size|payload too large/i.test(m)) return 'O arquivo passa de 10 MB.'
+  if (/mime type|invalid_mime_type/i.test(m)) return 'Só arquivos PDF são aceitos.'
+  return m || 'erro desconhecido'
+}
+
+// Confere o arquivo antes de enviar: tipo, tamanho e os bytes iniciais "%PDF-".
+// Retorna null se estiver ok, ou a mensagem de erro.
+async function _paCheckFile(file) {
+  if (!file) return 'Escolha o arquivo PDF.'
+  const byName = /\.pdf$/i.test(file.name || '')
+  if (file.type !== 'application/pdf' && !(file.type === '' && byName)) return 'Só arquivos PDF são aceitos.'
+  if (!file.size) return 'O arquivo está vazio.'
+  if (file.size > PA_MAX_BYTES) return 'O arquivo passa de 10 MB.'
+  try {
+    const head = new Uint8Array(await file.slice(0, 5).arrayBuffer())
+    if (String.fromCharCode(...head) !== '%PDF-') return 'O arquivo não é um PDF válido.'
+  } catch { return 'Não foi possível ler o arquivo.' }
+  return null
+}
+
+function _renderPaItem(a) {
+  if (!_isUuid(a.id)) return ''
+  return `
+    <div class="tpl-item">
+      <div class="tpl-item-main">
+        <div class="tpl-item-name">${icon('clipboard-list')} ${escHtml(a.title)}</div>
+        <div class="tpl-item-meta">${escHtml(fmtDate(a.assessed_at))}</div>
+      </div>
+      <div class="tpl-item-actions">
+        <button class="btn btn-outline btn-sm" title="Abrir PDF" onclick="openPhysicalAssessment('${a.id}')">${icon('eye')} Abrir</button>
+        <button class="btn btn-outline btn-sm" title="Editar título e data" onclick="openPaModal('${a.id}')">${icon('pencil')}</button>
+        <button class="btn btn-sm btn-ghost-danger" title="Apagar avaliação" onclick="deletePhysicalAssessment('${a.id}')">${icon('trash-2')}</button>
+      </div>
+    </div>`
+}
+
+async function renderSheetAssessments(studentId) {
+  const box = document.getElementById('sheet-assessments')
+  if (!box || !_isUuid(studentId) || box.dataset.studentId !== studentId) return
+  const head = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
+      <div class="section-label" style="margin-bottom:0">Avaliações físicas</div>
+      <button class="btn btn-primary btn-sm" onclick="openPaModal()">${icon('plus')} Enviar PDF</button>
+    </div>`
+  box.style.marginTop = '1.25rem'
+  box.innerHTML = head + '<div class="loading"><div class="spinner"></div>Carregando…</div>'
+
+  const { data, error } = await sb.from('physical_assessments')
+    .select('id, title, assessed_at, file_path, created_at')
+    .eq('student_id', studentId).eq('personal_id', me.id)
+    .order('assessed_at', { ascending: false }).order('created_at', { ascending: false })
+  // A ficha pode ter mudado de aluno (ou de tela) enquanto a consulta voltava.
+  const still = document.getElementById('sheet-assessments')
+  if (!still || still.dataset.studentId !== studentId) return
+  if (error) {
+    toast('Erro ao carregar as avaliações físicas: ' + _paErrMsg(error), 'error')
+    still.innerHTML = head + '<div class="tpl-empty-folder">Não foi possível carregar as avaliações.</div>'
+    return
+  }
+  _paList = (data || []).filter(a => _isUuid(a.id)).map(a => ({ ...a, student_id: studentId }))
+  still.innerHTML = head + (_paList.length
+    ? `<div style="display:flex;flex-direction:column;gap:.5rem">${_paList.map(_renderPaItem).join('')}</div>`
+    : '<div class="tpl-empty-folder">Nenhuma avaliação enviada.</div>')
+}
+
+function openPaModal(editId = null) {
+  const box = document.getElementById('sheet-assessments')
+  const studentId = box?.dataset.studentId
+  if (!_isUuid(studentId) || (editId && !_isUuid(editId))) return
+  const a = editId ? _paList.find(x => x.id === editId) : null
+  if (editId && !a) { toast('Avaliação não encontrada. Recarregue a ficha.', 'error'); return }
+  _paCtx = { studentId, editId: a ? a.id : null }
+  document.getElementById('pa-modal-title').textContent = a ? 'Editar avaliação física' : 'Enviar avaliação física'
+  document.getElementById('pa-title').value = a ? a.title : ''
+  document.getElementById('pa-date').value  = a ? a.assessed_at : today()
+  document.getElementById('pa-file').value  = ''
+  document.getElementById('pa-file-group').style.display = a ? 'none' : ''
+  const btn = document.getElementById('pa-btn')
+  btn.textContent = a ? 'Salvar' : 'Enviar'; btn.disabled = false
+  document.getElementById('pa-modal').style.display = 'flex'
+}
+
+function closePaModal() {
+  document.getElementById('pa-modal').style.display = 'none'
+  document.getElementById('pa-file').value = ''
+  _paCtx = null
+}
+
+async function savePhysicalAssessment(e) {
+  e.preventDefault()
+  if (!_paCtx || _paBusy) return
+  const { studentId, editId } = _paCtx
+  const title = document.getElementById('pa-title').value.trim()
+  const date  = document.getElementById('pa-date').value
+  if (!title || title.length > 120) { toast('Dê um título de 1 a 120 caracteres.', 'error'); return }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { toast('Informe a data da avaliação.', 'error'); return }
+  if (date > today()) { toast('A data da avaliação não pode ser no futuro.', 'error'); return }
+
+  const btn = document.getElementById('pa-btn')
+  const label = btn.textContent
+  _paBusy = true; btn.disabled = true
+
+  try {
+    if (editId) {
+      const { data, error } = await sb.from('physical_assessments')
+        .update({ title, assessed_at: date })
+        .eq('id', editId).eq('personal_id', me.id).select('id')
+      if (error) { toast('Erro ao salvar a avaliação: ' + _paErrMsg(error), 'error'); return }
+      if (!data?.length) { toast('Avaliação não encontrada ou sem vínculo ativo com o aluno.', 'error'); return }
+      toast('Avaliação atualizada.', 'success')
+    } else {
+      const file = document.getElementById('pa-file').files?.[0]
+      const fileErr = await _paCheckFile(file)
+      if (fileErr) { toast(fileErr, 'error'); return }
+      btn.textContent = 'Enviando…'
+      const path = `${me.id}/${studentId}/${crypto.randomUUID()}.pdf`
+      const { error: upErr } = await sb.storage.from(PA_BUCKET)
+        .upload(path, file, { contentType: 'application/pdf', upsert: false })
+      if (upErr) { toast('Erro ao enviar o PDF: ' + _paErrMsg(upErr), 'error'); return }
+      const { error: insErr } = await sb.from('physical_assessments')
+        .insert({ student_id: studentId, personal_id: me.id, assessed_at: date, title, file_path: path })
+        .select('id').single()
+      if (insErr) {
+        // Sem a linha o PDF ficaria órfão no bucket: desfaz o envio.
+        await sb.storage.from(PA_BUCKET).remove([path])
+        toast('Erro ao salvar a avaliação: ' + _paErrMsg(insErr), 'error')
+        return
+      }
+      toast('Avaliação enviada.', 'success')
+    }
+    closePaModal()
+    renderSheetAssessments(studentId)
+  } finally {
+    _paBusy = false
+    btn.disabled = false; btn.textContent = label
+  }
+}
+
+// Abre a aba antes do await (senão o bloqueador de pop-up barra) e só depois aponta
+// para a URL assinada de 60 s. A URL não é guardada em lugar nenhum.
+async function openPhysicalAssessment(id) {
+  if (!_isUuid(id)) return
+  const a = _paList.find(x => x.id === id)
+  if (!a) { toast('Avaliação não encontrada. Recarregue a ficha.', 'error'); return }
+  const win = window.open('about:blank', '_blank')
+  if (!win) { toast('Permita pop-ups deste site para abrir o PDF.', 'error'); return }
+  try { win.opener = null } catch {}
+  const { data, error } = await sb.storage.from(PA_BUCKET).createSignedUrl(a.file_path, 60)
+  if (error || !data?.signedUrl) {
+    try { win.close() } catch {}
+    toast('Erro ao abrir o PDF: ' + _paErrMsg(error), 'error')
+    return
+  }
+  win.location.href = data.signedUrl
+}
+
+// Apaga o arquivo e depois a linha: se a linha não sair, o PDF já foi; se o arquivo
+// não sair, a linha fica e dá para tentar de novo.
+async function deletePhysicalAssessment(id) {
+  if (!_isUuid(id) || _paBusy) return
+  const a = _paList.find(x => x.id === id)
+  if (!a) { toast('Avaliação não encontrada. Recarregue a ficha.', 'error'); return }
+  if (!confirm(`Apagar a avaliação "${a.title}" de ${fmtDate(a.assessed_at)}? O PDF será apagado e isso não pode ser desfeito.`)) return
+
+  _paBusy = true
+  try {
+    const { error: rmErr } = await sb.storage.from(PA_BUCKET).remove([a.file_path])
+    if (rmErr) { toast('Erro ao apagar o PDF: ' + _paErrMsg(rmErr), 'error'); return }
+    const { data, error } = await sb.from('physical_assessments').delete()
+      .eq('id', a.id).eq('personal_id', me.id).select('id')
+    if (error) { toast('O PDF foi apagado, mas o registro não: ' + _paErrMsg(error), 'error'); return }
+    if (!data?.length) { toast('Avaliação não encontrada ou sem vínculo ativo com o aluno.', 'error'); return }
+    toast('Avaliação apagada.', 'success')
+  } finally {
+    _paBusy = false
+    renderSheetAssessments(a.student_id)
+  }
 }
 
 // ─────────────────────────────────────────────
