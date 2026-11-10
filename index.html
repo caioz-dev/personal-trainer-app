@@ -2467,6 +2467,8 @@
     .tpl-item-name { font-weight: 600; font-size: .88rem; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tpl-item-meta { font-size: .75rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tpl-empty-folder { font-size: .8rem; color: var(--text-muted); padding: .25rem .125rem; }
+    .tpl-item-actions { display: flex; gap: .35rem; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+    @media (max-width: 480px) { .tpl-item { flex-wrap: wrap; } .tpl-item-actions { width: 100%; } }
     /* O modelo não guarda volume: esconde a prévia de volume por exercício no editor. */
     #tpl-exercise-list .form-group:has(> [id^="ex-vol-"]) { display: none; }
   </style>
@@ -2681,6 +2683,7 @@
                 <div style="display:flex;gap:.5rem;align-items:center">
                   <button type="button" id="reorder-ex-btn" class="btn btn-outline btn-sm" onclick="openReorderModal()" style="display:none"><span data-icon="arrow-up-down"></span> Reordenar</button>
                   <button type="button" id="replicate-ex-btn" class="btn btn-outline btn-sm" onclick="openReplicateModal()" style="display:none"><span data-icon="copy-check"></span> Replicar configuração</button>
+                  <button type="button" id="use-tpl-btn" class="btn btn-outline btn-sm" onclick="openUseTemplateModal()" style="display:none"><span data-icon="clipboard-list"></span> Usar modelo</button>
                   <button type="button" class="btn btn-outline btn-sm" onclick="addExercise()">+ Adicionar exercício</button>
                 </div>
               </div>
@@ -3058,6 +3061,37 @@
   </div>
 </div>
 
+<!-- Modal: escolher modelo para preencher o novo treino -->
+<div id="use-tpl-modal" class="routine-modal-overlay" style="display:none" onclick="if(event.target===this)closeUseTemplateModal()">
+  <div class="routine-modal-card">
+    <div style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em;margin-bottom:.35rem">Usar modelo</div>
+    <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:1rem">Copia os exercícios do modelo para este treino. O modelo não muda.</div>
+    <input id="use-tpl-search" type="search" class="form-control" placeholder="Buscar modelo pelo nome…" oninput="_renderUseTplList()" style="margin-bottom:.75rem">
+    <div id="use-tpl-list" style="max-height:55vh;overflow-y:auto;display:flex;flex-direction:column;gap:.5rem"></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:1.25rem">
+      <button type="button" class="btn btn-outline btn-sm" onclick="closeUseTemplateModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: mover modelo para outra pasta -->
+<div id="tpl-move-modal" class="routine-modal-overlay" style="display:none" onclick="if(event.target===this)closeTplMoveModal()">
+  <div class="routine-modal-card">
+    <div style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em;margin-bottom:.35rem">Mover modelo</div>
+    <div id="tpl-move-subtitle" style="font-size:.8rem;color:var(--text-muted);margin-bottom:1.25rem"></div>
+    <form id="tpl-move-form" onsubmit="saveTplMove(event)" novalidate>
+      <div class="form-group">
+        <label>Pasta</label>
+        <select id="tpl-move-folder" class="form-control"></select>
+      </div>
+      <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.5rem;flex-wrap:wrap">
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeTplMoveModal()">Cancelar</button>
+        <button type="submit" id="tpl-move-btn" class="btn btn-primary btn-sm">Mover</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Modal: notificações in-app -->
 <div id="notif-panel-overlay" class="routine-modal-overlay" style="display:none" onclick="if(event.target===this)closeNotifPanel()">
   <div class="routine-modal-card" style="max-width:440px;max-height:80vh;display:flex;flex-direction:column">
@@ -3261,6 +3295,7 @@ let _tplEditor              = null   // { templateId } enquanto o editor de mode
 let _tplFolders             = []     // pastas do personal (última leitura da tela Modelos)
 let _tplTemplates           = []     // modelos do personal (idem), com exCount
 let _tplFolderModalId       = null   // pasta sendo renomeada (null = criando)
+let _tplMoveId              = null   // modelo sendo movido de pasta
 const _tplClosedFolders     = new Set()   // pastas recolhidas na tela (só nesta aba)
 
 // Limpa TODO o estado da sessão anterior — chamado no logout e antes de boot de novo usuário
@@ -3364,6 +3399,7 @@ function resetAppState() {
   _tplFolders                 = []
   _tplTemplates               = []
   _tplFolderModalId           = null
+  _tplMoveId                  = null
   _tplClosedFolders.clear()
   const tplList = document.getElementById('tpl-exercise-list')
   if (tplList) tplList.innerHTML = ''
@@ -5156,6 +5192,7 @@ async function editWorkout(workoutId) {
   await navigateTo('workout')
 
   editingWorkoutId    = workoutId
+  _syncUseTemplateBtn()
   _wfEditingCreatedBy = workout.created_by
   document.querySelector('#view-workout .card-title').textContent    = 'Editar Treino'
   document.querySelector('#view-workout .section-label').textContent = 'Editar Atividade'
@@ -8188,6 +8225,7 @@ async function restoreWorkoutFormState() {
     await navigateTo('workout')
 
     editingWorkoutId    = state.editingWorkoutId || null
+    _syncUseTemplateBtn()
     _wfEditingCreatedBy = state.createdBy || null
     if (state.redirectCtx?.source === 'prefilled') currentViewOpts = { ...state.redirectCtx }
     else if (state.redirectCtx?.source === 'historyCtx') historyCtx = { ...state.redirectCtx }
@@ -8353,6 +8391,7 @@ async function setupWorkoutForm(opts = {}) {
   document.querySelector('#view-workout .section-label').textContent = 'Registrar Atividade'
   document.getElementById('wf-btn').textContent = 'Salvar Treino'
   document.getElementById('wf-btn').disabled    = false
+  _syncUseTemplateBtn()
 
   const grp  = document.getElementById('wf-student-group')
   const sel  = document.getElementById('wf-student')
@@ -8630,17 +8669,26 @@ function _groupTemplatesByFolder(folders, templates) {
 
 function _tplCountLabel(n) { return `${n} modelo${n === 1 ? '' : 's'}` }
 
-function _renderTemplateItem(t) {
+// i/arr vêm do .map() do grupo: decidem se Subir/Descer ficam habilitados.
+function _renderTemplateItem(t, i = 0, arr = [t]) {
   if (!_isUuid(t.id)) return ''
   const n = t.exCount || 0
   const meta = `${n} exercício${n === 1 ? '' : 's'}${t.notes ? ' · ' + t.notes : ''}`
+  const order = arr.length > 1 ? `
+        <button class="btn btn-outline btn-sm" title="Subir" ${i === 0 ? 'disabled' : ''} onclick="moveTemplateInFolder('${t.id}',-1)">${icon('arrow-up')}</button>
+        <button class="btn btn-outline btn-sm" title="Descer" ${i === arr.length - 1 ? 'disabled' : ''} onclick="moveTemplateInFolder('${t.id}',1)">${icon('arrow-down')}</button>` : ''
   return `
     <div class="tpl-item">
       <div class="tpl-item-main">
         <div class="tpl-item-name">${escHtml(t.name)}</div>
         <div class="tpl-item-meta">${escHtml(meta)}</div>
       </div>
-      <button class="btn btn-outline btn-sm" onclick="openTemplateEditor('${t.id}')">${icon('pencil')} Editar</button>
+      <div class="tpl-item-actions">${order}
+        <button class="btn btn-outline btn-sm" title="Mover para outra pasta" onclick="openTplMoveModal('${t.id}')">${icon('folder')}</button>
+        <button class="btn btn-outline btn-sm" title="Duplicar modelo" onclick="duplicateTemplate('${t.id}')">${icon('copy')}</button>
+        <button class="btn btn-outline btn-sm" onclick="openTemplateEditor('${t.id}')">${icon('pencil')} Editar</button>
+        <button class="btn btn-sm btn-ghost-danger" title="Apagar modelo" onclick="deleteTemplate('${t.id}')">${icon('trash-2')}</button>
+      </div>
     </div>`
 }
 
@@ -8776,6 +8824,240 @@ async function deleteTplFolder(folderId) {
   _tplClosedFolders.delete(folderId)
   toast('Pasta apagada.', 'success')
   if (currentView === 'templates') renderTemplates(navGen)
+}
+
+// ── Mover modelo (E3) ──
+// A FK composta (folder_id, owner_id) garante no banco que a pasta é do mesmo dono.
+function openTplMoveModal(templateId) {
+  if (!_isUuid(templateId)) return
+  const tpl = _tplTemplates.find(t => t.id === templateId)
+  if (!tpl) { toast('Modelo não encontrado. Recarregue a tela.', 'error'); return }
+  _tplMoveId = tpl.id
+  document.getElementById('tpl-move-subtitle').textContent = `"${tpl.name}"`
+  const sel = document.getElementById('tpl-move-folder')
+  sel.innerHTML = '<option value="">Sem pasta</option>' +
+    _tplFolders.map(f => `<option value="${f.id}">${escHtml(f.name)}</option>`).join('')
+  sel.value = _tplFolders.some(f => f.id === tpl.folder_id) ? tpl.folder_id : ''
+  document.getElementById('tpl-move-btn').disabled = false
+  document.getElementById('tpl-move-modal').style.display = 'flex'
+}
+
+function closeTplMoveModal() {
+  document.getElementById('tpl-move-modal').style.display = 'none'
+  _tplMoveId = null
+}
+
+async function saveTplMove(e) {
+  e.preventDefault()
+  const tpl = _tplTemplates.find(t => t.id === _tplMoveId)
+  if (!tpl) { closeTplMoveModal(); return }
+  const folderId = document.getElementById('tpl-move-folder').value || null
+  if (folderId && !_isUuid(folderId)) { toast('Pasta inválida. Recarregue a tela.', 'error'); return }
+  const current = _tplFolders.some(f => f.id === tpl.folder_id) ? tpl.folder_id : null
+  if (folderId === current) { closeTplMoveModal(); return }
+
+  // Entra no fim da pasta de destino.
+  const position = _tplGroupOrder(folderId).reduce((m, t) => Math.max(m, t.position ?? 0), -1) + 1
+  const btn = document.getElementById('tpl-move-btn')
+  btn.disabled = true
+  const { data, error } = await sb.from('workout_templates').update({ folder_id: folderId, position })
+    .eq('id', tpl.id).eq('owner_id', me.id).select('id')
+  btn.disabled = false
+  if (error) {
+    toast(error.code === '23503' ? 'Pasta não encontrada. Recarregue a tela.' : 'Erro ao mover o modelo: ' + _tplErrMsg(error), 'error')
+    return
+  }
+  if (!data?.length) { toast('Modelo não encontrado. Recarregue a tela.', 'error'); return }
+  closeTplMoveModal()
+  toast('Modelo movido.', 'success')
+  if (currentView === 'templates') renderTemplates(navGen)
+}
+
+// ── Reordenar modelos dentro da pasta (E3) ──
+// Modelos de um grupo na ordem da tela (position, depois nome, como vem do banco).
+// folderId null = "Sem pasta" (inclui modelo com pasta que não veio na lista).
+function _tplGroupOrder(folderId) {
+  const { groups, loose } = _groupTemplatesByFolder(_tplFolders, _tplTemplates)
+  return folderId ? (groups.find(g => g.folder.id === folderId)?.items || []) : loose
+}
+
+let _tplReorderBusy = false
+
+// Troca o modelo de lugar com o vizinho e renumera o grupo 0..n-1; só grava as linhas
+// cuja position mudou. Sem transação: se uma gravação falhar, a tela é recarregada e
+// mostra a ordem que ficou no banco.
+async function moveTemplateInFolder(templateId, dir) {
+  if (!_isUuid(templateId) || (dir !== 1 && dir !== -1) || _tplReorderBusy) return
+  const tpl = _tplTemplates.find(t => t.id === templateId)
+  if (!tpl) { toast('Modelo não encontrado. Recarregue a tela.', 'error'); return }
+  const folderId = _tplFolders.some(f => f.id === tpl.folder_id) ? tpl.folder_id : null
+  const items = _tplGroupOrder(folderId).slice()
+  const i = items.findIndex(t => t.id === templateId), j = i + dir
+  if (i < 0 || j < 0 || j >= items.length) return
+  ;[items[i], items[j]] = [items[j], items[i]]
+  const changes = items.map((t, pos) => ({ t, pos })).filter(({ t, pos }) => (t.position ?? 0) !== pos)
+
+  _tplReorderBusy = true
+  const results = await Promise.all(changes.map(({ t, pos }) =>
+    sb.from('workout_templates').update({ position: pos }).eq('id', t.id).eq('owner_id', me.id).select('id')))
+  _tplReorderBusy = false
+  const failed = results.find(r => r.error || !r.data?.length)
+  if (failed) toast('Erro ao reordenar os modelos: ' + (failed.error ? _tplErrMsg(failed.error) : 'modelo não encontrado'), 'error')
+  if (currentView === 'templates') renderTemplates(navGen)
+}
+
+// ── Duplicar e apagar modelo (E4) ──
+let _tplBusy = false   // evita duplo clique em Duplicar/Apagar enquanto o banco responde
+
+// duplicate_template (SECURITY INVOKER) copia modelo e exercícios numa transação só,
+// como "Nome (cópia)" na mesma pasta; modelo de outro dono = P0002.
+async function duplicateTemplate(templateId) {
+  if (!_isUuid(templateId) || _tplBusy) return
+  const tpl = _tplTemplates.find(t => t.id === templateId)
+  if (!tpl) { toast('Modelo não encontrado. Recarregue a tela.', 'error'); return }
+  _tplBusy = true
+  const { error } = await sb.rpc('duplicate_template', { p_template_id: tpl.id })
+  _tplBusy = false
+  if (error) {
+    toast(error.code === 'P0002' ? 'Modelo não encontrado. Recarregue a tela.' : 'Erro ao duplicar o modelo: ' + _tplErrMsg(error), 'error')
+    return
+  }
+  toast(`Modelo "${tpl.name}" duplicado.`, 'success')
+  if (currentView === 'templates') renderTemplates(navGen)
+}
+
+// Apaga o modelo; os exercícios dele saem em cascata. Treinos criados a partir dele não
+// mudam (não há vínculo entre treino e modelo).
+async function deleteTemplate(templateId) {
+  if (!_isUuid(templateId) || _tplBusy) return
+  const tpl = _tplTemplates.find(t => t.id === templateId)
+  if (!tpl) { toast('Modelo não encontrado. Recarregue a tela.', 'error'); return }
+  const n = tpl.exCount || 0
+  if (!confirm(`Apagar o modelo "${tpl.name}"? ${n === 1 ? 'O exercício dele será apagado' : `Os ${n} exercícios dele serão apagados`} junto. Treinos já criados a partir dele não mudam.`)) return
+
+  _tplBusy = true
+  const { data, error } = await sb.from('workout_templates').delete()
+    .eq('id', tpl.id).eq('owner_id', me.id).select('id')
+  _tplBusy = false
+  if (error) { toast('Erro ao apagar o modelo: ' + _tplErrMsg(error), 'error'); return }
+  if (!data?.length) { toast('Modelo não encontrado. Recarregue a tela.', 'error'); return }
+  toast('Modelo apagado.', 'success')
+  if (currentView === 'templates') renderTemplates(navGen)
+}
+
+// ── Usar modelo no novo treino (E5) ──
+// Só preenche o formulário: o modelo não muda e o treino criado não guarda vínculo com ele.
+// Quem grava é o saveWorkout de sempre, quando o personal salvar. Peso corporal usa o peso
+// do aluno escolhido no formulário (_applyWfBodyweightToRow, via _populateExerciseRows).
+function _syncUseTemplateBtn() {
+  const btn = document.getElementById('use-tpl-btn')
+  if (btn) btn.style.display = !editingWorkoutId && profile?.role === 'personal' ? 'inline-flex' : 'none'
+}
+
+// Linhas do formulário de treino com algo digitado (nome ou algum valor).
+function _wfFilledExerciseCount() {
+  const fields = ['.ex-name', '.ex-sets', '.ex-weight', '.ex-reps', '.ex-hold', '.ex-duration', '.ex-distance', '.ex-speed']
+  return [...document.querySelectorAll('#exercise-list .exercise-row')]
+    .filter(row => fields.some(sel => (row.querySelector(sel)?.value ?? '').trim() !== '')).length
+}
+
+async function openUseTemplateModal() {
+  if (editingWorkoutId || currentView !== 'workout' || profile?.role !== 'personal') return
+  const listEl = document.getElementById('use-tpl-list')
+  listEl.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando…</div>'
+  const searchEl = document.getElementById('use-tpl-search')
+  if (searchEl) searchEl.value = ''
+  document.getElementById('use-tpl-modal').style.display = 'flex'
+
+  const [fRes, tRes] = await Promise.all([
+    sb.from('template_folders').select('id, name, position')
+      .eq('owner_id', me.id).order('position').order('name'),
+    sb.from('workout_templates').select('id, name, notes, folder_id, position, template_exercises(count)')
+      .eq('owner_id', me.id).order('position').order('name')
+  ])
+  if (fRes.error || tRes.error) {
+    toast('Erro ao carregar os modelos: ' + _tplErrMsg(fRes.error || tRes.error), 'error')
+    listEl.innerHTML = '<div class="tpl-empty-folder">Não foi possível carregar os modelos.</div>'
+    return
+  }
+  const folders   = (fRes.data || []).filter(f => _isUuid(f.id))
+  const templates = (tRes.data || []).filter(t => _isUuid(t.id))
+    .map(t => ({ ...t, exCount: t.template_exercises?.[0]?.count || 0 }))
+  _useTplData = { folders, templates }
+  _renderUseTplList()
+  document.getElementById('use-tpl-search')?.focus()
+}
+
+let _useTplData = { folders: [], templates: [] }   // última leitura do modal "Usar modelo"
+
+// Busca ignora maiúsculas e acentos ("supino" acha "Supino Inclinado", "forca" acha "Força").
+function _tplSearchKey(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+}
+
+function _renderUseTplList() {
+  const listEl = document.getElementById('use-tpl-list')
+  if (!listEl) return
+  const { folders, templates } = _useTplData
+  if (!templates.length) {
+    listEl.innerHTML = '<div class="tpl-empty-folder">Nenhum modelo ainda. Crie em "Modelos de Treino", no menu.</div>'
+    return
+  }
+  const q = _tplSearchKey(document.getElementById('use-tpl-search')?.value)
+  const shown = q ? templates.filter(t => _tplSearchKey(t.name).includes(q)) : templates
+  if (!shown.length) {
+    listEl.innerHTML = '<div class="tpl-empty-folder">Nenhum modelo com esse nome.</div>'
+    return
+  }
+  const { groups, loose } = _groupTemplatesByFolder(folders, shown)
+  const item = t => `
+    <button type="button" class="tpl-item" style="width:100%;text-align:left;background:none;cursor:pointer"
+            onclick="applyTemplateToWorkoutForm('${t.id}')">
+      <div class="tpl-item-main">
+        <div class="tpl-item-name">${escHtml(t.name)}</div>
+        <div class="tpl-item-meta">${t.exCount} exercício${t.exCount === 1 ? '' : 's'}</div>
+      </div>
+    </button>`
+  const section = (title, items) => items.length ? `
+    <div class="section-label" style="margin:.25rem 0 0">${escHtml(title)}</div>${items.map(item).join('')}` : ''
+  listEl.innerHTML = groups.map(g => section(g.folder.name, g.items)).join('') + section('Sem pasta', loose)
+}
+
+function closeUseTemplateModal() {
+  document.getElementById('use-tpl-modal').style.display = 'none'
+}
+
+async function applyTemplateToWorkoutForm(templateId) {
+  if (!_isUuid(templateId) || editingWorkoutId || currentView !== 'workout') return
+  const { data: tpl, error } = await sb.from('workout_templates')
+    .select('id, name, notes, template_exercises(*)')
+    .eq('id', templateId).eq('owner_id', me.id)
+    .order('position', { ascending: true, foreignTable: 'template_exercises' })
+    .maybeSingle()
+  if (error) { toast('Erro ao carregar o modelo: ' + _tplErrMsg(error), 'error'); return }
+  if (!tpl) { toast('Modelo não encontrado.', 'error'); return }
+  // O personal pode ter saído do formulário ou aberto uma edição enquanto o modelo carregava.
+  if (editingWorkoutId || currentView !== 'workout') return
+  const exes = (tpl.template_exercises || []).slice().sort((a, b) =>
+    (a.position ?? 9999) - (b.position ?? 9999) || (a.id > b.id ? 1 : -1))
+  if (!exes.length) { toast('Esse modelo não tem exercícios.', 'error'); return }
+
+  const filled = _wfFilledExerciseCount()
+  if (filled && !confirm(`Substituir ${filled === 1 ? 'o exercício já preenchido' : `os ${filled} exercícios já preenchidos`} pelo modelo "${tpl.name}"?`)) return
+
+  closeUseTemplateModal()
+  document.getElementById('exercise-list').innerHTML = ''
+  _populateExerciseRows(exes, { withDbId: false })
+  const nameEl  = document.getElementById('wf-name')
+  const notesEl = document.getElementById('wf-notes')
+  if (nameEl && !nameEl.value.trim())                 nameEl.value  = tpl.name || ''
+  if (notesEl && !notesEl.value.trim() && tpl.notes)  notesEl.value = tpl.notes
+  updateRemoveButtons()
+  updateReorderButton()
+  updateReplicateButton()
+  refreshTotalVolume()
+  saveWorkoutFormState()
+  toast(`Modelo "${tpl.name}" aplicado. Revise e salve o treino.`, 'success')
 }
 
 // ── Editor de modelo ──
@@ -10414,7 +10696,8 @@ async function checkAppVersion(source = 'entry') {
 const _RELOAD_BLOCKING_OVERLAYS = ['execution-overlay', 'live-execution-overlay', 'live-exec-picker-overlay',
   'review-modal', 'comparison-modal', 'timer-modal-overlay', 'password-reset-overlay', 'manual-exec-modal-overlay',
   'routine-modal', 'unlink-modal', 'body-data-modal', 'bulk-delete-modal', 'dup-modal-overlay',
-  'dup-routine-modal-overlay', 'reorder-modal-overlay', 'replicate-modal-overlay', 'tpl-folder-modal']
+  'dup-routine-modal-overlay', 'reorder-modal-overlay', 'replicate-modal-overlay', 'tpl-folder-modal',
+  'tpl-move-modal', 'use-tpl-modal']
 function _hasWorkInProgress() {
   if (timerInterval || currentWorkoutData || _execPhase || _pendingExecutionsSave) return true
   if (_liveSessionId || _liveTimerInterval) return true
