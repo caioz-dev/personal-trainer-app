@@ -4640,6 +4640,9 @@ async function addStudentByEmail() {
     toast(`${found.name} vinculado com sucesso!`, 'success')
     input.value = ''
     await renderStudents()
+    // renderStudents() fora do navigateTo: reativa a animação de entrada (.reveal), senão o
+    // formulário, a busca e os cards ficam com opacidade 0 até trocar de tela.
+    observeRevealElements()
   } catch (err) {
     toast('Erro ao vincular: ' + err.message, 'error')
   } finally {
@@ -6858,7 +6861,11 @@ async function executeArchive() {
     toast(target.archive
       ? `${target.name} foi arquivado. Está na aba "Arquivados".`
       : `${target.name} voltou para a lista de alunos ativos.`, 'success')
+    // Desarquivou: mostra a aba Ativos, onde o aluno acabou de voltar.
+    if (!target.archive) _studentsTab = 'ativos'
     await renderStudents()
+    // Mesmo motivo do addStudentByEmail: fora do navigateTo, reativa as animações de entrada.
+    observeRevealElements()
   } catch (err) {
     console.error('[executeArchive]', err?.message || err)
     btn.disabled = false
