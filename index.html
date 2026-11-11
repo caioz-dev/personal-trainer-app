@@ -3271,7 +3271,7 @@ async function authHeader() {
   return 'Bearer ' + (token || SUPA_KEY)
 }
 
-let sb, me, profile, students = [], chart = null, sheetChart = null, progressChart = null
+let sb, me, profile, students = [], archivedStudents = [], chart = null, sheetChart = null, progressChart = null
 let compCharts = {} // Chart.js instances do toggle Tabela/Gráfico nas execuções (Previsto × Executado), por execUid
 let exerciseCounter = 0
 let _dupWorkoutId = null
@@ -3417,6 +3417,7 @@ function resetAppState() {
 
   // Dados
   students        = []
+  archivedStudents = []
   exerciseCounter = 0
   window._workoutsCache    = {}
   window._progressWorkouts = []
@@ -4092,21 +4093,65 @@ function cadenciaOf(exId) {
 // ─────────────────────────────────────────────
 // DATA
 // ─────────────────────────────────────────────
-async function fetchStudents() {
-  const { data: links, error: lErr } = await sb
-    .from('personal_students')
-    .select('student_id')
+// ── Arquivar aluno (E1: só dados, sem mudança visível) ──
+// archived_at em personal_students (por personal, separado de active; a RLS não olha essa
+// coluna). `students` passa a ter só os vínculos ativos NÃO arquivados — assim todas as telas
+// que usam `students` (lista, Progresso, Renovações, formulário, duplicar, calculadora…)
+// deixam de mostrar arquivados sem mexer em cada uma. Arquivados ficam em `archivedStudents`.
+// Sem a migration (coluna ausente), lê só student_id e ninguém é arquivado: igual a antes.
+// archivedStudents é declarado junto de `students` (topo do script).
+let _archiveColumnReady = null   // null = ainda não sabe; true/false depois da 1ª leitura
+
+// @@archive-pure:begin
+// Separa os vínculos (já filtrados por personal e active) em ativos e arquivados.
+// Ignora linha sem student_id e repetida; a primeira ocorrência decide.
+function splitLinksByArchive(links) {
+  const activeIds = [], archivedIds = [], seen = new Set()
+  for (const l of links || []) {
+    const id = l?.student_id
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    if (l.archived_at) archivedIds.push(id)
+    else activeIds.push(id)
+  }
+  return { activeIds, archivedIds }
+}
+
+// Coluna ausente no PostgREST/Postgres (antes da migration).
+function _isMissingArchiveColumn(err) {
+  const msg = `${err?.message || ''} ${err?.details || ''}`
+  return err?.code === '42703' || err?.code === 'PGRST204' || /archived_at/.test(msg)
+}
+// @@archive-pure:end
+
+async function _fetchStudentLinks() {
+  const base = cols => sb.from('personal_students')
+    .select(cols)
     .eq('personal_id', me.id)
     .neq('student_id', me.id)
     .eq('active', true)
-  if (lErr) throw lErr
+  if (_archiveColumnReady !== false) {
+    const { data, error } = await base('student_id, archived_at')
+    if (!error) { _archiveColumnReady = true; return data || [] }
+    if (!_isMissingArchiveColumn(error)) throw error
+    _archiveColumnReady = false
+  }
+  const { data, error } = await base('student_id')
+  if (error) throw error
+  return data || []
+}
 
-  const ids = (links || []).map(l => l.student_id)
-  if (!ids.length) { students = []; return }
+async function fetchStudents() {
+  const links = await _fetchStudentLinks()
+  const { activeIds, archivedIds } = splitLinksByArchive(links)
+  const ids = [...activeIds, ...archivedIds]
+  if (!ids.length) { students = []; archivedStudents = []; return }
 
   const { data, error } = await sb.from('profiles').select('*').in('id', ids).order('name')
   if (error) throw error
-  students = data || []
+  const archivedSet = new Set(archivedIds)
+  students         = (data || []).filter(p => !archivedSet.has(p.id))
+  archivedStudents = (data || []).filter(p =>  archivedSet.has(p.id))
 }
 
 async function fetchStudentPersonal(studentId) {
