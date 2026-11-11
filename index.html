@@ -2529,6 +2529,11 @@
     .tpl-empty-folder { font-size: .8rem; color: var(--text-muted); padding: .25rem .125rem; }
     .tpl-item-actions { display: flex; gap: .35rem; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
     @media (max-width: 480px) { .tpl-item { flex-wrap: wrap; } .tpl-item-actions { width: 100%; } }
+    /* Subpastas (até 3 níveis): ficam dentro do corpo da pasta-mãe, antes dos modelos. */
+    .tpl-subfolder { margin: 0; padding: .625rem .75rem; border: 1px solid var(--border-subtle); border-left: 3px solid var(--accent-a28); border-radius: var(--radius); }
+    .tpl-subfolder .tpl-folder-title { font-weight: 650; font-size: .9rem; }
+    .tpl-folder-actions { flex-wrap: wrap; justify-content: flex-end; }
+    @media (max-width: 480px) { .tpl-folder-header { flex-wrap: wrap; } .tpl-folder-actions { width: 100%; } }
     /* O modelo não guarda volume: esconde a prévia de volume por exercício no editor. */
     #tpl-exercise-list .form-group:has(> [id^="ex-vol-"]) { display: none; }
   </style>
@@ -3162,7 +3167,7 @@
 <!-- Modal: mover modelo para outra pasta -->
 <div id="tpl-move-modal" class="routine-modal-overlay" style="display:none" onclick="if(event.target===this)closeTplMoveModal()">
   <div class="routine-modal-card">
-    <div style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em;margin-bottom:.35rem">Mover modelo</div>
+    <div id="tpl-move-title" style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em;margin-bottom:.35rem">Mover modelo</div>
     <div id="tpl-move-subtitle" style="font-size:.8rem;color:var(--text-muted);margin-bottom:1.25rem"></div>
     <form id="tpl-move-form" onsubmit="saveTplMove(event)" novalidate>
       <div class="form-group">
@@ -3273,6 +3278,8 @@ const ICONS = {
   'dumbbell': '<path d="M17.596 12.768a2 2 0 1 0 2.829-2.829l-1.768-1.767a2 2 0 0 0 2.828-2.829l-2.828-2.828a2 2 0 0 0-2.829 2.828l-1.767-1.768a2 2 0 1 0-2.829 2.829z"/><path d="m2.5 21.5 1.4-1.4"/><path d="m20.1 3.9 1.4-1.4"/><path d="M5.343 21.485a2 2 0 1 0 2.829-2.828l1.767 1.768a2 2 0 1 0 2.829-2.829l-6.364-6.364a2 2 0 1 0-2.829 2.829l1.768 1.767a2 2 0 0 0-2.828 2.829z"/><path d="m9.6 14.4 4.8-4.8"/>',
   'eye': '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
   'folder': '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  'folder-input': '<path d="M2 9V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1"/><path d="M2 13h10"/><path d="m9 16 3-3-3-3"/>',
+  'folder-plus': '<path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
   'footprints': '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>',
   'gauge': '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
   'grip-vertical': '<circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/>',
@@ -3396,6 +3403,9 @@ let _tplFolders             = []     // pastas do personal (última leitura da t
 let _tplTemplates           = []     // modelos do personal (idem), com exCount
 let _tplFolderModalId       = null   // pasta sendo renomeada (null = criando)
 let _tplMoveId              = null   // modelo sendo movido de pasta
+let _tplMoveKind            = 'template' // 'template' | 'folder': o que o modal "Mover" move
+let _tplFolderParentId      = null   // pasta-mãe da subpasta sendo criada (null = raiz)
+let _tplTreeReady           = null   // coluna parent_id: null = ainda não sabe; true/false
 // Avaliações físicas (PDF) da ficha do aluno
 let _paList                 = []     // avaliações do aluno aberto na ficha (última leitura)
 let _paCtx                  = null   // { studentId, editId } enquanto o modal está aberto
@@ -3508,6 +3518,8 @@ function resetAppState() {
   _tplTemplates               = []
   _tplFolderModalId           = null
   _tplMoveId                  = null
+  _tplMoveKind                = 'template'
+  _tplFolderParentId          = null
   _paList                     = []
   _paCtx                      = null
   _paBusy                     = false
@@ -9080,6 +9092,15 @@ function _isUuid(id) { return typeof id === 'string' && _UUID_RE.test(id) }
 
 function _tplErrMsg(error) { return error?.message || 'erro desconhecido' }
 
+// Erros de gravação de pasta. P0001 vem do trigger/RPC das subpastas, já em português
+// ("Limite de 3 níveis de pastas.", "Uma pasta não pode ficar dentro dela mesma…").
+function _tplFolderErrMsg(error, prefix) {
+  if (error?.code === '23505') return _tplTreeReady === true ? 'Já existe uma pasta com esse nome neste lugar.' : 'Já existe uma pasta com esse nome.'
+  if (error?.code === 'P0001' && error.message) return error.message
+  if (error?.code === '23503' || error?.code === 'P0002') return 'Pasta não encontrada. Recarregue a tela.'
+  return prefix + _tplErrMsg(error)
+}
+
 // Agrupa modelos por pasta: pastas na ordem recebida, depois "Sem pasta" (folderId null).
 // Modelo com folder_id de pasta que não veio na lista também cai em "Sem pasta".
 function _groupTemplatesByFolder(folders, templates) {
@@ -9087,6 +9108,109 @@ function _groupTemplatesByFolder(folders, templates) {
   const groups = folders.map(f => ({ folder: f, items: templates.filter(t => t.folder_id === f.id) }))
   const loose = templates.filter(t => !t.folder_id || !known.has(t.folder_id))
   return { groups, loose }
+}
+
+// @@tpl-tree-pure:begin
+// Subpastas: até 3 níveis (raiz = 1). O banco garante limite, ciclo e dono (trigger + FK);
+// aqui só se monta a árvore e se oferecem os destinos válidos. Pasta cuja mãe não veio na
+// lista (ou dado inconsistente) vira raiz, para nunca sumir da tela.
+const TPL_MAX_DEPTH = 3
+
+function tplBuildTree(folders) {
+  const byId = new Map(folders.map(f => [f.id, f]))
+  const parentOf = new Map()
+  for (const f of folders) {
+    let p = f.parent_id && f.parent_id !== f.id && byId.has(f.parent_id) ? f.parent_id : null
+    // Ciclo nos dados (não deveria existir): corta e trata como raiz.
+    const seen = new Set([f.id])
+    for (let cur = p; cur; cur = parentOf.has(cur) ? parentOf.get(cur) : (byId.get(cur)?.parent_id || null)) {
+      if (seen.has(cur)) { p = null; break }
+      seen.add(cur)
+      if (seen.size > 50) break
+    }
+    parentOf.set(f.id, p)
+  }
+  const kids = new Map([[null, []]])
+  for (const f of folders) {
+    const p = parentOf.get(f.id)
+    if (!kids.has(p)) kids.set(p, [])
+    kids.get(p).push(f)
+  }
+  const childrenOf = id => kids.get(id ?? null) || []
+  const depthOf = id => { let d = 0; for (let cur = id; cur && d < 50; cur = parentOf.get(cur)) d++; return d }
+  const heightOf = id => 1 + Math.max(0, ...childrenOf(id).map(c => heightOf(c.id)))
+  const descendantsOf = id => {
+    const out = new Set()
+    const walk = x => childrenOf(x).forEach(c => { out.add(c.id); walk(c.id) })
+    walk(id)
+    return out
+  }
+  const pathOf = id => {
+    const names = []
+    for (let cur = id; cur && names.length < 50; cur = parentOf.get(cur)) names.unshift(byId.get(cur)?.name ?? '')
+    return names.join(' › ')
+  }
+  // Ordem da tela: cada pasta seguida das suas subpastas (busca em profundidade).
+  const flat = []
+  const visit = (id, depth) => childrenOf(id).forEach(f => { flat.push({ folder: f, depth }); visit(f.id, depth + 1) })
+  visit(null, 1)
+  return { byId, parentOf: id => parentOf.get(id) ?? null, childrenOf, depthOf, heightOf, descendantsOf, pathOf, flat }
+}
+
+// Destinos para mover a pasta: não ela mesma, nem subpasta dela, nem a mãe atual, e sem
+// passar de 3 níveis contando as subpastas que vão junto. id null = nível principal.
+function tplFolderMoveTargets(tree, folderId) {
+  const blocked = tree.descendantsOf(folderId)
+  blocked.add(folderId)
+  const h = tree.heightOf(folderId)
+  const current = tree.parentOf(folderId)
+  const out = current ? [{ id: null, label: 'Nível principal (sem pasta-mãe)' }] : []
+  for (const { folder } of tree.flat) {
+    if (blocked.has(folder.id) || folder.id === current) continue
+    if (tree.depthOf(folder.id) + h > TPL_MAX_DEPTH) continue
+    out.push({ id: folder.id, label: tree.pathOf(folder.id) })
+  }
+  return out
+}
+
+// Texto da confirmação de apagar pasta (o banco faz isso em delete_template_folder).
+function tplDeleteFolderMessage(tree, folderId, templateCount) {
+  const f = tree.byId.get(folderId)
+  const parentId = tree.parentOf(folderId)
+  const parentName = parentId ? `"${tree.byId.get(parentId).name}"` : null
+  const subs = tree.childrenOf(folderId).length
+  const parts = [`Apagar a pasta "${f.name}"?`]
+  if (subs) parts.push(`${subs === 1 ? 'A subpasta dela sobe' : `As ${subs} subpastas dela sobem`} para ${parentName || 'o nível principal'} (se o nome já existir lá, ganha "(2)").`)
+  if (templateCount) parts.push(`${templateCount === 1 ? 'O modelo dela vai' : `Os ${templateCount} modelos dela vão`} para ${parentName || '"Sem pasta"'}.`)
+  if (!subs && !templateCount) parts.push('Ela está vazia.')
+  return parts.join(' ')
+}
+
+// <option>s de pasta em ordem de árvore, com o caminho ("Hipertrofia › Peito").
+function tplFolderOptionsHTML(folders) {
+  const tree = tplBuildTree(folders)
+  return tree.flat.map(({ folder }) => `<option value="${folder.id}">${escHtml(tree.pathOf(folder.id))}</option>`).join('')
+}
+
+// Coluna ausente no PostgREST/Postgres (antes da migration das subpastas).
+function _isMissingParentColumn(err) {
+  const msg = `${err?.message || ''} ${err?.details || ''}`
+  return err?.code === '42703' || err?.code === 'PGRST204' || /parent_id/.test(msg)
+}
+// @@tpl-tree-pure:end
+
+// Lê as pastas do personal. Com a coluna parent_id, traz a pasta-mãe; sem ela (antes da
+// migration), cai na lista plana de antes e as ações de subpasta ficam escondidas.
+async function _fetchTplFolders() {
+  const base = cols => sb.from('template_folders').select(cols)
+    .eq('owner_id', me.id).order('position').order('name')
+  if (_tplTreeReady !== false) {
+    const res = await base('id, name, position, parent_id')
+    if (!res.error) { _tplTreeReady = true; return res }
+    if (!_isMissingParentColumn(res.error)) return res
+    _tplTreeReady = false
+  }
+  return base('id, name, position')
 }
 
 function _tplCountLabel(n) { return `${n} modelo${n === 1 ? '' : 's'}` }
@@ -9114,27 +9238,46 @@ function _renderTemplateItem(t, i = 0, arr = [t]) {
     </div>`
 }
 
-function _renderTemplateGroup(key, title, items, folderId) {
+// opts (subpastas, só com a coluna parent_id): { subHTML, subCount, canSub, canMove, nested }.
+// Sem opts, o HTML é o de antes das subpastas.
+function _renderTemplateGroup(key, title, items, folderId, opts = {}) {
   const open = !_tplClosedFolders.has(key)
+  const subBtn = opts.canSub ? `
+        <button class="btn btn-sm btn-outline" title="Nova subpasta" onclick="event.stopPropagation();openTplFolderModal(null,'${folderId}')">${icon('folder-plus')}</button>` : ''
+  const moveBtn = opts.canMove ? `
+        <button class="btn btn-sm btn-outline" title="Mover pasta" onclick="event.stopPropagation();openTplFolderMoveModal('${folderId}')">${icon('folder-input')}</button>` : ''
   const actions = folderId ? `
-      <div class="tpl-folder-actions">
+      <div class="tpl-folder-actions">${subBtn}
         <button class="btn btn-sm btn-outline" title="Novo modelo nesta pasta" onclick="event.stopPropagation();openTemplateEditor(null,'${folderId}')">${icon('plus')}</button>
-        <button class="btn btn-sm btn-outline" title="Renomear pasta" onclick="event.stopPropagation();openTplFolderModal('${folderId}')">${icon('pencil')}</button>
+        <button class="btn btn-sm btn-outline" title="Renomear pasta" onclick="event.stopPropagation();openTplFolderModal('${folderId}')">${icon('pencil')}</button>${moveBtn}
         <button class="btn btn-sm btn-ghost-danger" title="Apagar pasta" onclick="event.stopPropagation();deleteTplFolder('${folderId}')">${icon('trash-2')}</button>
       </div>` : ''
+  const subCount = opts.subCount || 0
+  const count = _tplCountLabel(items.length) + (subCount ? ` · ${subCount} subpasta${subCount === 1 ? '' : 's'}` : '')
+  const content = (opts.subHTML || '')
+    + (items.length ? items.map(_renderTemplateItem).join('') : (subCount ? '' : '<div class="tpl-empty-folder">Nenhum modelo nesta pasta.</div>'))
   return `
-    <div class="card tpl-folder">
+    <div class="${opts.nested ? 'tpl-folder tpl-subfolder' : 'card tpl-folder'}">
       <div class="tpl-folder-header" onclick="toggleTplFolder('${key}')">
         <div class="tpl-folder-title">
           <span class="ex-chevron${open ? ' open' : ''}" id="tpl-chev-${key}">${icon('chevron-right')}</span>
           ${icon('folder')}<span class="tpl-folder-name">${escHtml(title)}</span>
-          <span class="tpl-folder-count">${_tplCountLabel(items.length)}</span>
+          <span class="tpl-folder-count">${count}</span>
         </div>${actions}
       </div>
       <div class="tpl-folder-body${open ? ' open' : ''}" id="tpl-body-${key}">
-        ${items.length ? items.map(_renderTemplateItem).join('') : '<div class="tpl-empty-folder">Nenhum modelo nesta pasta.</div>'}
+        ${content}
       </div>
     </div>`
+}
+
+// Pasta e, dentro do corpo dela, as subpastas (recursivo), antes dos modelos.
+function _renderTplFolderNode(tree, folder, itemsByFolder, depth) {
+  const kids = tree.childrenOf(folder.id).filter(k => _isUuid(k.id))
+  const subHTML = kids.map(k => _renderTplFolderNode(tree, k, itemsByFolder, depth + 1)).join('')
+  return _renderTemplateGroup(folder.id, folder.name, itemsByFolder.get(folder.id) || [], folder.id, {
+    subHTML, subCount: kids.length, canSub: depth < TPL_MAX_DEPTH, canMove: true, nested: depth > 1
+  })
 }
 
 async function renderTemplates(gen) {
@@ -9143,8 +9286,7 @@ async function renderTemplates(gen) {
   body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando…</div>'
 
   const [fRes, tRes] = await Promise.all([
-    sb.from('template_folders').select('id, name, position')
-      .eq('owner_id', me.id).order('position').order('name'),
+    _fetchTplFolders(),
     sb.from('workout_templates').select('id, name, notes, folder_id, position, template_exercises(count)')
       .eq('owner_id', me.id).order('position').order('name')
   ])
@@ -9173,8 +9315,16 @@ async function renderTemplates(gen) {
     return
   }
 
+  // Com a coluna parent_id: árvore (subpastas dentro da mãe). Sem ela: lista plana de antes.
+  const folderHTML = _tplTreeReady === true
+    ? (() => {
+        const tree = tplBuildTree(_tplFolders)
+        const itemsByFolder = new Map(groups.map(g => [g.folder.id, g.items]))
+        return tree.childrenOf(null).map(f => _renderTplFolderNode(tree, f, itemsByFolder, 1)).join('')
+      })()
+    : groups.map(g => _renderTemplateGroup(g.folder.id, g.folder.name, g.items, g.folder.id)).join('')
   body.innerHTML = toolbar
-    + groups.map(g => _renderTemplateGroup(g.folder.id, g.folder.name, g.items, g.folder.id)).join('')
+    + folderHTML
     + (loose.length || !groups.length ? _renderTemplateGroup('loose', 'Sem pasta', loose, null) : '')
 }
 
@@ -9186,12 +9336,21 @@ function toggleTplFolder(key) {
 }
 
 // ── Pastas ──
-function openTplFolderModal(folderId = null) {
+// parentId (só com subpastas): cria a nova pasta dentro dessa.
+function openTplFolderModal(folderId = null, parentId = null) {
   if (folderId && !_isUuid(folderId)) return
+  if (parentId && (!_isUuid(parentId) || _tplTreeReady !== true)) return
   const folder = folderId ? _tplFolders.find(f => f.id === folderId) : null
   if (folderId && !folder) { toast('Pasta não encontrada. Recarregue a tela.', 'error'); return }
+  const parent = !folder && parentId ? _tplFolders.find(f => f.id === parentId) : null
+  if (parentId && !folder && !parent) { toast('Pasta não encontrada. Recarregue a tela.', 'error'); return }
+  if (parent && tplBuildTree(_tplFolders).depthOf(parent.id) >= TPL_MAX_DEPTH) {
+    toast(`Limite de ${TPL_MAX_DEPTH} níveis de pastas.`, 'error'); return
+  }
   _tplFolderModalId = folder ? folder.id : null
-  document.getElementById('tpl-folder-modal-title').textContent = folder ? 'Renomear pasta' : 'Nova pasta'
+  _tplFolderParentId = parent ? parent.id : null
+  document.getElementById('tpl-folder-modal-title').textContent =
+    folder ? 'Renomear pasta' : parent ? `Nova subpasta em "${parent.name}"` : 'Nova pasta'
   const input = document.getElementById('tpl-folder-name')
   input.value = folder ? folder.name : ''
   document.getElementById('tpl-folder-btn').disabled = false
@@ -9202,6 +9361,7 @@ function openTplFolderModal(folderId = null) {
 function closeTplFolderModal() {
   document.getElementById('tpl-folder-modal').style.display = 'none'
   _tplFolderModalId = null
+  _tplFolderParentId = null
 }
 
 async function saveTplFolder(e) {
@@ -9212,14 +9372,19 @@ async function saveTplFolder(e) {
   btn.disabled = true
 
   const renaming = _tplFolderModalId
+  const parentId = renaming ? null : _tplFolderParentId
+  // Subpasta: entra no fim das irmãs. Raiz: igual a antes (parent_id não vai no insert).
+  const row = parentId
+    ? { owner_id: me.id, name, parent_id: parentId, position: _tplFolders.filter(f => f.parent_id === parentId).length }
+    : { owner_id: me.id, name, position: _tplFolders.length }
   const { data, error } = renaming
     ? await sb.from('template_folders').update({ name })
         .eq('id', renaming).eq('owner_id', me.id).select('id')
-    : await sb.from('template_folders').insert({ owner_id: me.id, name, position: _tplFolders.length }).select('id')
+    : await sb.from('template_folders').insert(row).select('id')
   btn.disabled = false
 
   if (error) {
-    toast(error.code === '23505' ? 'Já existe uma pasta com esse nome.' : 'Erro ao salvar a pasta: ' + _tplErrMsg(error), 'error')
+    toast(_tplFolderErrMsg(error, 'Erro ao salvar a pasta: '), 'error')
     return
   }
   if (!data?.length) { toast('Pasta não encontrada. Recarregue a tela.', 'error'); return }
@@ -9228,12 +9393,25 @@ async function saveTplFolder(e) {
   if (currentView === 'templates') renderTemplates(navGen)
 }
 
-// Apagar a pasta não apaga modelos: o banco zera folder_id (ON DELETE SET NULL).
+// Apagar a pasta não apaga modelos. Sem subpastas no banco: DELETE e o banco zera folder_id
+// (ON DELETE SET NULL). Com subpastas: RPC delete_template_folder, numa transação só — as
+// subpastas sobem um nível e os modelos vão para a pasta-mãe (ou "Sem pasta").
 async function deleteTplFolder(folderId) {
   if (!_isUuid(folderId)) return
   const folder = _tplFolders.find(f => f.id === folderId)
   if (!folder) { toast('Pasta não encontrada. Recarregue a tela.', 'error'); return }
   const n = _tplTemplates.filter(t => t.folder_id === folderId).length
+
+  if (_tplTreeReady === true) {
+    if (!confirm(tplDeleteFolderMessage(tplBuildTree(_tplFolders), folderId, n))) return
+    const { error } = await sb.rpc('delete_template_folder', { p_folder_id: folderId })
+    if (error) { toast(_tplFolderErrMsg(error, 'Erro ao apagar a pasta: '), 'error'); return }
+    _tplClosedFolders.delete(folderId)
+    toast('Pasta apagada.', 'success')
+    if (currentView === 'templates') renderTemplates(navGen)
+    return
+  }
+
   const msg = n
     ? `Apagar a pasta "${folder.name}"? ${n === 1 ? 'O modelo dela vai' : `Os ${n} modelos dela vão`} para "Sem pasta".`
     : `Apagar a pasta "${folder.name}"? Ela está vazia.`
@@ -9248,17 +9426,60 @@ async function deleteTplFolder(folderId) {
   if (currentView === 'templates') renderTemplates(navGen)
 }
 
+// ── Mover pasta (subpastas) ──
+// O banco confere de novo limite de 3 níveis, ciclo e dono (trigger + FK composta).
+function openTplFolderMoveModal(folderId) {
+  if (!_isUuid(folderId) || _tplTreeReady !== true) return
+  const folder = _tplFolders.find(f => f.id === folderId)
+  if (!folder) { toast('Pasta não encontrada. Recarregue a tela.', 'error'); return }
+  const targets = tplFolderMoveTargets(tplBuildTree(_tplFolders), folderId)
+  if (!targets.length) { toast('Não há outro lugar para esta pasta (limite de 3 níveis).', 'info'); return }
+  _tplMoveKind = 'folder'
+  _tplMoveId = folder.id
+  document.getElementById('tpl-move-title').textContent = 'Mover pasta'
+  document.getElementById('tpl-move-subtitle').textContent = `"${folder.name}" (com as subpastas e os modelos dela)`
+  const sel = document.getElementById('tpl-move-folder')
+  sel.innerHTML = targets.map(t => `<option value="${t.id || ''}">${escHtml(t.label)}</option>`).join('')
+  sel.value = targets[0].id || ''
+  document.getElementById('tpl-move-btn').disabled = false
+  document.getElementById('tpl-move-modal').style.display = 'flex'
+}
+
+async function _saveTplFolderMove() {
+  const folder = _tplFolders.find(f => f.id === _tplMoveId)
+  if (!folder) { closeTplMoveModal(); return }
+  const parentId = document.getElementById('tpl-move-folder').value || null
+  if (parentId && !_isUuid(parentId)) { toast('Pasta inválida. Recarregue a tela.', 'error'); return }
+  if (parentId === (folder.parent_id || null)) { closeTplMoveModal(); return }
+  // Entra no fim das irmãs do destino.
+  const position = _tplFolders.filter(f => (f.parent_id || null) === parentId).length
+  const btn = document.getElementById('tpl-move-btn')
+  btn.disabled = true
+  const { data, error } = await sb.from('template_folders').update({ parent_id: parentId, position })
+    .eq('id', folder.id).eq('owner_id', me.id).select('id')
+  btn.disabled = false
+  if (error) {
+    toast(error.code === '23505' ? 'Já existe uma pasta com esse nome no destino.' : _tplFolderErrMsg(error, 'Erro ao mover a pasta: '), 'error')
+    return
+  }
+  if (!data?.length) { toast('Pasta não encontrada. Recarregue a tela.', 'error'); return }
+  closeTplMoveModal()
+  toast('Pasta movida.', 'success')
+  if (currentView === 'templates') renderTemplates(navGen)
+}
+
 // ── Mover modelo (E3) ──
 // A FK composta (folder_id, owner_id) garante no banco que a pasta é do mesmo dono.
 function openTplMoveModal(templateId) {
   if (!_isUuid(templateId)) return
   const tpl = _tplTemplates.find(t => t.id === templateId)
   if (!tpl) { toast('Modelo não encontrado. Recarregue a tela.', 'error'); return }
+  _tplMoveKind = 'template'
   _tplMoveId = tpl.id
+  document.getElementById('tpl-move-title').textContent = 'Mover modelo'
   document.getElementById('tpl-move-subtitle').textContent = `"${tpl.name}"`
   const sel = document.getElementById('tpl-move-folder')
-  sel.innerHTML = '<option value="">Sem pasta</option>' +
-    _tplFolders.map(f => `<option value="${f.id}">${escHtml(f.name)}</option>`).join('')
+  sel.innerHTML = '<option value="">Sem pasta</option>' + tplFolderOptionsHTML(_tplFolders)
   sel.value = _tplFolders.some(f => f.id === tpl.folder_id) ? tpl.folder_id : ''
   document.getElementById('tpl-move-btn').disabled = false
   document.getElementById('tpl-move-modal').style.display = 'flex'
@@ -9267,10 +9488,12 @@ function openTplMoveModal(templateId) {
 function closeTplMoveModal() {
   document.getElementById('tpl-move-modal').style.display = 'none'
   _tplMoveId = null
+  _tplMoveKind = 'template'
 }
 
 async function saveTplMove(e) {
   e.preventDefault()
+  if (_tplMoveKind === 'folder') return _saveTplFolderMove()
   const tpl = _tplTemplates.find(t => t.id === _tplMoveId)
   if (!tpl) { closeTplMoveModal(); return }
   const folderId = document.getElementById('tpl-move-folder').value || null
@@ -9392,8 +9615,7 @@ async function openUseTemplateModal() {
   document.getElementById('use-tpl-modal').style.display = 'flex'
 
   const [fRes, tRes] = await Promise.all([
-    sb.from('template_folders').select('id, name, position')
-      .eq('owner_id', me.id).order('position').order('name'),
+    _fetchTplFolders(),
     sb.from('workout_templates').select('id, name, notes, folder_id, position, template_exercises(count)')
       .eq('owner_id', me.id).order('position').order('name')
   ])
@@ -9431,7 +9653,9 @@ function _renderUseTplList() {
     listEl.innerHTML = '<div class="tpl-empty-folder">Nenhum modelo com esse nome.</div>'
     return
   }
-  const { groups, loose } = _groupTemplatesByFolder(folders, shown)
+  // Pastas em ordem de árvore; o título da seção é o caminho ("Hipertrofia › Peito").
+  const tree = tplBuildTree(folders)
+  const { groups, loose } = _groupTemplatesByFolder(tree.flat.map(x => x.folder), shown)
   const item = t => `
     <button type="button" class="tpl-item" style="width:100%;text-align:left;background:none;cursor:pointer"
             onclick="applyTemplateToWorkoutForm('${t.id}')">
@@ -9442,7 +9666,7 @@ function _renderUseTplList() {
     </button>`
   const section = (title, items) => items.length ? `
     <div class="section-label" style="margin:.25rem 0 0">${escHtml(title)}</div>${items.map(item).join('')}` : ''
-  listEl.innerHTML = groups.map(g => section(g.folder.name, g.items)).join('') + section('Sem pasta', loose)
+  listEl.innerHTML = groups.map(g => section(tree.pathOf(g.folder.id), g.items)).join('') + section('Sem pasta', loose)
 }
 
 function closeUseTemplateModal() {
@@ -9509,8 +9733,7 @@ async function setupTemplateEditor(opts = {}, gen) {
   document.getElementById('tpl-notes').value = ''
 
   const [fRes, tRes] = await Promise.all([
-    sb.from('template_folders').select('id, name, position')
-      .eq('owner_id', me.id).order('position').order('name'),
+    _fetchTplFolders(),
     templateId
       ? sb.from('workout_templates').select('id, name, notes, folder_id, template_exercises(*)')
           .eq('id', templateId).eq('owner_id', me.id)
@@ -9530,8 +9753,7 @@ async function setupTemplateEditor(opts = {}, gen) {
 
   const tpl = tRes.data
   const folderSel = document.getElementById('tpl-folder')
-  folderSel.innerHTML = '<option value="">Sem pasta</option>' +
-    folders.map(f => `<option value="${f.id}">${escHtml(f.name)}</option>`).join('')
+  folderSel.innerHTML = '<option value="">Sem pasta</option>' + tplFolderOptionsHTML(folders)
   const wantFolder = tpl ? tpl.folder_id : opts.folderId
   folderSel.value = folders.some(f => f.id === wantFolder) ? wantFolder : ''
 
