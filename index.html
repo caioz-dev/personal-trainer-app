@@ -855,8 +855,23 @@
       cursor: pointer;
     }
     .students-tab.active { background: var(--accent-a10); border-color: var(--accent-a28); color: var(--accent-soft); }
-    .student-card.archived { cursor: default; }
-    .student-card.archived:hover { transform: none; }
+    .student-archived-badge {
+      display: inline-flex; align-items: center; gap: .3rem;
+      padding: .3rem .75rem; border-radius: var(--radius-pill);
+      font-size: .74rem; font-weight: 700; color: var(--warning);
+      background: var(--warning-a10); border: 1px solid rgba(245,158,11,0.22);
+    }
+    /* Ficha de aluno arquivado (E3): só leitura. Esconde toda ação que grava ou abre um fluxo
+       de gravação; ficam abrir/ver (histórico, gráficos, rotinas, PDFs) e a calculadora. */
+    #student-sheet-body.sheet-readonly :is(
+      button[onclick*="openNewWorkoutForStudent("], button[onclick*="editWorkout("],
+      button[onclick*="openDupModal("], button[onclick*="deleteWorkoutFromSheet("],
+      .workout-checkbox, button[onclick*="showBulkDeleteConfirm("],
+      button[onclick*="deleteExecutionGroup("], button[onclick*="openRoutineModal("],
+      button[onclick*="openDupRoutineModal("], button[onclick*="deleteRoutine("],
+      button[onclick*="openLiveExecutionPicker("], button[onclick*="openManualExecutionModal("],
+      button[onclick*="openPaModal("], button[onclick*="deletePhysicalAssessment("]
+    ) { display: none !important; }
     .student-archived-note { font-size: .74rem; color: var(--text-muted); margin-top: .5rem; }
     .student-unlink-btn:hover {
       background: rgba(239,68,68,.12);
@@ -4612,18 +4627,39 @@ async function addStudentByEmail() {
       return
     }
 
+    // E4: com a coluna archived_at, lê também se o vínculo está arquivado.
+    const archiveReady = _archiveColumnReady === true
     const { data: existing } = await sb
       .from('personal_students')
-      .select('id, active')
+      .select(archiveReady ? 'id, active, archived_at' : 'id, active')
       .eq('personal_id', me.id)
       .eq('student_id', found.id)
       .maybeSingle()
 
-    if (existing?.active === true) { toast(`${found.name} já está vinculado à sua conta.`, 'info'); return }
+    const plan = linkPlanFor(existing, archiveReady)
+    if (plan.action === 'already') { toast(`${found.name} já está vinculado à sua conta.`, 'info'); return }
 
-    // Vínculo inativo (desvinculado antes): reativar em vez de inserir novo
+    // E4: vínculo ativo mas arquivado → só desarquiva (não é vínculo novo: sem e-mail nem
+    // notificação de "novo aluno").
+    if (plan.action === 'unarchive') {
+      const { data: rows, error: uErr } = await sb.from('personal_students')
+        .update(plan.patch).eq('id', existing.id).eq('personal_id', me.id).select('id')
+      if (uErr || !rows?.length) {
+        toast('Não foi possível desarquivar este aluno. Tente pela aba "Arquivados".', 'error')
+        return
+      }
+      toast(`${found.name} estava arquivado e voltou para a lista de alunos ativos.`, 'success')
+      input.value = ''
+      _studentsTab = 'ativos'
+      await renderStudents()
+      observeRevealElements()
+      return
+    }
+
+    // Vínculo inativo (desvinculado antes): reativar em vez de inserir novo. Se também estava
+    // arquivado, volta desarquivado (plan.patch inclui archived_at: null).
     const { error: lErr } = existing
-      ? await sb.from('personal_students').update({ active: true }).eq('id', existing.id)
+      ? await sb.from('personal_students').update(plan.patch).eq('id', existing.id)
       : await sb.from('personal_students').insert({ personal_id: me.id, student_id: found.id })
 
     if (lErr) {
@@ -5483,26 +5519,22 @@ async function renderStudentSheet(studentId, studentName, gen) {
   if (sheetChart) { sheetChart.destroy(); sheetChart = null }
   const body = document.getElementById('student-sheet-body')
 
-  const studentRecord   = students.find(s => s.id === studentId) || {}
+  // Arquivado (E3): busca também em archivedStudents. Ficha aberta direto (F5/deep link)
+  // ainda sem as listas: carrega antes, para saber se é só leitura.
+  if (profile.role === 'personal' && !students.length && !archivedStudents.length) {
+    try { await fetchStudents() } catch {}
+  }
+  const isArchived      = profile.role === 'personal' && isArchivedStudent(studentId)
+  const studentRecord   = students.find(s => s.id === studentId)
+    || archivedStudents.find(s => s.id === studentId) || {}
   const studentAvatarUrl = studentRecord.avatar_url || null
   const studentEmail    = studentRecord.email || null
   const safeIdH   = studentId
   rememberStudentName(studentId, studentName)
-  const header = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.75rem">
-      <div style="display:flex;align-items:center;gap:.875rem">
-        ${avatarEl(studentName, studentAvatarUrl, 48, 'margin-bottom:0')}
-        <div>
-          <div class="section-label" style="margin-bottom:.25rem">Ficha do Aluno</div>
-          <div style="font-size:1.05rem;font-weight:800;letter-spacing:-0.02em">${escHtml(studentName)}</div>
-          ${studentEmail ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.15rem">${icon('mail')} ${escHtml(studentEmail)}</div>` : ''}
-        </div>
-      </div>
-      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-        <button class="btn btn-primary btn-sm" onclick="openNewWorkoutForStudent('${safeIdH}',studentNameOf('${safeIdH}'))">${icon('plus')} Novo Treino</button>
-        <button class="btn btn-outline btn-sm" onclick="closeStudentSheet()">${icon('x')} Fechar</button>
-      </div>
-    </div>`
+  body.classList.toggle('sheet-readonly', isArchived)
+  const header = studentSheetHeaderHTML({
+    studentId: safeIdH, studentName, avatarUrl: studentAvatarUrl, email: studentEmail, archived: isArchived
+  })
 
   body.innerHTML = header + '<div class="loading"><div class="spinner"></div>Carregando…</div>'
 
@@ -6714,6 +6746,7 @@ async function saveRoutine(e) {
 // A ficha do arquivado (só leitura) é a E3: por enquanto o card arquivado não abre a ficha.
 let _studentsTab    = 'ativos'   // 'ativos' | 'arquivados' (só em memória)
 let _archiveTarget  = null       // { id, name, archive }
+let _archiveReturnToSheet = null // E3: id do aluno cuja ficha pediu o Desarquivar
 
 // @@archive-ui-pure:begin
 // "2026-11-30" → "30/11/2026" (sem depender de fuso).
@@ -6757,6 +6790,63 @@ function studentsTabsHTML(activeCount, archivedCount, tab) {
 }
 // @@archive-ui-pure:end
 
+// ── E3: ficha do aluno arquivado (só leitura) ──
+function isArchivedStudent(studentId) {
+  return archivedStudents.some(s => s.id === studentId)
+}
+
+// Defesa além do CSS: fluxos de gravação não abrem para aluno arquivado.
+function _blockIfArchived(studentId) {
+  if (profile?.role !== 'personal' || !isArchivedStudent(studentId)) return false
+  toast('Este aluno está arquivado. Desarquive para criar ou registrar treinos.', 'info')
+  return true
+}
+
+// @@archive-link-pure:begin
+// E4: o que o "Vincular" faz com o vínculo existente (já filtrado por personal e aluno).
+// insert = não existe; already = ativo e não arquivado; unarchive = ativo e arquivado;
+// reactivate = desvinculado (active false), voltando também desarquivado se estava arquivado.
+// Sem a coluna (archiveReady false), igual a antes: patch { active: true }.
+function linkPlanFor(existing, archiveReady) {
+  if (!existing) return { action: 'insert' }
+  const archived = archiveReady && !!existing.archived_at
+  if (existing.active === true) {
+    return archived ? { action: 'unarchive', patch: { archived_at: null } } : { action: 'already' }
+  }
+  return { action: 'reactivate', patch: archived ? { active: true, archived_at: null } : { active: true } }
+}
+// @@archive-link-pure:end
+
+// @@archive-sheet-pure:begin
+// Cabeçalho da ficha. Arquivado: selo + Desarquivar no lugar do Novo Treino, e o aviso de
+// só leitura. Ativo: exatamente o HTML de antes.
+function studentSheetHeaderHTML({ studentId, studentName, avatarUrl, email, archived }) {
+  const actions = archived
+    ? `<span class="student-archived-badge">${icon('archive')} Arquivado</span>
+        <button class="btn btn-outline btn-sm" onclick="unarchiveFromSheet('${studentId}')">${icon('archive-restore')} Desarquivar</button>`
+    : `<button class="btn btn-primary btn-sm" onclick="openNewWorkoutForStudent('${studentId}',studentNameOf('${studentId}'))">${icon('plus')} Novo Treino</button>`
+  const notice = archived
+    ? `
+    <div class="live-ex-edit-notice">Aluno arquivado: ficha só para consulta. Histórico, rotinas e PDFs continuam aqui; para criar, registrar ou editar, desarquive.</div>`
+    : ''
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.75rem">
+      <div style="display:flex;align-items:center;gap:.875rem">
+        ${avatarEl(studentName, avatarUrl, 48, 'margin-bottom:0')}
+        <div>
+          <div class="section-label" style="margin-bottom:.25rem">Ficha do Aluno</div>
+          <div style="font-size:1.05rem;font-weight:800;letter-spacing:-0.02em">${escHtml(studentName)}</div>
+          ${email ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.15rem">${icon('mail')} ${escHtml(email)}</div>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        ${actions}
+        <button class="btn btn-outline btn-sm" onclick="closeStudentSheet()">${icon('x')} Fechar</button>
+      </div>
+    </div>${notice}`
+}
+// @@archive-sheet-pure:end
+
 function archivedStudentsGridHTML(tab) {
   const hidden = tab === 'arquivados' ? '' : ' style="display:none"'
   if (!archivedStudents.length) {
@@ -6767,12 +6857,13 @@ function archivedStudentsGridHTML(tab) {
     ${archivedStudents.map(s => {
       const dName = displayName(s)
       rememberStudentName(s.id, dName)
-      return `<div class="student-card archived" data-student-id="${s.id}">
+      return `<div class="student-card archived" data-student-id="${s.id}"
+          onclick="openStudentSheet('${s.id}',studentNameOf('${s.id}'))">
         ${avatarEl(dName, s.avatar_url || null, 48, 'margin-bottom:.875rem')}
         <div class="student-name">${escHtml(dName)}</div>
         <div class="student-archived-note">Arquivado. Histórico e PDFs preservados.</div>
         <button type="button" class="btn btn-outline btn-sm" style="margin-top:.75rem"
-            onclick="confirmArchiveStudent('${s.id}',false)">${icon('archive-restore')} Desarquivar</button>
+            onclick="event.stopPropagation();confirmArchiveStudent('${s.id}',false)">${icon('archive-restore')} Desarquivar</button>
       </div>`
     }).join('')}
   </div>`
@@ -6837,9 +6928,16 @@ function closeArchiveModal() {
   _archiveTarget = null
 }
 
+// E3: Desarquivar a partir da ficha do aluno arquivado.
+function unarchiveFromSheet(studentId) {
+  _archiveReturnToSheet = studentId
+  confirmArchiveStudent(studentId, false)
+}
+
 async function executeArchive() {
   const target = _archiveTarget
   if (!target) return
+  const backToSheet = !target.archive && _archiveReturnToSheet === target.id
   const btn = document.getElementById('archive-confirm-btn')
   btn.disabled = true
   btn.textContent = target.archive ? 'Arquivando…' : 'Desarquivando…'
@@ -6863,6 +6961,9 @@ async function executeArchive() {
       : `${target.name} voltou para a lista de alunos ativos.`, 'success')
     // Desarquivou: mostra a aba Ativos, onde o aluno acabou de voltar.
     if (!target.archive) _studentsTab = 'ativos'
+    _archiveReturnToSheet = null
+    // E3: desarquivou pela ficha → reabre a ficha (navigateTo já reativa as animações).
+    if (backToSheet) { await fetchStudents(); openStudentSheet(target.id, target.name); return }
     await renderStudents()
     // Mesmo motivo do addStudentByEmail: fora do navigateTo, reativa as animações de entrada.
     observeRevealElements()
@@ -6952,6 +7053,7 @@ async function deleteRoutine(routineId, studentId, studentName) {
 }
 
 async function openNewWorkoutForStudent(studentId, studentName) {
+  if (_blockIfArchived(studentId)) return
   await navigateTo('workout', { prefilledStudentId: studentId, prefilledStudentName: studentName })
 }
 
@@ -12724,6 +12826,7 @@ function buildWorkoutSelectOptionsHTML(ctx) {
 }
 
 function openManualExecutionModal(studentId, studentName) {
+  if (_blockIfArchived(studentId)) return
   const ctx = (window._manualExecCtx || {})[studentId]
   if (!ctx) { toast('Dados do aluno ainda não carregados. Tente novamente.', 'error'); return }
 
@@ -12991,6 +13094,7 @@ async function confirmManualExecution() {
 // REGISTRO AO VIVO (série-a-série), feito pelo personal durante o treino do aluno
 // ─────────────────────────────────────────────
 function openLiveExecutionPicker(studentId, studentName) {
+  if (_blockIfArchived(studentId)) return
   const ctx = (window._manualExecCtx || {})[studentId]
   if (!ctx) { toast('Dados do aluno ainda não carregados. Tente novamente.', 'error'); return }
   if (_liveTimerInterval) { toast('Já existe um registro ao vivo em andamento.', 'error'); return }
