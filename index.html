@@ -1878,6 +1878,10 @@
 
     .live-ex-edit-actions { display: flex; justify-content: flex-end; gap: .5rem; }
 
+    /* "Editar hoje" na execução guiada (Meu Treino do personal) */
+    .exec-today-badge { display: inline-block; margin-left: .35rem; padding: .05rem .45rem; border-radius: var(--radius-pill); font-size: .68rem; font-weight: 700; color: var(--warning); background: var(--warning-a10); border: 1px solid rgba(245,158,11,0.22); vertical-align: middle; }
+    .exec-today-orig { margin-top: .2rem; font-size: .72rem; color: var(--text-muted); text-decoration: line-through; }
+
     /* ---- COMPARISON MODAL ---- */
     .comparison-modal-overlay {
       position: fixed;
@@ -3288,6 +3292,7 @@ let _execStartTimestamp   = null   // Date.now() de quando a execução guiada c
 let _execSessionId        = null   // uuid gerado ao iniciar; escopa as séries desta sessão específica (mesmo padrão do Registro ao Vivo do personal — permite repetir o treino em outro dia sem colidir)
 let _execPhase            = null   // 'running' (tela de execução) | 'review' (finalizado, falta avaliação/comparativo) — vai no snapshot pra o restore saber o que reabrir
 let _execFinishedAt       = null   // Date.now() de quando o aluno clicou "Finalizar Treino"
+let _execDayOverrides     = {}     // "Editar hoje": { exId: { sets, reps, hold_seconds, weight_kg } } só desta sessão — nunca vai para workout_exercises; vai no snapshot (dayOverrides)
 const REVIEW_RESTORE_MAX_AGE_MS = 12 * 60 * 60 * 1000   // acima disso o restore não reabre a avaliação (só grava os "Não executado")
 const EXEC_RESTORE_MAX_AGE_MS   = 12 * 60 * 60 * 1000   // execução guiada / Registro ao Vivo iniciados há mais que isso não são retomados
 const EXEC_STATE_KEY      = 'personalpro-exec-state'   // localStorage: snapshot do treino guiado em andamento, para retomar após F5/fechamento
@@ -3354,6 +3359,7 @@ function resetAppState() {
   _execSessionId          = null
   _execPhase              = null
   _execFinishedAt         = null
+  _execDayOverrides       = {}
   editingWorkoutId        = null
   _wfEditingCreatedBy     = null
   clearTimeout(_wfSaveDebounceTimer)
@@ -11358,7 +11364,8 @@ function saveExecutionState() {
       phase:              _execPhase || 'running',
       finishedAt:         _execFinishedAt,
       finalTime:          _pendingReviewFinalTime,
-      restTimers:         restSnapshot
+      restTimers:         restSnapshot,
+      dayOverrides:       _execDayOverrides
     }
     localStorage.setItem(EXEC_STATE_KEY, JSON.stringify(state))
   } catch (err) { console.error('[saveExecutionState DEBUG] localStorage.setItem falhou:', err) }
@@ -11418,6 +11425,7 @@ function restoreExecutionState() {
       _execSessionId         = state.sessionId
       _execPhase             = 'review'
       _execFinishedAt        = state.finishedAt || null
+      _execDayOverrides      = sanitizeExecDayOverrides(state.dayOverrides, currentWorkoutData.workout_exercises)
 
       // Avaliação velha (mais de 12h desde o "Finalizar"): não reabre "Como foi o seu treino
       // hoje?" para uma sessão de outro dia. Só garante os "Não executado" e encerra.
@@ -11440,6 +11448,7 @@ function restoreExecutionState() {
         _execSessionId      = null
         _execPhase          = null
         _execFinishedAt     = null
+        _execDayOverrides   = {}
         return false
       }
 
@@ -11473,6 +11482,8 @@ function restoreExecutionState() {
     // state.sessionId pode faltar num estado salvo antes desta versão (ou ser o fallback
     // antigo, que não era UUID e nunca gravava) — gera um novo pra não quebrar o restore.
     _execSessionId      = UUID_V4_RE.test(state.sessionId || '') ? state.sessionId : uuidv4()
+    // Snapshot antigo (sem dayOverrides) ou inválido vira {}: abre com o plano original.
+    _execDayOverrides   = sanitizeExecDayOverrides(state.dayOverrides, currentWorkoutData.workout_exercises, exerciseExecutions)
 
     window._workoutsCache = window._workoutsCache || {}
     window._workoutsCache[state.workoutId] = currentWorkoutData
@@ -11534,6 +11545,7 @@ async function startWorkoutExecution(workoutId) {
   _execSessionId      = uuidv4()
   _execPhase          = 'running'
   _execFinishedAt     = null
+  _execDayOverrides   = {}
   renderExecutionScreen(workout)
   document.getElementById('execution-overlay').style.display = 'flex'
   document.body.style.overflow = 'hidden'
@@ -11555,21 +11567,7 @@ function renderExecutionScreen(workout) {
   document.getElementById('exec-exercise-list').innerHTML = exes.length
     ? exes.map(ex => {
         const isAero = ex.exercise_type === 'aerobico'
-        const planned = isAero
-          ? [
-              ex.duration_min ? `${ex.duration_min} min`     : null,
-              ex.distance_km  ? `${ex.distance_km} km`       : null,
-              ex.speed_kmh    ? `${ex.speed_kmh} km/h`       : null,
-              ex.pace         ? `Ritmo: ${escHtml(ex.pace)} /km`      : null,
-              ex.recovery_interval_min ? `Rec: ${ex.recovery_interval_min} min` : null,
-              (ex.hr_min || ex.hr_max) ? `${icon('heart-pulse')} FC: ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : null
-            ].filter(Boolean).join(' &nbsp;·&nbsp; ')
-          : [
-              setsPrescriptionText(ex, ex.sets),
-              ex.cadencia          ? `Cadência: ${escHtml(ex.cadencia)}`         : null,
-              ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null,
-              ex.training_method   ? `Método: ${escHtml(ex.training_method)}`    : null
-            ].filter(Boolean).join(' &nbsp;·&nbsp; ')
+        const planned = execPlannedHTML(ex)
         const restBtn = !isAero && ex.tempo_descanso > 0
           ? `<div class="rest-timer-wrap" id="rest-timer-${ex.id}">
                <span style="font-size:.72rem;color:var(--text-muted);font-weight:500">Ao terminar uma série, inicie o descanso</span>
@@ -11584,39 +11582,250 @@ function renderExecutionScreen(workout) {
              </div>`
           : ''
 
-        const setsCount = Math.max(1, parseInt(ex.sets) || 1)
-        const rowsHTML = isAero
-          ? `<div class="live-set-row" id="exec-set-row-${ex.id}-1" data-exercise-id="${ex.id}" data-set-number="1">
-               <input type="number" id="exec-dur-${ex.id}" class="form-control" placeholder="Duração (min)" step="0.5" min="0" value="${ex.duration_min ?? ''}" oninput="markExecSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
-               <input type="number" id="exec-dist-${ex.id}" class="form-control" placeholder="Distância (km)" step="0.01" min="0" value="${ex.distance_km ?? ''}" oninput="markExecSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
-               <input type="number" id="exec-speed-${ex.id}" class="form-control" placeholder="Vel. (km/h)" step="0.1" min="0" value="${ex.speed_kmh ?? ''}" oninput="markExecSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
-               <button class="btn-live-set-save" onclick="saveExecSet('${ex.id}',1)">${icon('check')} <span class="btn-label">Salvar</span></button>
-             </div>`
-          : Array.from({length: setsCount}, (_, i) => `
-             <div class="live-set-row" id="exec-set-row-${ex.id}-${i + 1}" data-exercise-id="${ex.id}" data-set-number="${i + 1}">
-               <span class="live-set-label">Série ${i + 1}</span>
-               ${isTimedEx(ex)
-                 ? `<input type="number" id="exec-s-${ex.id}-${i + 1}" class="form-control exec-set-seconds" placeholder="s" min="1" max="3600" step="1" value="${ex.hold_seconds ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">`
-                 : `<input type="number" id="exec-r-${ex.id}-${i + 1}" class="form-control exec-set-reps" placeholder="reps" min="1" value="${ex.reps ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">`}
-               <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
-               <input type="number" id="exec-w-${ex.id}-${i + 1}" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${ex.weight_kg ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem"${isBodyweightEx(ex) ? ' readonly title="Peso corporal"' : ''}>
-               <button class="btn-live-set-save" onclick="saveExecSet('${ex.id}',${i + 1})">${icon('check')} <span class="btn-label">Salvar</span></button>
-             </div>`).join('')
+        const exEff     = effectiveExecEx(ex, _execDayOverrides)
+        const setsCount = Math.max(1, parseInt(exEff.sets) || 1)
+        const canToday  = !isAero && _canEditExecToday()
 
         return `
         <div class="exec-exercise-card" id="exec-ex-${ex.id}">
           <div class="exec-ex-header">
             <div class="exec-ex-name">${isAero ? icon('footprints') + ' ' : ''}${escHtml(ex.exercise_name)}</div>
-            <span class="live-ex-progress" id="exec-ex-progress-${ex.id}">0/${isAero ? 1 : setsCount} série${(isAero ? 1 : setsCount) > 1 ? 's' : ''}</span>
+            <div class="live-ex-header-actions">
+              <span class="live-ex-progress" id="exec-ex-progress-${ex.id}">0/${isAero ? 1 : setsCount} série${(isAero ? 1 : setsCount) > 1 ? 's' : ''}</span>
+              ${canToday ? `<button type="button" class="btn-live-ex-edit" id="exec-today-btn-${ex.id}" title="Editar só hoje" aria-label="Editar só hoje" onclick="toggleExecTodayEdit('${ex.id}')">${icon('pencil')}</button>` : ''}
+            </div>
           </div>
-          <div class="exec-ex-planned">${planned || '—'}</div>
+          <div class="exec-ex-planned" id="exec-ex-planned-${ex.id}">${planned || '—'}</div>
+          ${canToday ? `<div class="live-ex-edit-panel" id="exec-today-panel-${ex.id}" style="display:none"></div>` : ''}
           ${!isAero && ex.method_description ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.4rem;padding:.4rem .75rem;background:rgba(86,115,255,0.05);border-radius:var(--radius-md);border-left:2px solid var(--accent-a25)">${escHtml(ex.method_description)}</div>` : ''}
-          <div class="live-set-rows">${rowsHTML}</div>
+          <div class="live-set-rows" id="exec-set-rows-${ex.id}">${execSetRowsHTML(exEff)}</div>
           ${metronomBtn}
           ${restBtn}
         </div>`
       }).join('')
     : '<div class="empty-state" style="padding:2rem"><div class="empty-icon">' + icon('dumbbell') + '</div><p>Nenhum exercício neste treino.</p></div>'
+}
+
+// ── Editar hoje (execução guiada, só o criador do treino) ──
+// Séries/reps/tempo/carga do dia ficam em _execDayOverrides (memória + snapshot local);
+// workout_exercises nunca é tocado e saveExecSet continua lendo os inputs da tela.
+// @@exec-today-pure:begin
+const EXEC_TODAY_MAX_SETS = 30
+
+function effectiveExecEx(ex, overrides) {
+  const ov = ex && overrides ? overrides[ex.id] : null
+  return ov ? { ...ex, ...ov } : ex
+}
+
+function _execSavedMaxSet(execMap) {
+  const nums = Object.keys(execMap || {}).map(Number).filter(n => Number.isInteger(n) && n > 0)
+  return nums.length ? Math.max(...nums) : 0
+}
+
+// Lê os valores crus do painel e devolve { error } ou { override } (null = igual ao plano).
+// Campo de reps/tempo/carga vazio = mantém o planejado. Não deixa ficar com menos séries
+// do que a maior série já salva hoje (senão ela sumiria da tela e da contagem).
+function validateExecDayOverride(ex, input, savedMaxSet = 0) {
+  if (!ex || ex.exercise_type === 'aerobico') return { error: 'Este exercício não pode ser editado aqui.' }
+  const str = v => String(v ?? '').trim().replace(',', '.')
+  const sets = Number(str(input.sets))
+  if (str(input.sets) === '' || !Number.isInteger(sets) || sets < 1 || sets > EXEC_TODAY_MAX_SETS) return { error: `Informe de 1 a ${EXEC_TODAY_MAX_SETS} séries.` }
+  if (sets < savedMaxSet) return { error: `A série ${savedMaxSet} já foi salva hoje — mantenha pelo menos ${savedMaxSet} séries.` }
+  const diff = {}
+  if (sets !== Math.max(1, parseInt(ex.sets) || 1)) diff.sets = sets
+  if (isTimedEx(ex)) {
+    if (str(input.hold_seconds) !== '') {
+      const hold = Number(str(input.hold_seconds))
+      if (!Number.isInteger(hold) || hold < 1 || hold > 3600) return { error: 'Informe o tempo por série (1 a 3600 s).' }
+      if (hold !== Number(ex.hold_seconds)) diff.hold_seconds = hold
+    }
+  } else if (str(input.reps) !== '') {
+    const reps = Number(str(input.reps))
+    if (!Number.isInteger(reps) || reps < 1 || reps > 999) return { error: 'Informe repetições válidas (1 a 999).' }
+    if (reps !== Number(ex.reps)) diff.reps = reps
+  }
+  if (!isBodyweightEx(ex) && str(input.weight_kg) !== '') {
+    const w = Number(str(input.weight_kg))
+    if (!Number.isFinite(w) || w < 0 || w > 1000) return { error: 'Informe uma carga válida (0 a 1000 kg).' }
+    if (w !== parseFloat(ex.weight_kg)) diff.weight_kg = w
+  }
+  return { override: Object.keys(diff).length ? diff : null }
+}
+
+// Restore: aceita só ids do treino atual, só os 4 campos e só valores válidos para o tipo
+// do exercício; snapshot antigo/corrompido vira {}. Séries nunca abaixo da maior já salva.
+function sanitizeExecDayOverrides(raw, exes, execs = {}) {
+  const out = {}
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+  for (const ex of exes || []) {
+    if (!ex || ex.exercise_type === 'aerobico' || !Object.prototype.hasOwnProperty.call(raw, ex.id)) continue
+    const ov = raw[ex.id]
+    if (!ov || typeof ov !== 'object' || Array.isArray(ov)) continue
+    const clean = {}
+    if (Number.isInteger(ov.sets) && ov.sets >= 1 && ov.sets <= EXEC_TODAY_MAX_SETS) clean.sets = ov.sets
+    if (!isTimedEx(ex) && Number.isInteger(ov.reps) && ov.reps >= 1 && ov.reps <= 999) clean.reps = ov.reps
+    if (isTimedEx(ex) && Number.isInteger(ov.hold_seconds) && ov.hold_seconds >= 1 && ov.hold_seconds <= 3600) clean.hold_seconds = ov.hold_seconds
+    if (!isBodyweightEx(ex) && typeof ov.weight_kg === 'number' && Number.isFinite(ov.weight_kg) && ov.weight_kg >= 0 && ov.weight_kg <= 1000) clean.weight_kg = ov.weight_kg
+    const savedMax = _execSavedMaxSet(execs?.[ex.id])
+    if (clean.sets != null && clean.sets < savedMax) clean.sets = savedMax
+    if (Object.keys(clean).length) out[ex.id] = clean
+  }
+  return out
+}
+// @@exec-today-pure:end
+
+// Só quem criou o treino (Meu Treino do personal) e só com a execução em andamento.
+// Aluno comum nunca passa: o treino dele tem created_by do personal.
+function _canEditExecToday() {
+  return profile?.role === 'personal' && canEditWorkout(currentWorkoutData) && _execPhase === 'running'
+}
+
+// Texto "planejado" do card. Sem alteração do dia, exatamente o texto de antes.
+function execPlannedHTML(exOrig) {
+  const ex = effectiveExecEx(exOrig, _execDayOverrides)
+  const isAero = ex.exercise_type === 'aerobico'
+  const planned = isAero
+    ? [
+        ex.duration_min ? `${ex.duration_min} min`     : null,
+        ex.distance_km  ? `${ex.distance_km} km`       : null,
+        ex.speed_kmh    ? `${ex.speed_kmh} km/h`       : null,
+        ex.pace         ? `Ritmo: ${escHtml(ex.pace)} /km`      : null,
+        ex.recovery_interval_min ? `Rec: ${ex.recovery_interval_min} min` : null,
+        (ex.hr_min || ex.hr_max) ? `${icon('heart-pulse')} FC: ${ex.hr_min || '?'}–${ex.hr_max || '?'} bpm` : null
+      ].filter(Boolean).join(' &nbsp;·&nbsp; ')
+    : [
+        setsPrescriptionText(ex, ex.sets),
+        ex.cadencia          ? `Cadência: ${escHtml(ex.cadencia)}`         : null,
+        ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null,
+        ex.training_method   ? `Método: ${escHtml(ex.training_method)}`    : null
+      ].filter(Boolean).join(' &nbsp;·&nbsp; ')
+  if (ex === exOrig) return planned
+  return `${planned} <span class="exec-today-badge">alterado hoje</span><div class="exec-today-orig">Original: ${setsPrescriptionText(exOrig, exOrig.sets)}</div>`
+}
+
+// Linhas de série do card (recebe o exercício já com a alteração do dia aplicada).
+function execSetRowsHTML(ex) {
+  const isAero = ex.exercise_type === 'aerobico'
+  const setsCount = Math.max(1, parseInt(ex.sets) || 1)
+  const rowsHTML = isAero
+    ? `<div class="live-set-row" id="exec-set-row-${ex.id}-1" data-exercise-id="${ex.id}" data-set-number="1">
+         <input type="number" id="exec-dur-${ex.id}" class="form-control" placeholder="Duração (min)" step="0.5" min="0" value="${ex.duration_min ?? ''}" oninput="markExecSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
+         <input type="number" id="exec-dist-${ex.id}" class="form-control" placeholder="Distância (km)" step="0.01" min="0" value="${ex.distance_km ?? ''}" oninput="markExecSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
+         <input type="number" id="exec-speed-${ex.id}" class="form-control" placeholder="Vel. (km/h)" step="0.1" min="0" value="${ex.speed_kmh ?? ''}" oninput="markExecSetDirty('${ex.id}',1)" style="flex:1;min-width:0;padding:.5rem .75rem">
+         <button class="btn-live-set-save" onclick="saveExecSet('${ex.id}',1)">${icon('check')} <span class="btn-label">Salvar</span></button>
+       </div>`
+    : Array.from({length: setsCount}, (_, i) => `
+       <div class="live-set-row" id="exec-set-row-${ex.id}-${i + 1}" data-exercise-id="${ex.id}" data-set-number="${i + 1}">
+         <span class="live-set-label">Série ${i + 1}</span>
+         ${isTimedEx(ex)
+           ? `<input type="number" id="exec-s-${ex.id}-${i + 1}" class="form-control exec-set-seconds" placeholder="s" min="1" max="3600" step="1" value="${ex.hold_seconds ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">`
+           : `<input type="number" id="exec-r-${ex.id}-${i + 1}" class="form-control exec-set-reps" placeholder="reps" min="1" value="${ex.reps ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem">`}
+         <span style="font-size:.8rem;color:var(--text-muted);flex-shrink:0">×</span>
+         <input type="number" id="exec-w-${ex.id}-${i + 1}" class="form-control exec-set-weight" placeholder="kg" step="0.5" min="0" value="${ex.weight_kg ?? ''}" oninput="markExecSetDirty('${ex.id}',${i + 1})" style="flex:1;min-width:0;padding:.5rem .75rem"${isBodyweightEx(ex) ? ' readonly title="Peso corporal"' : ''}>
+         <button class="btn-live-set-save" onclick="saveExecSet('${ex.id}',${i + 1})">${icon('check')} <span class="btn-label">Salvar</span></button>
+       </div>`).join('')
+  return rowsHTML
+}
+
+function execTodayPanelHTML(exId) {
+  const ex  = (currentWorkoutData?.workout_exercises || []).find(e => e.id === exId)
+  if (!ex) return ''
+  const eff = effectiveExecEx(ex, _execDayOverrides)
+  const effSets = Math.max(1, parseInt(eff.sets) || 1)
+  const fieldStyle = 'flex:1;min-width:90px;padding:.5rem .75rem'
+  return `
+    <div class="live-ex-edit-notice" style="margin:0">Vale só para este treino de hoje. O treino salvo não muda.</div>
+    <div class="live-ex-edit-row">
+      <input type="number" class="form-control" id="exec-today-sets-${ex.id}" value="${effSets}" min="1" max="${EXEC_TODAY_MAX_SETS}" step="1" placeholder="Séries" title="Séries" aria-label="Séries" style="${fieldStyle}">
+      ${isTimedEx(ex)
+        ? `<input type="number" class="form-control" id="exec-today-hold-${ex.id}" value="${eff.hold_seconds ?? ''}" min="1" max="3600" step="1" placeholder="Tempo por série (s)" title="Tempo por série (s)" aria-label="Tempo por série (s)" style="${fieldStyle}">`
+        : `<input type="number" class="form-control" id="exec-today-reps-${ex.id}" value="${eff.reps ?? ''}" min="1" max="999" step="1" placeholder="Reps" title="Reps" aria-label="Reps" style="${fieldStyle}">`}
+      ${isBodyweightEx(ex)
+        ? `<span style="font-size:.78rem;color:var(--text-muted);align-self:center">Carga: peso corporal</span>`
+        : `<input type="number" class="form-control" id="exec-today-weight-${ex.id}" value="${eff.weight_kg ?? ''}" min="0" max="1000" step="0.5" placeholder="Carga (kg)" title="Carga (kg)" aria-label="Carga (kg)" style="${fieldStyle}">`}
+    </div>
+    <div class="live-ex-edit-actions">
+      ${_execDayOverrides[ex.id] ? `<button type="button" class="btn btn-outline btn-sm" onclick="resetExecToday('${ex.id}')">Voltar ao original</button>` : ''}
+      <button type="button" class="btn btn-outline btn-sm" onclick="toggleExecTodayEdit('${ex.id}')">Cancelar</button>
+      <button type="button" class="btn btn-primary btn-sm" onclick="applyExecToday('${ex.id}')">Aplicar hoje</button>
+    </div>`
+}
+
+function toggleExecTodayEdit(exId) {
+  const panel = document.getElementById(`exec-today-panel-${exId}`)
+  const btn   = document.getElementById(`exec-today-btn-${exId}`)
+  if (!panel) return
+  const opening = panel.style.display === 'none'
+  if (opening && !_canEditExecToday()) { toast(NO_EDIT_PERMISSION_MSG, 'error'); return }
+  if (opening) panel.innerHTML = execTodayPanelHTML(exId)
+  panel.style.display = opening ? 'flex' : 'none'
+  if (btn) btn.classList.toggle('active', opening)
+}
+
+// Reaplica o visual "Salvo" das séries já gravadas deste exercício (mesma lógica do
+// restoreExecutionState, para um card só — aeróbico não é editável, então não entra).
+function hydrateExecSavedSets(exId) {
+  Object.entries(exerciseExecutions[exId] || {}).forEach(([setNum, data]) => {
+    const row = document.getElementById(`exec-set-row-${exId}-${setNum}`)
+    if (!row) return
+    const wEl = document.getElementById(`exec-w-${exId}-${setNum}`); if (wEl) wEl.value = data.weight_executed ?? ''
+    const rEl = document.getElementById(`exec-r-${exId}-${setNum}`); if (rEl) rEl.value = data.reps_executed ?? ''
+    const sEl = document.getElementById(`exec-s-${exId}-${setNum}`); if (sEl) sEl.value = data.seconds_executed ?? ''
+    row.classList.add('live-set-saved')
+    const b = row.querySelector('.btn-live-set-save')
+    if (b) setBtnLabel(b, 'Salvo', 'check')
+  })
+}
+
+// Re-renderiza só o texto planejado e as linhas de série (metrônomo e descanso do card
+// ficam intactos). Valores digitados e ainda não salvos neste card voltam ao novo padrão.
+function _refreshExecTodayCard(exId) {
+  const ex = (currentWorkoutData?.workout_exercises || []).find(e => e.id === exId)
+  if (!ex) return
+  const plannedEl = document.getElementById(`exec-ex-planned-${exId}`)
+  const rowsEl    = document.getElementById(`exec-set-rows-${exId}`)
+  if (plannedEl) plannedEl.innerHTML = execPlannedHTML(ex) || '—'
+  if (rowsEl)    rowsEl.innerHTML    = execSetRowsHTML(effectiveExecEx(ex, _execDayOverrides))
+  hydrateExecSavedSets(exId)
+  updateExecExerciseProgress(exId)
+  const panel = document.getElementById(`exec-today-panel-${exId}`)
+  if (panel) panel.style.display = 'none'
+  document.getElementById(`exec-today-btn-${exId}`)?.classList.remove('active')
+}
+
+function applyExecToday(exId) {
+  if (!_canEditExecToday()) { toast(NO_EDIT_PERMISSION_MSG, 'error'); return }
+  const ex = (currentWorkoutData?.workout_exercises || []).find(e => e.id === exId)
+  if (!ex) return
+  const val = id => document.getElementById(id)?.value ?? ''
+  const res = validateExecDayOverride(ex, {
+    sets:         val(`exec-today-sets-${exId}`),
+    reps:         val(`exec-today-reps-${exId}`),
+    hold_seconds: val(`exec-today-hold-${exId}`),
+    weight_kg:    val(`exec-today-weight-${exId}`)
+  }, _execSavedMaxSet(exerciseExecutions[exId]))
+  if (res.error) { toast(res.error, 'error'); return }
+  if (res.override) _execDayOverrides[exId] = res.override
+  else delete _execDayOverrides[exId]
+  _refreshExecTodayCard(exId)
+  saveExecutionState()
+  toast(res.override ? 'Alterado só para hoje — o treino salvo não muda.' : 'Exercício igual ao planejado.', 'success')
+}
+
+function resetExecToday(exId) {
+  if (!_canEditExecToday()) { toast(NO_EDIT_PERMISSION_MSG, 'error'); return }
+  const ex = (currentWorkoutData?.workout_exercises || []).find(e => e.id === exId)
+  if (!ex) return
+  const savedMax = _execSavedMaxSet(exerciseExecutions[exId])
+  delete _execDayOverrides[exId]
+  if (savedMax > Math.max(1, parseInt(ex.sets) || 1)) {
+    _execDayOverrides[exId] = { sets: savedMax }
+    toast(`Voltou ao original, mantendo ${savedMax} séries (já salvas hoje).`, 'info')
+  } else {
+    toast('Exercício voltou ao planejado.', 'success')
+  }
+  _refreshExecTodayCard(exId)
+  saveExecutionState()
 }
 
 function markExecSetDirty(exerciseId, setNumber) {
@@ -11711,7 +11920,7 @@ function updateExecExerciseProgress(exerciseId) {
   const ex = (currentWorkoutData?.workout_exercises || []).find(e => e.id === exerciseId)
   if (!ex) return
   const isAero = ex.exercise_type === 'aerobico'
-  const total  = isAero ? 1 : Math.max(1, parseInt(ex.sets) || 1)
+  const total  = isAero ? 1 : Math.max(1, parseInt(effectiveExecEx(ex, _execDayOverrides).sets) || 1)
   const done   = Object.keys(exerciseExecutions[exerciseId] || {}).length
   const el = document.getElementById(`exec-ex-progress-${exerciseId}`)
   if (el) el.textContent = `${done}/${total} série${total > 1 ? 's' : ''}`
@@ -11809,7 +12018,7 @@ function _finishWorkoutConfirmMsg() {
   let total = 0, done = 0, withoutSets = 0
   exes.forEach(ex => {
     const saved = Object.keys(exerciseExecutions[ex.id] || {}).length
-    total += ex.exercise_type === 'aerobico' ? 1 : Math.max(1, parseInt(ex.sets) || 1)
+    total += ex.exercise_type === 'aerobico' ? 1 : Math.max(1, parseInt(effectiveExecEx(ex, _execDayOverrides).sets) || 1)
     done  += saved
     if (!saved) withoutSets++
   })
@@ -12080,6 +12289,7 @@ function dismissComparison() {
   _pendingExecutionsSave  = null
   _execPhase              = null
   _execFinishedAt         = null
+  _execDayOverrides       = {}
   // Só aqui a sessão está encerrada de fato (placeholders gravados, avaliação enviada ou pulada).
   clearExecutionState()
 }
