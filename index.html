@@ -2530,6 +2530,15 @@
     .tpl-item-actions { display: flex; gap: .35rem; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
     @media (max-width: 480px) { .tpl-item { flex-wrap: wrap; } .tpl-item-actions { width: 100%; } }
     /* Subpastas (até 3 níveis): ficam dentro do corpo da pasta-mãe, antes dos modelos. */
+    /* Revisão dos valores lidos do PDF da avaliação física (fase 2, sem IA). */
+    .pa-rv-row { display: grid; grid-template-columns: minmax(0, 1fr) 6.5rem 4.5rem; gap: .35rem .5rem; align-items: center; padding: .2rem 0; }
+    .pa-rv-row:has(.btn-ghost-danger) { grid-template-columns: minmax(0, 1fr) 6.5rem 4.5rem auto; }
+    .pa-rv-label { font-size: .85rem; min-width: 0; }
+    .pa-rv-unit  { font-size: .75rem; color: var(--text-muted); }
+    .pa-rv-value { padding: .35rem .5rem; }
+    .pa-rv-warn  { grid-column: 1 / -1; font-size: .72rem; color: var(--danger); }
+    .pa-rv-warn:empty { display: none; }
+    .pa-rv-bad .pa-rv-value { border-color: var(--danger); background: var(--danger-a08); }
     .tpl-subfolder { margin: 0; padding: .625rem .75rem; border: 1px solid var(--border-subtle); border-left: 3px solid var(--accent-a28); border-radius: var(--radius); }
     .tpl-subfolder .tpl-folder-title { font-weight: 650; font-size: .9rem; }
     .tpl-folder-actions { flex-wrap: wrap; justify-content: flex-end; }
@@ -3151,6 +3160,24 @@
   </div>
 </div>
 
+<!-- Modal: revisar/editar os valores lidos do PDF da avaliação (fase 2, por regras, sem IA) -->
+<div id="pa-review-modal" class="routine-modal-overlay" style="display:none">
+  <div class="routine-modal-card" style="max-width:640px">
+    <div style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em" id="pa-review-title">Revisar valores lidos do PDF</div>
+    <div style="font-size:.8rem;color:var(--text-muted);margin:.25rem 0 .5rem" id="pa-review-sub"></div>
+    <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:.25rem">Confira cada valor com o PDF. Campo vazio não é salvo. Nada é gravado até você confirmar.</div>
+    <div id="pa-review-body"></div>
+    <div class="form-group" style="margin-top:1.25rem">
+      <label for="pa-review-report">Relatório do paciente (texto inteiro)</label>
+      <textarea id="pa-review-report" class="form-control" rows="8" maxlength="30000" placeholder="Sem relatório"></textarea>
+    </div>
+    <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.25rem;flex-wrap:wrap">
+      <button type="button" class="btn btn-outline btn-sm" onclick="closePaReview()">Cancelar</button>
+      <button type="button" id="pa-review-btn" class="btn btn-primary btn-sm" onclick="savePaReview()">Confirmar e salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: escolher modelo para preencher o novo treino -->
 <div id="use-tpl-modal" class="routine-modal-overlay" style="display:none" onclick="if(event.target===this)closeUseTemplateModal()">
   <div class="routine-modal-card">
@@ -3410,6 +3437,8 @@ let _tplTreeReady           = null   // coluna parent_id: null = ainda não sabe
 let _paList                 = []     // avaliações do aluno aberto na ficha (última leitura)
 let _paCtx                  = null   // { studentId, editId } enquanto o modal está aberto
 let _paBusy                 = false  // envio/edição/remoção em andamento
+let _paReview               = null   // revisão dos dados da avaliação aberta: { assessmentId, studentId, rows, ... }
+let _pdfjsPromise           = null   // carga única do pdf.js (módulo e worker conferidos por SRI)
 const _tplClosedFolders     = new Set()   // pastas recolhidas na tela (só nesta aba)
 
 // Limpa TODO o estado da sessão anterior — chamado no logout e antes de boot de novo usuário
@@ -3523,6 +3552,9 @@ function resetAppState() {
   _paList                     = []
   _paCtx                      = null
   _paBusy                     = false
+  _paReview                   = null
+  const paReviewModal = document.getElementById('pa-review-modal')
+  if (paReviewModal) paReviewModal.style.display = 'none'
   _tplClosedFolders.clear()
   const tplList = document.getElementById('tpl-exercise-list')
   if (tplList) tplList.innerHTML = ''
@@ -11341,7 +11373,7 @@ const _RELOAD_BLOCKING_OVERLAYS = ['execution-overlay', 'live-execution-overlay'
   'review-modal', 'comparison-modal', 'timer-modal-overlay', 'password-reset-overlay', 'manual-exec-modal-overlay',
   'routine-modal', 'unlink-modal', 'body-data-modal', 'bulk-delete-modal', 'dup-modal-overlay',
   'dup-routine-modal-overlay', 'reorder-modal-overlay', 'replicate-modal-overlay', 'tpl-folder-modal',
-  'tpl-move-modal', 'use-tpl-modal', 'pa-modal', 'archive-modal']
+  'tpl-move-modal', 'use-tpl-modal', 'pa-modal', 'pa-review-modal', 'archive-modal']
 function _hasWorkInProgress() {
   if (timerInterval || currentWorkoutData || _execPhase || _pendingExecutionsSave) return true
   if (_liveSessionId || _liveTimerInterval) return true
@@ -11442,9 +11474,11 @@ function _renderPaItem(a) {
     <div class="tpl-item">
       <div class="tpl-item-main">
         <div class="tpl-item-name">${icon('clipboard-list')} ${escHtml(a.title)}</div>
-        <div class="tpl-item-meta">${escHtml(fmtDate(a.assessed_at))}</div>
+        <div class="tpl-item-meta">${escHtml(fmtDate(a.assessed_at))}${a._savedCount ? ` · ${a._savedCount} medida${a._savedCount === 1 ? '' : 's'} salva${a._savedCount === 1 ? '' : 's'}` : ''}${a._hasReport ? ' · relatório salvo' : ''}</div>
       </div>
       <div class="tpl-item-actions">
+        <button class="btn btn-outline btn-sm" title="Ler os valores do PDF e revisar" onclick="readAssessmentPdf('${a.id}')">${icon('table-2')} Ler PDF</button>
+        <button class="btn btn-outline btn-sm" title="Ver e editar os dados salvos" onclick="openAssessmentData('${a.id}')">Dados</button>
         <button class="btn btn-outline btn-sm" title="Abrir PDF" onclick="openPhysicalAssessment('${a.id}')">${icon('eye')} Abrir</button>
         <button class="btn btn-outline btn-sm" title="Editar título e data" onclick="openPaModal('${a.id}')">${icon('pencil')}</button>
         <button class="btn btn-sm btn-ghost-danger" title="Apagar avaliação" onclick="deletePhysicalAssessment('${a.id}')">${icon('trash-2')}</button>
@@ -11476,6 +11510,19 @@ async function renderSheetAssessments(studentId) {
     return
   }
   _paList = (data || []).filter(a => _isUuid(a.id)).map(a => ({ ...a, student_id: studentId }))
+  // Dados já lidos do PDF (fase 2): só para mostrar na lista; se a leitura falhar, fica sem o selo.
+  if (_paList.length) {
+    const ids = _paList.map(a => a.id)
+    const [mRes, rRes] = await Promise.all([
+      sb.from('assessment_measurements').select('assessment_id').in('assessment_id', ids),
+      sb.from('assessment_reports').select('assessment_id').in('assessment_id', ids),
+    ])
+    if (document.getElementById('sheet-assessments') !== still || still.dataset.studentId !== studentId) return
+    for (const a of _paList) {
+      a._savedCount = (mRes.data || []).filter(m => m.assessment_id === a.id).length
+      a._hasReport  = (rRes.data || []).some(r => r.assessment_id === a.id)
+    }
+  }
   still.innerHTML = head + (_paList.length
     ? `<div style="display:flex;flex-direction:column;gap:.5rem">${_paList.map(_renderPaItem).join('')}</div>`
     : '<div class="tpl-empty-folder">Nenhuma avaliação enviada.</div>')
@@ -11592,6 +11639,562 @@ async function deletePhysicalAssessment(id) {
   } finally {
     _paBusy = false
     renderSheetAssessments(a.student_id)
+  }
+}
+
+// @@pa-parse-pure:begin
+// Leitura por regras do PDF de avaliação (layout INFIT), sem IA. Entrada: só o TEXTO
+// das páginas, como o pdf.js entrega em getTextContent(): itens {str, x, y, w, h}, com
+// y crescendo para cima. Nenhuma página é desenhada como imagem: as fotos nunca são
+// decodificadas. Tudo o que sai daqui vai para a tela de revisão; nada grava sozinho.
+
+const PA_GROUPS = ['antropometria', 'perimetria', 'adipometria', 'resultados', 'bioimpedancia', 'testes']
+const PA_UNITS  = ['cm', 'mm', 'kg', '%', 'kcal', 'anos', 'l', 'ml/kg/min', 'kgf', 'm', 'km', 'reps', 's',
+                   'bpm', 'mmHg', 'ohm', 'graus', 'kg/m2', 'g/ml', 'nivel', 'un']
+
+// Catálogo: [grupo, chave, rótulo, unidade, faixa mínima, faixa máxima, apelidos no PDF].
+// As faixas só geram aviso na revisão; o banco recusa apenas negativo e unidade fora da lista.
+const PA_CATALOG = [
+  ['antropometria', 'idade',          'Idade',            'anos', 5, 110],
+  ['antropometria', 'massa_corporal', 'Massa corporal',   'kg',   20, 300],
+  ['antropometria', 'estatura',       'Estatura',         'm',    1, 2.3],
+  ['antropometria', 'imc',            'IMC',              'kg/m2', 10, 70],
+  ['perimetria', 'ombro',             'Ombro',              'cm', 5, 250],
+  ['perimetria', 'peitoral',          'Peitoral',           'cm', 5, 250],
+  ['perimetria', 'braco_d_relaxado',  'Braço D. relaxado',  'cm', 5, 250],
+  ['perimetria', 'braco_e_relaxado',  'Braço E. relaxado',  'cm', 5, 250],
+  ['perimetria', 'braco_d_contraido', 'Braço D. contraído', 'cm', 5, 250],
+  ['perimetria', 'braco_e_contraido', 'Braço E. contraído', 'cm', 5, 250],
+  ['perimetria', 'antebraco_d',       'Antebraço D.',       'cm', 5, 250],
+  ['perimetria', 'antebraco_e',       'Antebraço E.',       'cm', 5, 250],
+  ['perimetria', 'abdomen',           'Abdômen',            'cm', 5, 250],
+  ['perimetria', 'cintura',           'Cintura',            'cm', 5, 250],
+  ['perimetria', 'quadril',           'Quadril',            'cm', 5, 250],
+  ['perimetria', 'coxa_medial_d',     'Coxa medial D.',     'cm', 5, 250],
+  ['perimetria', 'coxa_medial_e',     'Coxa medial E.',     'cm', 5, 250],
+  ['perimetria', 'coxa_distal_d',     'Coxa distal D.',     'cm', 5, 250],
+  ['perimetria', 'coxa_distal_e',     'Coxa distal E.',     'cm', 5, 250],
+  ['perimetria', 'panturrilha_d',     'Panturrilha D.',     'cm', 5, 250],
+  ['perimetria', 'panturrilha_e',     'Panturrilha E.',     'cm', 5, 250],
+  ['adipometria', 'peitoral',     'Peitoral',     'mm', 1, 80, ['peitoral']],
+  ['adipometria', 'suprailiaca',  'Suprailíaca',  'mm', 1, 80, ['suprailiaca']],
+  ['adipometria', 'axilar_media', 'Axilar média', 'mm', 1, 80, ['axilar media']],
+  ['adipometria', 'subescapular', 'Subescapular', 'mm', 1, 80, ['subescapular']],
+  ['adipometria', 'tricipital',   'Tricipital',   'mm', 1, 80, ['tricipital', 'triciptal', 'triceps']],
+  ['adipometria', 'abdominal',    'Abdominal',    'mm', 1, 80, ['abdominal']],
+  ['adipometria', 'coxa',         'Coxa',         'mm', 1, 80, ['coxa']],
+  ['resultados', 'densidade_corporal', 'Densidade corporal',   'g/ml', 0.95, 1.12, ['densidade corporal']],
+  ['resultados', 'massa_magra',        'Massa magra',          'kg', 1, 300, ['massa magra (kg)', 'massa magra']],
+  ['resultados', 'massa_gorda',        'Massa gorda',          'kg', 1, 300, ['massa gorda (kg)', 'massa gorda']],
+  ['resultados', 'gordura_pct',        'Gordura',              '%',  2, 70,  ['gordura (%)']],
+  ['resultados', 'massa_corporal',     'Massa corporal',       'kg', 20, 300, ['massa corporal (kg)', 'massa corporal']],
+  ['resultados', 'somatorio_dobras',   'Somatório das dobras', 'mm', 5, 400, ['somatorio das dobras (mm)', 'somatorio das dobras']],
+  ['bioimpedancia', 'massa_corporal',          'Massa corporal',               'kg',    20, 300, ['massa corporal (kg)']],
+  ['bioimpedancia', 'imc',                     'IMC',                          'kg/m2', 10, 70,  ['imc (kg/m2)', 'imc']],
+  ['bioimpedancia', 'massa_livre_gordura',     'Massa livre de gordura',       'kg',    1, 300,  ['massa livre de gordura (kg)']],
+  ['bioimpedancia', 'massa_livre_gordura_pct', 'Massa livre de gordura (%)',   '%',     2, 98,   ['massa livre de gordura (%)']],
+  ['bioimpedancia', 'massa_muscular',          'Massa muscular',               'kg',    1, 200,  ['massa muscular (kg)']],
+  ['bioimpedancia', 'massa_muscular_pct',      'Massa muscular (%)',           '%',     2, 90,   ['massa muscular (%)']],
+  ['bioimpedancia', 'massa_gorda',             'Massa gorda',                  'kg',    1, 300,  ['massa gorda (kg)']],
+  ['bioimpedancia', 'gordura_pct',             'Gordura',                      '%',     2, 70,   ['gordura (%)']],
+  ['bioimpedancia', 'gasto_repouso',           'Gasto calórico em repouso',    'kcal',  800, 5000, ['gasto calorico em repouso (kcal)']],
+  ['bioimpedancia', 'idade_corporal',          'Idade corporal',               'anos',  5, 110,  ['idade corporal']],
+  ['bioimpedancia', 'gordura_visceral',        'Gordura visceral',             'nivel', 1, 30,   ['gordura visceral']],
+  ['testes', 'preensao_d',      'Preensão manual D.', 'kg',        0, 100],
+  ['testes', 'preensao_e',      'Preensão manual E.', 'kg',        0, 100],
+  ['testes', 'sentar_levantar', 'Sentar e levantar',  'reps',      0, 200],
+  ['testes', 'apoio',           'Apoio',              'reps',      0, 200],
+  ['testes', 'abdominal',       'Abdominal',          'reps',      0, 200],
+  ['testes', 'cooper',          'Teste de Cooper',    'km',        0.2, 5],
+  ['testes', 'vo2max',          'VO2máx',             'ml/kg/min', 10, 90],
+].map(([grp, key, label, unit, min, max, aliases]) => ({ grp, key, label, unit, min, max, aliases: aliases || [] }))
+
+const PA_PERIM_ORDER = PA_CATALOG.filter(c => c.grp === 'perimetria').map(c => c.key)   // ordem fixa do INFIT
+
+function paCatalogItem(grp, key) { return PA_CATALOG.find(c => c.grp === grp && c.key === key) || null }
+
+// "1,0712" | "77.7" | "24,80" | "1700" -> número; qualquer outra coisa -> null.
+function paNum(s) {
+  const t = String(s ?? '').trim()
+  if (!/^\d{1,6}([.,]\d{1,4})?$/.test(t)) return null
+  return Number(t.replace(',', '.'))
+}
+
+// Texto para comparar rótulos: minúsculo, sem acento, "²" vira "2", espaços simples.
+function paNorm(s) {
+  return String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/²/g, '2').toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+function paSlug(s) {
+  return paNorm(s).replace(/\(.*?\)/g, ' ').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30) || 'medida'
+}
+
+const _paCx = it => it.x + (it.w || 0) / 2
+const _paIsLegend = it => /^(\d+\s*)?[ºªa°]?\s*avaliacao$/.test(paNorm(it.str))
+
+// Linhas: itens agrupados pela altura (tolerância em pontos), de cima para baixo.
+function paRows(items, tol = 2.5) {
+  const rows = []
+  for (const it of [...items].filter(i => String(i.str).trim()).sort((a, b) => b.y - a.y)) {
+    const row = rows.find(r => Math.abs(r.y - it.y) <= tol)
+    if (row) row.items.push(it); else rows.push({ y: it.y, items: [it] })
+  }
+  // O pdf.js às vezes parte um número em pedaços colados ("1." + "77"): só põe espaço
+  // entre itens quando há folga real entre o fim de um e o começo do outro.
+  for (const r of rows) {
+    r.items.sort((a, b) => a.x - b.x)
+    r.text = r.items.reduce((acc, it, k) => {
+      const s = String(it.str).trim()
+      if (!k) return s
+      const prev = r.items[k - 1]
+      return acc + (it.x - (prev.x + (prev.w || 0)) > 1.5 ? ' ' : '') + s
+    }, '').replace(/\s+/g, ' ')
+  }
+  return rows
+}
+
+function paPageText(page) { return paRows(page.items).map(r => r.text).join('\n') }
+
+function _paFindPage(pages, re) { return pages.find(p => re.test(paNorm(paPageText(p)))) || null }
+
+// Tabela abaixo do gráfico (adipometria, resultados, bioimpedância): a linha de valores começa
+// em "1ª avaliação"; o rótulo de cada coluna são os textos logo acima, na mesma faixa de x.
+function paParseTable(page, grp, warnings) {
+  // Âncora = a legenda curta "1ª avaliação" (não a frase de introdução, que também tem "avaliação").
+  const anchor = page.items.filter(_paIsLegend).sort((x, y) => x.y - y.y)[0]
+  if (!anchor) { warnings.push(`${grp}: linha "1ª avaliação" não encontrada.`); return [] }
+  const vals = page.items
+    .filter(i => Math.abs(i.y - anchor.y) <= 2.5 && i.x > anchor.x && paNum(i.str) != null)
+    .sort((a, b) => a.x - b.x)
+  if (!vals.length) { warnings.push(`${grp}: nenhum valor na linha da avaliação.`); return [] }
+  const cx = vals.map(_paCx)
+  const bounds = cx.map((c, k) => [
+    k ? (cx[k - 1] + c) / 2 : -Infinity,
+    k < cx.length - 1 ? (c + cx[k + 1]) / 2 : Infinity])
+  const labelItems = page.items.filter(i =>
+    i.y > anchor.y + 1 && i.y <= anchor.y + 70 && paNum(i.str) == null && String(i.str).trim())
+  const used = new Set()
+  return vals.map((v, k) => {
+    const [lo, hi] = bounds[k]
+    const label = labelItems.filter(i => _paCx(i) > lo && _paCx(i) <= hi)
+      .sort((a, b) => b.y - a.y || a.x - b.x)
+      .map(i => String(i.str).trim()).join(' ').replace(/\s+/g, ' ')
+    const n = paNorm(label)
+    let cat = PA_CATALOG.find(c => c.grp === grp && !used.has(c.key) && c.aliases.some(a => a === n))
+    if (!cat) cat = PA_CATALOG.find(c => c.grp === grp && !used.has(c.key) && c.aliases.some(a => n.startsWith(a)))
+    if (cat) { used.add(cat.key); return paMeasure(cat.grp, cat.key, cat.label, paNum(v.str), cat.unit) }
+    warnings.push(`${grp}: rótulo desconhecido "${label || '(vazio)'}"; confira a unidade.`)
+    return paMeasure(grp, 'outro_' + paSlug(label), (label || 'Medida').slice(0, 60), paNum(v.str), 'un', true)
+  })
+}
+
+// Perimetria: os rótulos do eixo não vêm no texto; os 17 números das barras seguem a
+// ordem fixa do INFIT. Números alinhados na mesma coluna (eixo 0, 20, 40...) são descartados.
+function paParsePerimetria(page, warnings) {
+  const title = page.items.find(i => /perimetria\s*\(cm\)/i.test(String(i.str)))
+  if (!title) { warnings.push('perimetria: título não encontrado.'); return [] }
+  const legend = page.items.find(i => i.y < title.y && _paIsLegend(i))
+  const nums = page.items.filter(i => i.y < title.y && paNum(i.str) != null &&
+    !(legend && Math.abs(i.y - legend.y) <= 2.5))
+  const cols = []
+  for (const it of nums) {
+    const c = cols.find(col => Math.abs(col.cx - _paCx(it)) <= 3)
+    if (c) c.items.push(it); else cols.push({ cx: _paCx(it), items: [it] })
+  }
+  const bars = cols.filter(c => c.items.length === 1).map(c => c.items[0]).sort((a, b) => a.x - b.x)
+  if (bars.length !== PA_PERIM_ORDER.length) {
+    warnings.push(`perimetria: ${bars.length} valores em vez de ${PA_PERIM_ORDER.length}; preencha à mão.`)
+    return []
+  }
+  return bars.map((b, k) => {
+    const cat = paCatalogItem('perimetria', PA_PERIM_ORDER[k])
+    return paMeasure('perimetria', cat.key, cat.label, paNum(b.str), 'cm')
+  })
+}
+
+// Bloco de identificação (página da perimetria): "Idade 40 anos", "Massa corporal 80.0 kg"...
+// O nome do aluno, que fica no cabeçalho desse bloco, não é lido.
+function paParseIdent(page, warnings) {
+  const rules = [
+    ['idade',          /^idade (\d{1,3}) anos?$/],
+    ['massa_corporal', /^massa corporal (\d{1,3}(?:[.,]\d{1,2})?) kg$/],
+    ['estatura',       /^estatura (\d(?:[.,]\d{1,2})?) m$/],
+    ['imc',            /^indice de massa corporal (\d{1,2}(?:[.,]\d{1,2})?) kg\/m2$/],
+  ]
+  const rows = paRows(page.items).map(r => paNorm(r.text))
+  const out = []
+  for (const [key, re] of rules) {
+    const m = rows.map(t => t.match(re)).find(Boolean)
+    const cat = paCatalogItem('antropometria', key)
+    if (m) out.push(paMeasure('antropometria', key, cat.label, paNum(m[1]), cat.unit))
+    else warnings.push(`identificação: "${cat.label}" não encontrado.`)
+  }
+  return out
+}
+
+// Relatório narrativo: guardado inteiro, em parágrafos, a partir do título "Relatório do Paciente".
+function paParseReport(pages, startIndex) {
+  const paras = []
+  let cur = ''
+  for (const page of pages.slice(startIndex)) {
+    const rows = paRows(page.items)
+    if (!rows.length) continue
+    const left = Math.min(...rows.map(r => r.items[0].x))
+    let prevY = null
+    for (const r of rows) {
+      if (/^relatorio do paciente$/.test(paNorm(r.text))) { prevY = r.y; continue }
+      const indented = r.items[0].x > left + 15
+      const gap = prevY != null && prevY - r.y > 24
+      if (cur && (indented || gap)) { paras.push(cur); cur = '' }
+      cur = cur ? (/-$/.test(cur) ? cur.slice(0, -1) + r.text : cur + ' ' + r.text) : r.text
+      prevY = r.y
+    }
+    if (cur) { paras.push(cur); cur = '' }   // parágrafo que continua na página seguinte é emendado abaixo
+  }
+  // Junta o parágrafo cortado na troca de página (o seguinte começa em minúscula).
+  const merged = []
+  for (const p of paras) {
+    if (merged.length && /^[a-zà-ú]/.test(p)) merged[merged.length - 1] += ' ' + p
+    else merged.push(p)
+  }
+  if (!merged.length) return null
+  return { sections: [{ titulo: 'Relatório do paciente', itens: [{ rotulo: 'Texto', texto: merged.join('\n\n') }] }] }
+}
+
+function paMeasure(grp, key, label, value, unit, unknown = false) {
+  return { grp, key, label, value, unit, unknown }
+}
+
+// Aviso de faixa para a revisão (null = ok).
+function paRangeWarn(m) {
+  if (m.value == null || !Number.isFinite(m.value)) return 'sem valor'
+  if (m.value < 0) return 'negativo'
+  const cat = paCatalogItem(m.grp, m.key)
+  if (!cat) return null
+  if (m.value < cat.min || m.value > cat.max) return `fora da faixa (${cat.min}–${cat.max} ${cat.unit})`
+  return null
+}
+
+// Entrada: [{num, items}] (só páginas com texto; a de fotos não tem). Saída para a revisão.
+function paParseInfit(pages) {
+  const warnings = []
+  const textPages = pages.filter(p => p.items.some(i => String(i.str).trim()))
+    .filter(p => !/antes x depois/.test(paNorm(paPageText(p))))
+  const pPer  = _paFindPage(textPages, /perimetria \(cm\)/)
+  const pAdi  = _paFindPage(textPages, /adipometria \(mm\)/)
+  const pRes  = _paFindPage(textPages, /densidade corporal/)
+  const pBio  = _paFindPage(textPages, /bioimpedancia/)
+  const iRep  = textPages.findIndex(p => /relatorio do paciente/.test(paNorm(paPageText(p))))
+  const found = [pPer, pAdi, pRes, pBio].filter(Boolean).length
+  if (found < 2) {
+    return { layout: 'desconhecido', measurements: [], report: null,
+             warnings: ['Layout não reconhecido: preencha os valores à mão.'] }
+  }
+  const measurements = [
+    ...(pPer ? paParseIdent(pPer, warnings) : []),
+    ...(pPer ? paParsePerimetria(pPer, warnings) : []),
+    ...(pAdi ? paParseTable(pAdi, 'adipometria', warnings) : []),
+    ...(pRes ? paParseTable(pRes, 'resultados', warnings) : []),
+    ...(pBio ? paParseTable(pBio, 'bioimpedancia', warnings) : []),
+  ]
+  if (!pPer) warnings.push('perimetria: página não encontrada.')
+  if (!pAdi) warnings.push('adipometria: página não encontrada.')
+  if (!pRes) warnings.push('resultados: página não encontrada.')
+  if (!pBio) warnings.push('bioimpedância: página não encontrada.')
+  const report = iRep >= 0 ? paParseReport(textPages, iRep) : null
+  if (iRep < 0) warnings.push('relatório: não encontrado.')
+  return { layout: found === 4 ? 'infit' : 'parcial', measurements, report, warnings }
+}
+
+// O que a RPC save_assessment_data recebe, a partir das linhas confirmadas na revisão.
+// Devolve { ok, rows, error }; confere o mesmo que o banco antes de enviar.
+function paBuildSavePayload(rows) {
+  const out = [], seen = new Set()
+  for (const [i, r] of rows.entries()) {
+    if (r.value === '' || r.value == null) continue        // vazio = não salva a medida
+    const value = typeof r.value === 'number' ? r.value : paNum(r.value)
+    if (value == null || value < 0 || value >= 100000) return { ok: false, error: `Valor inválido em "${r.label}".` }
+    if (!PA_GROUPS.includes(r.grp) || !PA_UNITS.includes(r.unit)) return { ok: false, error: `Unidade ou grupo inválido em "${r.label}".` }
+    if (!/^[a-z][a-z0-9_]{0,39}$/.test(r.key)) return { ok: false, error: `Chave inválida em "${r.label}".` }
+    const label = String(r.label || '').trim().slice(0, 60)
+    if (!label) return { ok: false, error: 'Medida sem nome.' }
+    const id = r.grp + '/' + r.key
+    if (seen.has(id)) return { ok: false, error: `"${label}" aparece duas vezes.` }
+    seen.add(id)
+    out.push({ grp: r.grp, key: r.key, label, value: Math.round(value * 10000) / 10000, unit: r.unit, position: Math.min(i, 199) })
+  }
+  if (out.length > 120) return { ok: false, error: 'Mais de 120 medidas.' }
+  return { ok: true, rows: out }
+}
+// @@pa-parse-pure:end
+
+// ─────────────────────────────────────────────
+// AVALIAÇÕES FÍSICAS — fase 2: ler valores do PDF por regras (sem IA)
+// ─────────────────────────────────────────────
+// O PDF sai do bucket privado pela sessão do personal e é lido só no navegador, com pdf.js
+// carregado sob demanda e conferido por SRI (módulo e worker). Só a camada de TEXTO das
+// páginas é lida (getTextContent); nenhuma página é desenhada, então as fotos nunca são
+// decodificadas. Nada é gravado sem a revisão: "Confirmar e salvar" chama a RPC
+// save_assessment_data, que troca tudo da avaliação numa transação só.
+const PDFJS_VERSION    = '4.10.38'
+const PDFJS_URL        = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs'
+const PDFJS_SRI        = 'sha384-+0ti2moQlmLN7WZHE2RHIf5lV8hHxhxEalN0il3YZceG26fUPyOkR0hp9daxk1i7'
+const PDFJS_WORKER_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs'
+const PDFJS_WORKER_SRI = 'sha384-ToeVvShCxKc6CEvhHeMt0Q8A06pSPDbAlngO9nokrDmh914gk/pYd0N7D0a4Lz2o'
+const PA_PARSE_MAX_PAGES  = 20
+const PA_REPORT_MAX_BYTES = 60000   // o banco aceita até 64 KB no jsonb do relatório
+const PA_GROUP_TITLES = { antropometria: 'Identificação', perimetria: 'Perimetria', adipometria: 'Adipometria',
+  resultados: 'Resultados (dobras)', bioimpedancia: 'Bioimpedância', testes: 'Testes físicos' }
+
+// Carrega o pdf.js uma vez. O módulo entra por <script type="module" integrity>; o worker é
+// baixado com fetch(integrity) e vira um blob da própria origem, para também ser conferido
+// (o caminho padrão do pdf.js para CDN usa importScripts, sem SRI).
+function _loadPdfjs() {
+  if (_pdfjsPromise) return _pdfjsPromise
+  _pdfjsPromise = (async () => {
+    if (!globalThis.pdfjsLib) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script')
+        s.type = 'module'
+        s.src = PDFJS_URL
+        s.integrity = PDFJS_SRI
+        s.crossOrigin = 'anonymous'
+        s.referrerPolicy = 'no-referrer'
+        s.onload = resolve
+        s.onerror = () => reject(new Error('não foi possível carregar o leitor de PDF'))
+        document.head.appendChild(s)
+      })
+    }
+    const lib = globalThis.pdfjsLib
+    if (!lib?.getDocument || lib.version !== PDFJS_VERSION) throw new Error('leitor de PDF inesperado')
+    const res = await fetch(PDFJS_WORKER_URL, { integrity: PDFJS_WORKER_SRI, credentials: 'omit', referrerPolicy: 'no-referrer' })
+    if (!res.ok) throw new Error('não foi possível carregar o leitor de PDF')
+    const blob = new Blob([await res.text()], { type: 'text/javascript' })
+    lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob)
+    return lib
+  })().catch(err => { _pdfjsPromise = null; throw err })
+  return _pdfjsPromise
+}
+
+// Texto de cada página: [{ num, items: [{ str, x, y, w, h }] }]. Nunca chama page.render().
+async function _paExtractTextPages(bytes) {
+  const lib = await _loadPdfjs()
+  const doc = await lib.getDocument({ data: bytes, isEvalSupported: false, disableFontFace: true,
+    useSystemFonts: false, enableXfa: false, verbosity: 0 }).promise
+  try {
+    const pages = []
+    for (let n = 1; n <= Math.min(doc.numPages, PA_PARSE_MAX_PAGES); n++) {
+      const page = await doc.getPage(n)
+      const tc = await page.getTextContent()
+      pages.push({ num: n, items: tc.items.filter(i => typeof i.str === 'string')
+        .map(i => ({ str: i.str, x: i.transform[4], y: i.transform[5], w: i.width, h: i.height })) })
+      page.cleanup()
+    }
+    return { numPages: doc.numPages, pages }
+  } finally {
+    doc.destroy()
+  }
+}
+
+// Linhas da revisão: o catálogo inteiro (vazio = "não encontrado") + o que veio do PDF ou do banco.
+function _paReviewRows(found) {
+  const rows = PA_CATALOG.map(c => ({ grp: c.grp, key: c.key, label: c.label, unit: c.unit, value: '', custom: false }))
+  for (const m of found) {
+    const r = rows.find(x => x.grp === m.grp && x.key === m.key)
+    const value = m.value == null ? '' : String(m.value).replace('.', ',')
+    if (r) r.value = value
+    else rows.push({ grp: m.grp, key: m.key, label: m.label, unit: m.unit, value, custom: true })
+  }
+  return rows
+}
+
+function _paReportText(report) {
+  return (report?.sections || []).map(s => (s.itens || []).map(i => i.texto || '').join('\n\n')).join('\n\n').trim()
+}
+
+// "Ler PDF": baixa o PDF da avaliação, extrai o texto e abre a revisão. Nada é gravado aqui.
+async function readAssessmentPdf(id) {
+  if (!_isUuid(id) || _paBusy) return
+  const a = _paList.find(x => x.id === id)
+  if (!a) { toast('Avaliação não encontrada. Recarregue a ficha.', 'error'); return }
+  _paBusy = true
+  toast('Lendo o PDF…', 'info')
+  try {
+    const { data: blob, error } = await sb.storage.from(PA_BUCKET).download(a.file_path)
+    if (error || !blob) { toast('Erro ao baixar o PDF: ' + _paErrMsg(error), 'error'); return }
+    if (blob.size > PA_MAX_BYTES) { toast('O arquivo passa de 10 MB.', 'error'); return }
+    const bytes = new Uint8Array(await blob.arrayBuffer())
+    if (String.fromCharCode(...bytes.slice(0, 5)) !== '%PDF-') { toast('O arquivo não é um PDF válido.', 'error'); return }
+    let parsed
+    try {
+      const { numPages, pages } = await _paExtractTextPages(bytes)
+      parsed = paParseInfit(pages)
+      if (numPages > PA_PARSE_MAX_PAGES) parsed.warnings.push(`Só as ${PA_PARSE_MAX_PAGES} primeiras páginas foram lidas.`)
+    } catch (err) {
+      console.warn('[pdf] leitura falhou', err?.name || err)
+      parsed = { layout: 'desconhecido', measurements: [], report: null,
+                 warnings: ['Não foi possível ler o texto deste PDF: preencha os valores à mão.'] }
+    }
+    _paOpenReview(a, { rows: _paReviewRows(parsed.measurements), report: _paReportText(parsed.report),
+      layout: parsed.layout, warnings: parsed.warnings, fromPdf: true })
+  } finally {
+    _paBusy = false
+  }
+}
+
+// "Dados": abre a revisão com o que já está salvo (ou o catálogo vazio, para preencher à mão).
+async function openAssessmentData(id) {
+  if (!_isUuid(id) || _paBusy) return
+  const a = _paList.find(x => x.id === id)
+  if (!a) { toast('Avaliação não encontrada. Recarregue a ficha.', 'error'); return }
+  _paBusy = true
+  try {
+    const [mRes, rRes] = await Promise.all([
+      sb.from('assessment_measurements').select('grp, key, label, value, unit, position')
+        .eq('assessment_id', id).order('position'),
+      sb.from('assessment_reports').select('sections').eq('assessment_id', id).maybeSingle(),
+    ])
+    if (mRes.error || rRes.error) { toast('Erro ao carregar os dados: ' + _paErrMsg(mRes.error || rRes.error), 'error'); return }
+    const saved = (mRes.data || []).map(m => ({ ...m, value: Number(m.value) }))
+    _paOpenReview(a, { rows: _paReviewRows(saved), report: _paReportText(rRes.data), layout: 'salvo',
+      warnings: saved.length || rRes.data ? [] : ['Nenhum dado salvo ainda: preencha à mão ou use "Ler PDF".'],
+      fromPdf: false })
+  } finally {
+    _paBusy = false
+  }
+}
+
+function _paOpenReview(a, st) {
+  _paReview = { assessmentId: a.id, studentId: a.student_id, hadSaved: !!a._savedCount || !!a._hasReport, ...st }
+  document.getElementById('pa-review-title').textContent = st.fromPdf ? 'Revisar valores lidos do PDF' : 'Dados da avaliação'
+  document.getElementById('pa-review-sub').textContent = `${a.title} · ${fmtDate(a.assessed_at)}`
+  document.getElementById('pa-review-report').value = st.report || ''
+  document.getElementById('pa-review-btn').disabled = false
+  _renderPaReview()
+  document.getElementById('pa-review-modal').style.display = 'flex'
+}
+
+function closePaReview() {
+  document.getElementById('pa-review-modal').style.display = 'none'
+  document.getElementById('pa-review-body').innerHTML = ''
+  document.getElementById('pa-review-report').value = ''
+  _paReview = null
+}
+
+function _paRowWarn(r) {
+  if (String(r.value).trim() === '') return null
+  const v = paNum(String(r.value).trim())
+  if (v == null) return 'número inválido'
+  return paRangeWarn({ grp: r.grp, key: r.key, value: v })
+}
+
+function _renderPaReview() {
+  const st = _paReview
+  if (!st) return
+  const warn = st.warnings.length ? `
+    <div style="border:1px solid var(--warning-a40);background:var(--warning-a10);border-radius:var(--radius);padding:.6rem .75rem;margin-bottom:1rem;font-size:.8rem">
+      ${st.layout === 'desconhecido' ? '<strong>Layout não reconhecido.</strong> ' : ''}${st.warnings.map(escHtml).join('<br>')}
+    </div>` : ''
+  const groups = PA_GROUPS.map(g => {
+    const rows = st.rows.map((r, i) => ({ r, i })).filter(x => x.r.grp === g)
+    const filled = rows.filter(x => String(x.r.value).trim() !== '').length
+    return `
+      <div class="pa-rv-group">
+        <div class="section-label" style="margin:1rem 0 .4rem">${escHtml(PA_GROUP_TITLES[g])} <span style="font-weight:400;color:var(--text-muted)">· ${filled}/${rows.length}</span></div>
+        ${rows.map(({ r, i }) => _renderPaReviewRow(r, i)).join('')}
+        <button type="button" class="btn btn-outline btn-sm" style="margin-top:.35rem" onclick="_paAddCustomRow('${g}')">${icon('plus')} Outra medida</button>
+      </div>`
+  }).join('')
+  document.getElementById('pa-review-body').innerHTML = warn + groups
+}
+
+function _renderPaReviewRow(r, i) {
+  const w = _paRowWarn(r)
+  const label = r.custom
+    ? `<input class="form-control pa-rv-label" type="text" maxlength="60" value="${escHtml(r.label)}" placeholder="Nome da medida" oninput="_paReviewSet(${i},'label',this.value)">`
+    : `<span class="pa-rv-label">${escHtml(r.label)}</span>`
+  const unit = r.custom
+    ? `<select class="form-control pa-rv-unit" onchange="_paReviewSet(${i},'unit',this.value)">${PA_UNITS.map(u => `<option${u === r.unit ? ' selected' : ''}>${escHtml(u)}</option>`).join('')}</select>`
+    : `<span class="pa-rv-unit">${escHtml(r.unit)}</span>`
+  return `
+    <div class="pa-rv-row${w ? ' pa-rv-bad' : ''}" id="pa-rv-row-${i}">
+      ${label}
+      <input class="form-control pa-rv-value" type="text" inputmode="decimal" maxlength="12" value="${escHtml(r.value)}"
+             placeholder="não encontrado" aria-label="${escHtml(r.label || 'valor')}" oninput="_paReviewSet(${i},'value',this.value)">
+      ${unit}
+      <span class="pa-rv-warn" id="pa-rv-warn-${i}">${w ? escHtml(w) : ''}</span>
+      ${r.custom ? `<button type="button" class="btn btn-sm btn-ghost-danger" title="Remover" onclick="_paRemoveCustomRow(${i})">${icon('x')}</button>` : ''}
+    </div>`
+}
+
+function _paReviewSet(i, field, val) {
+  const r = _paReview?.rows[i]
+  if (!r || !['label', 'value', 'unit'].includes(field)) return
+  if (field === 'unit' && !PA_UNITS.includes(val)) return
+  r[field] = val
+  const w = _paRowWarn(r)
+  document.getElementById(`pa-rv-row-${i}`)?.classList.toggle('pa-rv-bad', !!w)
+  const el = document.getElementById(`pa-rv-warn-${i}`)
+  if (el) el.textContent = w || ''
+}
+
+function _paAddCustomRow(grp) {
+  if (!_paReview || !PA_GROUPS.includes(grp)) return
+  _paReview.rows.push({ grp, key: '', label: '', unit: 'un', value: '', custom: true })
+  _renderPaReview()
+}
+
+function _paRemoveCustomRow(i) {
+  if (!_paReview?.rows[i]?.custom) return
+  _paReview.rows.splice(i, 1)
+  _renderPaReview()
+}
+
+async function savePaReview() {
+  const st = _paReview
+  if (!st || _paBusy) return
+  // Medida "outra": chave outro_<nome>; sem nome e sem valor, é ignorada.
+  const rows = st.rows.filter(r => !(r.custom && !String(r.label).trim() && String(r.value).trim() === ''))
+    .map(r => r.custom ? { ...r, key: 'outro_' + paSlug(r.label) } : r)
+  const bad = rows.filter(r => String(r.value).trim() !== '' && paNum(String(r.value).trim()) == null)
+  if (bad.length) { toast(`Valor inválido em "${bad[0].label || 'medida'}". Use números, com vírgula ou ponto.`, 'error'); return }
+  const payload = paBuildSavePayload(rows.map(r => ({ ...r, value: String(r.value).trim() })))
+  if (!payload.ok) { toast(payload.error, 'error'); return }
+
+  const text = document.getElementById('pa-review-report').value.trim()
+  const report = text ? { sections: [{ titulo: 'Relatório do paciente', itens: [{ rotulo: 'Texto', texto: text }] }] } : null
+  if (report && new Blob([JSON.stringify(report.sections)]).size > PA_REPORT_MAX_BYTES) {
+    toast('O texto do relatório passa do limite (cerca de 60 KB). Encurte antes de salvar.', 'error'); return
+  }
+  if (!payload.rows.length && !report) { toast('Nada para salvar: preencha ao menos um valor ou o relatório.', 'error'); return }
+
+  const out = payload.rows.filter(r => paRangeWarn(r)).length
+  const msgs = []
+  if (out) msgs.push(`${out === 1 ? '1 valor está' : `${out} valores estão`} fora da faixa esperada.`)
+  if (st.hadSaved) msgs.push('Os dados já salvos desta avaliação serão substituídos.')
+  if (msgs.length && !confirm(msgs.join(' ') + ' Salvar mesmo assim?')) return
+
+  const btn = document.getElementById('pa-review-btn')
+  _paBusy = true; btn.disabled = true
+  try {
+    const { data, error } = await sb.rpc('save_assessment_data',
+      { p_assessment_id: st.assessmentId, p_measurements: payload.rows, p_report: report })
+    if (error) {
+      const msg = error.code === 'P0002' ? 'Avaliação não encontrada ou sem vínculo ativo com o aluno.'
+        : error.code === '23514' ? 'Algum valor ou unidade foi recusado pelo banco.'
+        : error.code === '23505' ? 'Há uma medida repetida.'
+        : _paErrMsg(error)
+      toast('Erro ao salvar os dados: ' + msg, 'error')
+      return
+    }
+    toast(`Dados salvos: ${data} medida${data === 1 ? '' : 's'}${report ? ' e o relatório' : ''}.`, 'success')
+    const studentId = st.studentId
+    closePaReview()
+    renderSheetAssessments(studentId)
+  } finally {
+    _paBusy = false
+    btn.disabled = false
   }
 }
 
