@@ -2531,11 +2531,12 @@
     @media (max-width: 480px) { .tpl-item { flex-wrap: wrap; } .tpl-item-actions { width: 100%; } }
     /* Subpastas (até 3 níveis): ficam dentro do corpo da pasta-mãe, antes dos modelos. */
     /* Revisão dos valores lidos do PDF da avaliação física (fase 2, sem IA). */
-    .pa-rv-row { display: grid; grid-template-columns: minmax(0, 1fr) 6.5rem 4.5rem; gap: .35rem .5rem; align-items: center; padding: .2rem 0; }
-    .pa-rv-row:has(.btn-ghost-danger) { grid-template-columns: minmax(0, 1fr) 6.5rem 4.5rem auto; }
+    .pa-rv-row { display: grid; grid-template-columns: minmax(0, 1fr) 7.5rem 4.5rem; gap: .35rem .5rem; align-items: center; padding: .2rem 0; }
+    .pa-rv-row:has(.btn-ghost-danger) { grid-template-columns: minmax(0, 1fr) 7.5rem 4.5rem auto; }
     .pa-rv-label { font-size: .85rem; min-width: 0; }
     .pa-rv-unit  { font-size: .75rem; color: var(--text-muted); }
     .pa-rv-value { padding: .35rem .5rem; }
+    .pa-rv-value::placeholder { font-size: .72rem; }
     .pa-rv-warn  { grid-column: 1 / -1; font-size: .72rem; color: var(--danger); }
     .pa-rv-warn:empty { display: none; }
     .pa-rv-bad .pa-rv-value { border-color: var(--danger); background: var(--danger-a08); }
@@ -12092,9 +12093,13 @@ function _paRowWarn(r) {
 function _renderPaReview() {
   const st = _paReview
   if (!st) return
-  const warn = st.warnings.length ? `
+  // Avisos da leitura (o do layout desconhecido já vem no texto) e, ao ler o PDF de uma
+  // avaliação com dados salvos, o aviso de que salvar substitui tudo.
+  const notes = [...st.warnings]
+  if (st.fromPdf && st.hadSaved) notes.unshift('Esta avaliação já tem dados salvos: confirmar e salvar substitui todos eles.')
+  const warn = notes.length ? `
     <div style="border:1px solid var(--warning-a40);background:var(--warning-a10);border-radius:var(--radius);padding:.6rem .75rem;margin-bottom:1rem;font-size:.8rem">
-      ${st.layout === 'desconhecido' ? '<strong>Layout não reconhecido.</strong> ' : ''}${st.warnings.map(escHtml).join('<br>')}
+      ${notes.map(escHtml).join('<br>')}
     </div>` : ''
   const groups = PA_GROUPS.map(g => {
     const rows = st.rows.map((r, i) => ({ r, i })).filter(x => x.r.grp === g)
@@ -12179,7 +12184,8 @@ async function savePaReview() {
   _paBusy = true; btn.disabled = true
   try {
     const { data, error } = await sb.rpc('save_assessment_data',
-      { p_assessment_id: st.assessmentId, p_measurements: payload.rows, p_report: report })
+      { p_assessment_id: st.assessmentId, p_measurements: payload.rows, p_report: report,
+        p_source: st.fromPdf ? 'pdf_regras' : 'manual' })
     if (error) {
       const msg = error.code === 'P0002' ? 'Avaliação não encontrada ou sem vínculo ativo com o aluno.'
         : error.code === '23514' ? 'Algum valor ou unidade foi recusado pelo banco.'
