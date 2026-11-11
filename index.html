@@ -819,6 +819,45 @@
       transition: opacity .15s, background .15s, color .15s, border-color .15s;
     }
     .student-card:hover .student-unlink-btn { opacity: 1; }
+
+    /* Arquivar aluno: botão ao lado do "Desvincular"; visível sempre em tela de toque. */
+    .student-archive-btn {
+      position: absolute;
+      top: .6rem;
+      right: 2.6rem;
+      width: 1.6rem;
+      height: 1.6rem;
+      border-radius: 50%;
+      border: 1px solid var(--border-subtle);
+      background: transparent;
+      color: var(--text-muted);
+      font-size: .75rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity .15s, background .15s, color .15s, border-color .15s;
+    }
+    .student-card:hover .student-archive-btn { opacity: 1; }
+    .student-archive-btn:hover { background: var(--accent-a10); border-color: var(--accent-a28); color: var(--accent-soft); }
+    @media (hover: none) { .student-archive-btn { opacity: 1; } }
+
+    .students-tabs { display: flex; gap: .5rem; flex-wrap: wrap; margin: .75rem 0; }
+    .students-tab {
+      padding: .4rem .9rem;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border-subtle);
+      background: none;
+      color: var(--text-muted);
+      font-size: .8rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .students-tab.active { background: var(--accent-a10); border-color: var(--accent-a28); color: var(--accent-soft); }
+    .student-card.archived { cursor: default; }
+    .student-card.archived:hover { transform: none; }
+    .student-archived-note { font-size: .74rem; color: var(--text-muted); margin-top: .5rem; }
     .student-unlink-btn:hover {
       background: rgba(239,68,68,.12);
       border-color: rgba(239,68,68,.4);
@@ -3146,6 +3185,19 @@
   </div>
 </div>
 
+<!-- ARQUIVAR / DESARQUIVAR ALUNO -->
+<div id="archive-modal" class="routine-modal-overlay" style="display:none" onclick="if(event.target===this)closeArchiveModal()">
+  <div class="routine-modal-card" style="max-width:420px" role="dialog" aria-modal="true" aria-labelledby="archive-modal-title">
+    <div style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em;margin-bottom:.75rem" id="archive-modal-title">Arquivar aluno?</div>
+    <p id="archive-modal-body" style="font-size:.88rem;color:var(--text-secondary);line-height:1.6;margin:0 0 1rem"></p>
+    <div id="archive-modal-warning" class="live-ex-edit-notice" style="display:none;margin:0 0 1rem"></div>
+    <div style="display:flex;gap:.75rem;justify-content:flex-end;flex-wrap:wrap">
+      <button type="button" class="btn btn-outline btn-sm" onclick="closeArchiveModal()">Cancelar</button>
+      <button type="button" id="archive-confirm-btn" class="btn btn-primary btn-sm" onclick="executeArchive()">Arquivar</button>
+    </div>
+  </div>
+</div>
+
 <!-- COMPLETE SEU PERFIL (aluno sem idade/altura/peso) -->
 <div id="body-data-modal" class="routine-modal-overlay" style="display:none">
   <div class="routine-modal-card" style="max-width:420px" role="dialog" aria-modal="true" aria-labelledby="bd-title">
@@ -3182,6 +3234,7 @@
 // ─────────────────────────────────────────────
 const ICONS = {
   'archive': '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+  'archive-restore': '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h2"/><path d="M20 8v11a2 2 0 0 1-2 2h-2"/><path d="m9 15 3-3 3 3"/><path d="M12 12v9"/>',
   'arrow-down': '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
   'arrow-left': '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
   'arrow-right': '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
@@ -3399,7 +3452,7 @@ function resetAppState() {
   ;['live-execution-overlay', 'live-exec-picker-overlay', 'manual-exec-modal-overlay',
     'dup-modal-overlay', 'dup-routine-modal-overlay', 'reorder-modal-overlay',
     'replicate-modal-overlay', 'bulk-delete-modal', 'unlink-modal', 'notif-panel-overlay', 'overlay',
-    'body-data-modal']
+    'body-data-modal', 'archive-modal']
     .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none' })
   _bodyDataPromptPending = false
 
@@ -3418,6 +3471,8 @@ function resetAppState() {
   // Dados
   students        = []
   archivedStudents = []
+  _studentsTab     = 'ativos'
+  _archiveTarget   = null
   exerciseCounter = 0
   window._workoutsCache    = {}
   window._progressWorkouts = []
@@ -4267,7 +4322,7 @@ async function renderStudents() {
         </div>
       </div>`
 
-    if (!students.length) {
+    if (!students.length && !archivedStudents.length) {
       body.innerHTML = `${linkForm}
         <div class="empty-state"><div class="empty-icon">${icon('user-round')}</div>
         <p>Nenhum aluno vinculado ainda.</p>
@@ -4280,9 +4335,11 @@ async function renderStudents() {
     })))
 
     const withData = withLast.filter(s => s.last).length
+    // Abas e botões de arquivar só com a coluna archived_at no banco (migration de 2026-11-10).
+    const canArchive = _archiveColumnReady === true
 
     let execBanner = ''
-    {
+    if (students.length) {
       const ids = students.map(s => s.id)
       const { data: le } = await sb
         .from('workout_executions')
@@ -4326,7 +4383,9 @@ async function renderStudents() {
                placeholder="Buscar aluno pelo nome…" aria-label="Buscar aluno pelo nome"
                oninput="filterStudents(this.value)">
       </div>
-      <div class="students-grid reveal-stagger">
+      ${canArchive ? studentsTabsHTML(students.length, archivedStudents.length, _studentsTab) : ''}
+      <div class="students-grid reveal-stagger" id="students-grid-active"${canArchive && _studentsTab === 'arquivados' ? ' style="display:none"' : ''}>
+        ${!students.length ? `<div class="empty-state" style="grid-column:1/-1;padding:1.5rem"><p>Nenhum aluno ativo. Os arquivados estão na aba "Arquivados".</p></div>` : ''}
         ${withLast.map((s, i) => {
           const vol      = s.last ? getWorkoutVolume(s.last) : null
           const dName    = displayName(s)
@@ -4335,6 +4394,8 @@ async function renderStudents() {
               onclick="openStudentSheet('${s.id}',studentNameOf('${s.id}'))">
             <button class="student-unlink-btn" title="Desvincular aluno"
                 onclick="event.stopPropagation();confirmUnlinkStudent('${s.id}',studentNameOf('${s.id}'))" aria-label="Desvincular aluno">${icon('x')}</button>
+            ${canArchive ? `<button class="student-archive-btn" title="Arquivar aluno" aria-label="Arquivar aluno"
+                onclick="event.stopPropagation();confirmArchiveStudent('${s.id}',true)">${icon('archive')}</button>` : ''}
             ${avatarEl(dName, s.avatar_url || null, 48, 'margin-bottom:.875rem')}
             <div class="student-name">${escHtml(dName)}</div>
             <div class="student-meta">
@@ -4343,7 +4404,8 @@ async function renderStudents() {
             </div>
           </div>`
         }).join('')}
-      </div>`
+      </div>
+      ${canArchive ? archivedStudentsGridHTML(_studentsTab) : ''}`
   } catch (err) {
     console.error('[renderStudents]', err)
     body.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
@@ -6639,6 +6701,170 @@ async function saveRoutine(e) {
   else if (historyCtx?.view === 'routine-detail' && historyCtx.routineId === editedRoutineId)
     openRoutineDetail(studentId, studentName, editedRoutineId, payload.name, historyCtx.fromView)
   else openStudentSheet(studentId, studentName)
+}
+
+// ─────────────────────────────────────────────
+// ARQUIVAR ALUNO (E2: abas, arquivar e desarquivar)
+// ─────────────────────────────────────────────
+// Só marca/desmarca personal_students.archived_at do vínculo deste personal. Não mexe em
+// active, treinos, execuções, avaliações, rotinas nem PDFs; o aluno continua entrando no app.
+// A ficha do arquivado (só leitura) é a E3: por enquanto o card arquivado não abre a ficha.
+let _studentsTab    = 'ativos'   // 'ativos' | 'arquivados' (só em memória)
+let _archiveTarget  = null       // { id, name, archive }
+
+// @@archive-ui-pure:begin
+// "2026-11-30" → "30/11/2026" (sem depender de fuso).
+function _ymdToBr(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd || '')
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : ''
+}
+
+// Aviso do modal de arquivar: rotina vigente hoje (mesma regra das Renovações). null = nenhuma.
+function vigentRoutineWarning(routines, todayStr) {
+  const vigentes = (routines || []).filter(r => r &&
+    (!r.start_date || todayStr >= r.start_date) && (!r.end_date || todayStr <= r.end_date))
+  if (!vigentes.length) return null
+  const r = [...vigentes].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))[0]
+  const ate = r.end_date ? `até ${_ymdToBr(r.end_date)}` : 'sem data final'
+  const mais = vigentes.length > 1 ? ` (e mais ${vigentes.length - 1})` : ''
+  return `A rotina "${r.name || 'sem nome'}"${mais} está vigente ${ate}. O aluno continua vendo e ` +
+    'treinando por ela; ela só sai da sua tela de Renovações.'
+}
+
+// Textos do modal (texto puro: vão por textContent).
+function archiveModalText(name, archive) {
+  return archive
+    ? { title: `Arquivar ${name}?`,
+        body: `${name} sai da sua lista de alunos ativos, do Progresso, das Renovações e das ` +
+          'listas de novo treino. Treinos, execuções, avaliações e PDFs continuam salvos, e o ' +
+          'aluno continua entrando no app e vendo o próprio histórico. Dá para desarquivar ' +
+          'quando quiser, na aba "Arquivados".',
+        confirm: 'Arquivar' }
+    : { title: `Desarquivar ${name}?`,
+        body: `${name} volta para a sua lista de alunos ativos, com todo o histórico.`,
+        confirm: 'Desarquivar' }
+}
+
+function studentsTabsHTML(activeCount, archivedCount, tab) {
+  const btn = (key, label, n) =>
+    `<button type="button" class="students-tab${tab === key ? ' active' : ''}" data-tab="${key}" ` +
+    `aria-pressed="${tab === key}" onclick="setStudentsTab('${key}')">${label} (${n})</button>`
+  return `<div class="students-tabs" role="group" aria-label="Alunos ativos ou arquivados">` +
+    btn('ativos', 'Ativos', activeCount) + btn('arquivados', 'Arquivados', archivedCount) + '</div>'
+}
+// @@archive-ui-pure:end
+
+function archivedStudentsGridHTML(tab) {
+  const hidden = tab === 'arquivados' ? '' : ' style="display:none"'
+  if (!archivedStudents.length) {
+    return `<div class="students-grid" id="students-grid-archived"${hidden}>
+      <div class="empty-state" style="grid-column:1/-1;padding:1.5rem"><p>Nenhum aluno arquivado.</p></div></div>`
+  }
+  return `<div class="students-grid" id="students-grid-archived"${hidden}>
+    ${archivedStudents.map(s => {
+      const dName = displayName(s)
+      rememberStudentName(s.id, dName)
+      return `<div class="student-card archived" data-student-id="${s.id}">
+        ${avatarEl(dName, s.avatar_url || null, 48, 'margin-bottom:.875rem')}
+        <div class="student-name">${escHtml(dName)}</div>
+        <div class="student-archived-note">Arquivado. Histórico e PDFs preservados.</div>
+        <button type="button" class="btn btn-outline btn-sm" style="margin-top:.75rem"
+            onclick="confirmArchiveStudent('${s.id}',false)">${icon('archive-restore')} Desarquivar</button>
+      </div>`
+    }).join('')}
+  </div>`
+}
+
+// Troca a aba sem recarregar (as duas grades já estão no DOM; a busca vale para as duas).
+function setStudentsTab(tab) {
+  _studentsTab = tab === 'arquivados' ? 'arquivados' : 'ativos'
+  const a = document.getElementById('students-grid-active')
+  const b = document.getElementById('students-grid-archived')
+  if (a) a.style.display = _studentsTab === 'ativos' ? '' : 'none'
+  if (b) b.style.display = _studentsTab === 'arquivados' ? '' : 'none'
+  document.querySelectorAll('#students-body .students-tab').forEach(el => {
+    const on = el.dataset.tab === _studentsTab
+    el.classList.toggle('active', on)
+    el.setAttribute('aria-pressed', String(on))
+  })
+}
+
+async function confirmArchiveStudent(studentId, archive) {
+  if (_archiveColumnReady !== true) { toast('Arquivar aluno ainda não está disponível.', 'error'); return }
+  const list = archive ? students : archivedStudents
+  const s = list.find(x => x.id === studentId)
+  if (!s) { toast('Aluno não encontrado na lista. Recarregue a página.', 'error'); return }
+  const name = displayName(s)
+  _archiveTarget = { id: studentId, name, archive }
+
+  const t = archiveModalText(name, archive)
+  document.getElementById('archive-modal-title').textContent = t.title
+  document.getElementById('archive-modal-body').textContent  = t.body
+  const btn  = document.getElementById('archive-confirm-btn')
+  btn.textContent = t.confirm
+  btn.disabled = false
+  const warn = document.getElementById('archive-modal-warning')
+  warn.style.display = 'none'
+  warn.textContent = ''
+
+  if (archive) {
+    // Mesma leitura das Renovações (rotinas do aluno que este personal enxerga).
+    btn.disabled = true
+    document.getElementById('archive-modal').style.display = 'flex'
+    try {
+      const { data, error } = await sb.from('routines')
+        .select('id, name, start_date, end_date, created_at')
+        .eq('student_id', studentId)
+      if (error) throw error
+      const msg = vigentRoutineWarning(data || [], today())
+      if (msg) { warn.textContent = msg; warn.style.display = 'flex' }
+    } catch (err) {
+      console.error('[confirmArchiveStudent] rotinas:', err?.message || err)
+      warn.textContent = 'Não foi possível conferir se há rotina vigente. Arquivar não muda as rotinas.'
+      warn.style.display = 'flex'
+    }
+    if (_archiveTarget?.id === studentId) btn.disabled = false
+    return
+  }
+  document.getElementById('archive-modal').style.display = 'flex'
+}
+
+function closeArchiveModal() {
+  document.getElementById('archive-modal').style.display = 'none'
+  _archiveTarget = null
+}
+
+async function executeArchive() {
+  const target = _archiveTarget
+  if (!target) return
+  const btn = document.getElementById('archive-confirm-btn')
+  btn.disabled = true
+  btn.textContent = target.archive ? 'Arquivando…' : 'Desarquivando…'
+  try {
+    const { data, error } = await sb.from('personal_students')
+      .update({ archived_at: target.archive ? new Date().toISOString() : null })
+      .eq('personal_id', me.id)
+      .eq('student_id', target.id)
+      .eq('active', true)
+      .select('student_id')
+    if (error) throw error
+    if (!data?.length) {
+      toast('Vínculo ativo com este aluno não encontrado. Nada foi alterado.', 'error')
+      btn.disabled = false
+      btn.textContent = target.archive ? 'Arquivar' : 'Desarquivar'
+      return
+    }
+    closeArchiveModal()
+    toast(target.archive
+      ? `${target.name} foi arquivado. Está na aba "Arquivados".`
+      : `${target.name} voltou para a lista de alunos ativos.`, 'success')
+    await renderStudents()
+  } catch (err) {
+    console.error('[executeArchive]', err?.message || err)
+    btn.disabled = false
+    btn.textContent = target.archive ? 'Arquivar' : 'Desarquivar'
+    toast('Não foi possível salvar. Verifique sua conexão e tente novamente.', 'error')
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -10784,7 +11010,7 @@ const _RELOAD_BLOCKING_OVERLAYS = ['execution-overlay', 'live-execution-overlay'
   'review-modal', 'comparison-modal', 'timer-modal-overlay', 'password-reset-overlay', 'manual-exec-modal-overlay',
   'routine-modal', 'unlink-modal', 'body-data-modal', 'bulk-delete-modal', 'dup-modal-overlay',
   'dup-routine-modal-overlay', 'reorder-modal-overlay', 'replicate-modal-overlay', 'tpl-folder-modal',
-  'tpl-move-modal', 'use-tpl-modal', 'pa-modal']
+  'tpl-move-modal', 'use-tpl-modal', 'pa-modal', 'archive-modal']
 function _hasWorkInProgress() {
   if (timerInterval || currentWorkoutData || _execPhase || _pendingExecutionsSave) return true
   if (_liveSessionId || _liveTimerInterval) return true
