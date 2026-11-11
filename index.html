@@ -1881,6 +1881,8 @@
     /* "Editar hoje" na execução guiada (Meu Treino do personal) */
     .exec-today-badge { display: inline-block; margin-left: .35rem; padding: .05rem .45rem; border-radius: var(--radius-pill); font-size: .68rem; font-weight: 700; color: var(--warning); background: var(--warning-a10); border: 1px solid rgba(245,158,11,0.22); vertical-align: middle; }
     .exec-today-orig { margin-top: .2rem; font-size: .72rem; color: var(--text-muted); text-decoration: line-through; }
+    .exec-today-field { flex: 1; min-width: 100px; display: flex; flex-direction: column; gap: .3rem; }
+    .exec-today-label { font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
 
     /* ---- COMPARISON MODAL ---- */
     .comparison-modal-overlay {
@@ -11732,17 +11734,20 @@ function execTodayPanelHTML(exId) {
   if (!ex) return ''
   const eff = effectiveExecEx(ex, _execDayOverrides)
   const effSets = Math.max(1, parseInt(eff.sets) || 1)
-  const fieldStyle = 'flex:1;min-width:90px;padding:.5rem .75rem'
+  const inputStyle = 'width:100%;padding:.5rem .75rem'
+  // Rótulo visível acima de cada campo: preenchidos, os placeholders somem e sobravam
+  // só números soltos ("3 / 10 / 20"). O <label> envolve o input (sem precisar de for=).
+  const field = (label, control) => `<label class="exec-today-field"><span class="exec-today-label">${label}</span>${control}</label>`
   return `
     <div class="live-ex-edit-notice" style="margin:0">Vale só para este treino de hoje. O treino salvo não muda.</div>
     <div class="live-ex-edit-row">
-      <input type="number" class="form-control" id="exec-today-sets-${ex.id}" value="${effSets}" min="1" max="${EXEC_TODAY_MAX_SETS}" step="1" placeholder="Séries" title="Séries" aria-label="Séries" style="${fieldStyle}">
+      ${field('Séries', `<input type="number" class="form-control" id="exec-today-sets-${ex.id}" value="${effSets}" min="1" max="${EXEC_TODAY_MAX_SETS}" step="1" style="${inputStyle}">`)}
       ${isTimedEx(ex)
-        ? `<input type="number" class="form-control" id="exec-today-hold-${ex.id}" value="${eff.hold_seconds ?? ''}" min="1" max="3600" step="1" placeholder="Tempo por série (s)" title="Tempo por série (s)" aria-label="Tempo por série (s)" style="${fieldStyle}">`
-        : `<input type="number" class="form-control" id="exec-today-reps-${ex.id}" value="${eff.reps ?? ''}" min="1" max="999" step="1" placeholder="Reps" title="Reps" aria-label="Reps" style="${fieldStyle}">`}
+        ? field('Tempo (s)', `<input type="number" class="form-control" id="exec-today-hold-${ex.id}" value="${eff.hold_seconds ?? ''}" min="1" max="3600" step="1" style="${inputStyle}">`)
+        : field('Reps', `<input type="number" class="form-control" id="exec-today-reps-${ex.id}" value="${eff.reps ?? ''}" min="1" max="999" step="1" style="${inputStyle}">`)}
       ${isBodyweightEx(ex)
-        ? `<span style="font-size:.78rem;color:var(--text-muted);align-self:center">Carga: peso corporal</span>`
-        : `<input type="number" class="form-control" id="exec-today-weight-${ex.id}" value="${eff.weight_kg ?? ''}" min="0" max="1000" step="0.5" placeholder="Carga (kg)" title="Carga (kg)" aria-label="Carga (kg)" style="${fieldStyle}">`}
+        ? `<div class="exec-today-field"><span class="exec-today-label">Carga</span><span style="font-size:.82rem;color:var(--text-muted);padding:.5rem 0">Peso corporal</span></div>`
+        : field('Carga (kg)', `<input type="number" class="form-control" id="exec-today-weight-${ex.id}" value="${eff.weight_kg ?? ''}" min="0" max="1000" step="0.5" style="${inputStyle}">`)}
     </div>
     <div class="live-ex-edit-actions">
       ${_execDayOverrides[ex.id] ? `<button type="button" class="btn btn-outline btn-sm" onclick="resetExecToday('${ex.id}')">Voltar ao original</button>` : ''}
