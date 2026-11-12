@@ -2587,7 +2587,7 @@
       .wpdf-tag { display: inline-block; border: 1px solid #444; border-radius: 99px; padding: 0 2mm; margin: 0 1mm 1mm 0; font-size: 10.5pt; font-weight: 700; }
       .wpdf-lines { margin-top: 1.5mm; }
       .wpdf-line { display: flex; gap: 2mm; font-size: 13pt; }
-      .wpdf-line b { flex: none; min-width: 24mm; font-weight: 700; }
+      .wpdf-line b { flex: none; min-width: 32mm; font-weight: 700; }
       .wpdf-desc { margin-top: 1.5mm; font-size: 12pt; font-style: italic; border-left: 2px solid #999; padding-left: 2mm; }
       .wpdf-empty { font-style: italic; }
       .wpdf-foot { margin-top: 4mm; padding-top: 2mm; border-top: 1px solid #999; font-size: 10pt; color: #444 !important; }
@@ -6727,6 +6727,7 @@ async function toggleRoutineWorkoutAccordion(uid, workoutId) {
 }
 
 async function deleteWorkoutFromRoutine(workoutId, studentId, studentName, routineId, routineName) {
+  if (_blockIfArchived(studentId)) return
   await _deleteWorkoutWithConfirm(workoutId, () => {
     openRoutineDetail(studentId, studentName, routineId, routineName, historyCtx?.fromView)
   })
@@ -6736,6 +6737,7 @@ async function deleteWorkoutFromRoutine(workoutId, studentId, studentName, routi
 // ROTINAS — CRUD
 // ─────────────────────────────────────────────
 async function openRoutineModal(studentId, studentName, routineId = null) {
+  if (_blockIfArchived(studentId)) return
   _editingRoutineId = routineId || null
   const modal = document.getElementById('routine-modal')
   document.getElementById('routine-form').reset()
@@ -6780,6 +6782,11 @@ async function saveRoutine(e) {
 
   const studentId   = document.getElementById('rf-student-id').value
   const studentName = document.getElementById('rf-student-name').value
+  if (_blockIfArchived(studentId)) {
+    btn.textContent = _editingRoutineId ? 'Salvar Alterações' : 'Salvar Rotina'
+    btn.disabled = false
+    return
+  }
   const payload = {
     name:                 document.getElementById('rf-name').value.trim(),
     start_date:           document.getElementById('rf-start').value  || null,
@@ -7123,6 +7130,7 @@ async function executeUnlink() {
 }
 
 async function deleteRoutine(routineId, studentId, studentName) {
+  if (_blockIfArchived(studentId)) return
   // Excluir a rotina apaga em cascata (FK no banco) os treinos dela e, com eles, execuções e
   // avaliações — então o aviso mostra tudo. Contagem falhou: aborta, não avisa pela metade.
   const { data: rWorkouts, error: wErr } = await sb.from('workouts').select('id').eq('routine_id', routineId)
@@ -7153,6 +7161,7 @@ async function openNewWorkoutForStudent(studentId, studentName) {
 }
 
 async function openNewWorkoutForRoutine(studentId, studentName, routineId, routineName, fromView) {
+  if (_blockIfArchived(studentId)) return
   await navigateTo('workout', {
     prefilledStudentId:   studentId,
     prefilledStudentName: studentName,
@@ -9459,7 +9468,7 @@ async function saveTplFolder(e) {
   // Subpasta: entra no fim das irmãs. Raiz: igual a antes (parent_id não vai no insert).
   const row = parentId
     ? { owner_id: me.id, name, parent_id: parentId, position: _tplFolders.filter(f => f.parent_id === parentId).length }
-    : { owner_id: me.id, name, position: _tplFolders.length }
+    : { owner_id: me.id, name, position: _tplFolders.filter(f => !f.parent_id).length }
   const { data, error } = renaming
     ? await sb.from('template_folders').update({ name })
         .eq('id', renaming).eq('owner_id', me.id).select('id')
@@ -10153,7 +10162,8 @@ async function confirmDupWorkout() {
     const targetName    = targetStudent
       ? displayName(targetStudent)
       : (targetStudentId === me?.id ? profile.name : 'Aluno')
-    authHeader().then(auth => fetch(`${SUPA_URL}/functions/v1/notify-new-workout`, {
+    // B24: treino para si mesmo não gera e-mail.
+    if (targetStudentId !== me?.id) authHeader().then(auth => fetch(`${SUPA_URL}/functions/v1/notify-new-workout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': auth },
       body: JSON.stringify({ workout_id: newWorkoutId })
@@ -10605,7 +10615,7 @@ function _applyWfBodyweightToRow(id) {
   const ok = _wfWeightState === 'ok'
   cb.disabled = !ok && !cb.checked
   const hint = row.querySelector('.ex-bw-hint')
-  if (hint) hint.textContent = bodyweightHint(_wfWeightState, _wfStudentWeight)
+  if (hint) hint.textContent = bodyweightHint(_wfWeightState, _wfStudentWeight, _isSelfStudent(document.getElementById('wf-student')?.value))
   const weightEl = row.querySelector('.ex-weight')
   if (!weightEl) return
   weightEl.readOnly = cb.checked
@@ -10892,7 +10902,9 @@ async function saveWorkout(e) {
 
   if (firstError) {
     toast(firstError.fieldLabel === 'Peso corporal'
-      ? `${BW_MISSING_MSG} Desmarque "Peso corporal" no exercício "${firstError.exLabel}" ou peça para o aluno completar o perfil.`
+      ? (_isSelfStudent(studentId)
+        ? `${BW_MISSING_MSG_SELF} Ou desmarque "Peso corporal" no exercício "${firstError.exLabel}".`
+        : `${BW_MISSING_MSG} Desmarque "Peso corporal" no exercício "${firstError.exLabel}" ou peça para o aluno completar o perfil.`)
       : `Confira o campo "${firstError.fieldLabel}" no exercício "${firstError.exLabel}".`, 'error')
     firstError.row.classList.add('wf-row-error')
     firstError.fieldEl?.classList.add('wf-field-error')
@@ -11047,8 +11059,9 @@ async function saveWorkout(e) {
 
       toast('Treino registrado com sucesso!', 'success')
 
-      // Fire-and-forget: notifica o aluno por e-mail sem bloquear o fluxo
-      authHeader().then(auth => fetch(`${SUPA_URL}/functions/v1/notify-new-workout`, {
+      // Fire-and-forget: notifica o aluno por e-mail sem bloquear o fluxo.
+      // B24: treino para si mesmo (Meu Treino) não gera e-mail.
+      if (studentId !== me.id) authHeader().then(auth => fetch(`${SUPA_URL}/functions/v1/notify-new-workout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -13225,19 +13238,30 @@ async function fetchStudentWeight(studentId) {
   } catch { return { state: 'error', weight: null } }
 }
 
-const BW_MISSING_MSG = 'Este aluno ainda não informou o peso.'
-function bodyweightHint(state, weight) {
-  if (state === 'ok')      return `Carga = peso do aluno (${weight.toLocaleString('pt-BR')} kg).`
-  if (state === 'loading') return 'Carregando o peso do aluno…'
+const BW_MISSING_MSG      = 'Este aluno ainda não informou o peso.'
+const BW_MISSING_MSG_SELF = 'Informe seu peso no perfil.'
+// B23: no treino do próprio personal (Meu Treino) o texto fala com ele.
+const bwMissingMsg   = self => self ? BW_MISSING_MSG_SELF : BW_MISSING_MSG
+const _isSelfStudent = sid => !!sid && sid === me?.id
+function bodyweightHint(state, weight, self = false) {
+  if (state === 'ok')      return self ? `Carga = seu peso (${weight.toLocaleString('pt-BR')} kg).` : `Carga = peso do aluno (${weight.toLocaleString('pt-BR')} kg).`
+  if (state === 'loading') return self ? 'Carregando seu peso…' : 'Carregando o peso do aluno…'
   if (state === 'none')    return 'Escolha o aluno para usar o peso corporal.'
-  if (state === 'error')   return 'Não foi possível carregar o peso do aluno.'
-  return BW_MISSING_MSG
+  if (state === 'error')   return self ? 'Não foi possível carregar seu peso.' : 'Não foi possível carregar o peso do aluno.'
+  return bwMissingMsg(self)
 }
 
 // Textos de prescrição/execução. Sem os campos novos (antes da migration ou exercício
 // comum), devolvem exatamente o texto de antes.
+// B22: carga em texto no formato pt-BR ("22,5"). Vazio/inválido sai como antes.
+function fmtKg(v) {
+  if (v == null || v === '') return v
+  const n = Number(v)
+  return Number.isFinite(n) ? n.toLocaleString('pt-BR') : v
+}
+
 function loadLabel(ex, kg = ex?.weight_kg) {
-  return isBodyweightEx(ex) ? `Peso corporal (${kg} kg)` : `${kg} kg`
+  return isBodyweightEx(ex) ? `Peso corporal (${fmtKg(kg)} kg)` : `${fmtKg(kg)} kg`
 }
 
 // "3 séries × 10 reps × 20 kg" (cards da execução guiada e do ao vivo).
@@ -13266,8 +13290,8 @@ function exVolumeText(ex) {
 // "S1: 20×10" / "S1: 58×35 s" (série executada).
 function execSetText(n, s) {
   return s.seconds_executed != null
-    ? `S${n}: ${s.weight_executed}×${s.seconds_executed} s`
-    : `S${n}: ${s.weight_executed}×${s.reps_executed}`
+    ? `S${n}: ${fmtKg(s.weight_executed)}×${s.seconds_executed} s`
+    : `S${n}: ${fmtKg(s.weight_executed)}×${s.reps_executed}`
 }
 
 // Colunas de workout_exercises embutidas no histórico; as novas só com a migration (pedir
@@ -14287,7 +14311,7 @@ function _syncLiveModeFields(prefix) {
   if (!els.bw) return
   const ok = _liveWeightState === 'ok'
   els.bw.disabled = !ok && !els.bw.checked
-  if (els.hint) els.hint.textContent = bodyweightHint(_liveWeightState, _liveStudentWeight)
+  if (els.hint) els.hint.textContent = bodyweightHint(_liveWeightState, _liveStudentWeight, _isSelfStudent(_liveExecStudentId))
   if (els.weight) {
     els.weight.readOnly = els.bw.checked
     if (els.bw.checked) els.weight.value = ok ? _liveStudentWeight : ''
@@ -14304,7 +14328,7 @@ function _readLiveExerciseMode(prefix, msgs) {
   const els = _liveModeEls(prefix)
   const bodyweight = _bwColumnsReady && !!els.bw?.checked
   const measure    = _bwColumnsReady && els.measure?.value === 'tempo' ? 'tempo' : 'reps'
-  if (bodyweight && _liveWeightState !== 'ok') return { error: BW_MISSING_MSG }
+  if (bodyweight && _liveWeightState !== 'ok') return { error: bwMissingMsg(_isSelfStudent(_liveExecStudentId)) }
   const weight = bodyweight ? _liveStudentWeight : parseFloat(els.weight?.value)
   if (weight == null || isNaN(weight) || weight < 0) return { error: msgs.weight }
   let reps = 0, hold = null
@@ -14408,7 +14432,7 @@ function renderLiveExerciseCardHTML(ex) {
            <label style="display:flex;align-items:center;gap:.4rem;font-size:.82rem;cursor:pointer">
              <input type="checkbox" id="live-edit-${ex.id}-bw" onchange="_syncLiveModeFields('live-edit-${ex.id}')"${isBodyweightEx(ex) ? ' checked' : ''} style="margin:0"> Peso corporal
            </label>
-           <span id="live-edit-${ex.id}-bw-hint" style="font-size:.75rem;color:var(--text-muted)">${bodyweightHint(_liveWeightState, _liveStudentWeight)}</span>
+           <span id="live-edit-${ex.id}-bw-hint" style="font-size:.75rem;color:var(--text-muted)">${bodyweightHint(_liveWeightState, _liveStudentWeight, _isSelfStudent(_liveExecStudentId))}</span>
          </div>` : ''}
          <div class="live-ex-edit-actions">
            <button type="button" class="btn btn-outline btn-sm" onclick="cancelLiveExerciseEdit('${ex.id}')">Cancelar</button>
