@@ -12,3 +12,7 @@
 !icon-maskable-512.png
 !logo.png.png
 !sw.js
+# E1 — logo do PDF de treino: libera só este arquivo da pasta assets/.
+!assets/
+assets/*
+!assets/logo-personal.png
