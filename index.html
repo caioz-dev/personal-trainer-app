@@ -2566,6 +2566,34 @@
       .ex-rv-unit { grid-column: 3; }
       .ex-rv-showall { margin-left: 0; }
     }
+    /* Evolução (exames e avaliação física): seletor por grupo + um gráfico por exame/medida. */
+    .evo-panel { margin-top: 1.25rem; padding: 1rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+    .evo-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; margin-bottom: .75rem; }
+    .evo-tabs { display: inline-flex; gap: .35rem; flex-wrap: wrap; }
+    .evo-tab { font: inherit; font-size: .78rem; padding: .3rem .7rem; border-radius: var(--radius-pill); border: 1px solid var(--border-subtle); background: transparent; color: var(--text-muted); cursor: pointer; }
+    .evo-tab.active { color: var(--text-primary); border-color: var(--accent); background: var(--accent-a10); }
+    .evo-layout { display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr); gap: 1rem; }
+    .evo-picker { font-size: .8rem; min-width: 0; }
+    .evo-group { border-bottom: 1px solid var(--border-subtle); padding: .35rem 0; }
+    .evo-group summary { cursor: pointer; font-weight: 600; color: var(--text-primary); }
+    .evo-items { display: flex; flex-direction: column; gap: .25rem; padding: .35rem 0 .1rem .25rem; }
+    .evo-item { display: flex; gap: .4rem; align-items: flex-start; cursor: pointer; line-height: 1.3; }
+    .evo-item input { margin-top: .15rem; accent-color: var(--accent); }
+    .evo-muted { color: var(--text-muted); font-weight: 400; }
+    .evo-flag { font-size: .68rem; font-weight: 700; color: var(--warning); }
+    .evo-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); gap: .75rem; align-content: start; min-width: 0; }
+    .evo-card { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: .75rem; min-width: 0; }
+    .evo-card-title { font-weight: 700; font-size: .88rem; color: var(--text-primary); }
+    .evo-summary { font-size: .74rem; margin: .15rem 0 .5rem; }
+    .evo-canvas { position: relative; height: 200px; }
+    .evo-note { font-size: .72rem; color: var(--text-muted); margin-top: .4rem; }
+    .evo-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; }
+    .evo-timeline li { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; font-size: .8rem; }
+    .evo-date { font-variant-numeric: tabular-nums; color: var(--text-muted); min-width: 4.5rem; }
+    .evo-chip { padding: .1rem .55rem; border-radius: var(--radius-pill); border: 1px solid var(--border-subtle); background: var(--bg-surface-subtle); }
+    .evo-legend { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: .72rem; color: var(--text-muted); }
+    .evo-band-swatch { display: inline-block; width: .9rem; height: .6rem; vertical-align: middle; background: rgba(25,158,112,0.25); border-radius: 2px; }
+    @media (max-width: 720px) { .evo-layout { grid-template-columns: 1fr; } }
     .tpl-subfolder { margin: 0; padding: .625rem .75rem; border: 1px solid var(--border-subtle); border-left: 3px solid var(--accent-a28); border-radius: var(--radius); }
     .tpl-subfolder .tpl-folder-title { font-weight: 650; font-size: .9rem; }
     .tpl-folder-actions { flex-wrap: wrap; justify-content: flex-end; }
@@ -3679,6 +3707,7 @@ function resetAppState() {
   if (chart)         { try { chart.destroy() }         catch {} ; chart         = null }
   if (progressChart) { try { progressChart.destroy() } catch {} ; progressChart = null }
   if (sheetChart)    { try { sheetChart.destroy() }    catch {} ; sheetChart    = null }
+  _evoReset()
 }
 
 // ─────────────────────────────────────────────
@@ -4072,6 +4101,8 @@ function toggleTheme() {
   // A paleta da Progressão de Carga tem um passo por tema: redesenha com as cores do novo tema.
   // No Comparar, o Volume também usa a paleta.
   if (document.getElementById('progress-chart')) { renderProgressExerciseList(); renderProgressVolumeChart(); updateProgressChart() }
+  // Evolução aberta na ficha: redesenha com as cores do novo tema (não relê o banco).
+  if (_evo && document.getElementById('sheet-evolution')?.dataset.open === '1') renderSheetEvolution()
 }
 
 function xlErr(m) {
@@ -6217,7 +6248,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
       </div>
       ${calcSectionHTML}
       ${routinesSectionHTML}
-      ${profile.role === 'personal' ? `<div id="sheet-assessments" data-student-id="${safeIdH}"></div>` : ''}
+      ${profile.role === 'personal' ? `<div id="sheet-assessments" data-student-id="${safeIdH}"></div><div id="sheet-evolution" data-student-id="${safeIdH}"></div>` : ''}
       <div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border-subtle)">
       <div class="section-label" style="margin-bottom:.75rem">Histórico de Treinos</div>
       ${historyTableHTML}
@@ -6243,6 +6274,7 @@ async function renderStudentSheet(studentId, studentName, gen) {
 
 function closeStudentSheet() {
   if (sheetChart) { sheetChart.destroy(); sheetChart = null }
+  _evoReset()
   navigateTo('students')
 }
 
@@ -11642,10 +11674,14 @@ function _renderPaItem(a) {
 async function renderSheetAssessments(studentId) {
   const box = document.getElementById('sheet-assessments')
   if (!box || !_isUuid(studentId) || box.dataset.studentId !== studentId) return
+  if (document.getElementById('sheet-evolution')?.dataset.open !== '1') _evoReset()
   const head = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
       <div class="section-label" style="margin-bottom:0">Avaliações e exames</div>
-      <button class="btn btn-primary btn-sm" onclick="openPaModal()">${icon('plus')} Enviar PDF</button>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" title="Gráficos de evolução dos exames e das avaliações" onclick="toggleSheetEvolution()">${icon('chart-line')} Evolução</button>
+        <button class="btn btn-primary btn-sm" onclick="openPaModal()">${icon('plus')} Enviar PDF</button>
+      </div>
     </div>`
   box.style.marginTop = '1.25rem'
   box.innerHTML = head + '<div class="loading"><div class="spinner"></div>Carregando…</div>'
@@ -11679,6 +11715,7 @@ async function renderSheetAssessments(studentId) {
   still.innerHTML = head + (_paList.length
     ? `<div style="display:flex;flex-direction:column;gap:.5rem">${_paList.map(_renderPaItem).join('')}</div>`
     : '<div class="tpl-empty-folder">Nenhuma avaliação enviada.</div>')
+  if (_evoBox(studentId)?.dataset.open === '1') loadSheetEvolution(studentId)
 }
 
 function openPaModal(editId = null) {
@@ -12617,6 +12654,229 @@ function exInputToTs(v) {
 }
 // @@ex-review-pure:end
 
+// @@evo-pure:begin
+// Evolução (exames de sangue e avaliação física): séries por exame/medida ao longo das datas,
+// faixa de referência, marcadores e textos do gráfico. Sem DOM, sem rede e sem Chart.js:
+// testado em Node com dados sintéticos. Usa EX_CATALOG/EX_GROUPS/EX_GROUP_TITLES, PA_CATALOG/
+// PA_GROUPS/PA_GROUP_TITLES, exFmtNum, exRangeState, exRefLabel e exTsToInput.
+const EVO_MAX_SERIES = 8          // gráficos abertos ao mesmo tempo
+const EVO_DAY = 86400000
+// Pré-seleção quando o personal abre a evolução pela primeira vez (os que existirem).
+const EVO_DEFAULTS = {
+  exame_sangue: ['hemoglobina', 'glicemia', 'tgo', 'tsh', 'vit_d', 'ferritina'],
+  fisica: ['massa_corporal', 'gordura_pct', 'massa_magra', 'somatorio_dobras'],
+}
+
+// 'AAAA-MM-DD' -> ms (meia-noite UTC, só para ordenar e posicionar no eixo); inválida -> null.
+function evoDayMs(d) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d || ''))
+  if (!m) return null
+  const ms = Date.UTC(+m[1], +m[2] - 1, +m[3])
+  return new Date(ms).getUTCDate() === +m[3] ? ms : null
+}
+function evoFmtDay(ms) {
+  const d = new Date(ms)
+  return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${String(d.getUTCFullYear()).slice(2)}`
+}
+
+// Data do ponto: no exame, o dia da coleta (horário de Brasília); sem coleta, a data do PDF.
+function evoAssessmentDate(a) {
+  if (a?.kind === 'exame_sangue' && a.collected_at) {
+    const t = exTsToInput(a.collected_at)
+    if (t) return t.slice(0, 10)
+  }
+  return evoDayMs(a?.assessed_at) == null ? null : a.assessed_at
+}
+
+const _evoNum = v => (v == null || v === '' || !Number.isFinite(Number(v))) ? null : Number(v)
+
+function _evoCat(kind, grp, key) {
+  if (kind === 'exame_sangue') {
+    const c = EX_CATALOG.find(x => x.grp === grp && x.key === key)
+    return c ? { label: c.label, tipo: c.tipo, order: c.position } : null
+  }
+  const i = PA_CATALOG.findIndex(x => x.grp === grp && x.key === key)
+  return i >= 0 ? { label: PA_CATALOG[i].label, tipo: 'n', order: i } : null
+}
+
+function evoGroupsOf(kind) { return kind === 'exame_sangue' ? EX_GROUPS : PA_GROUPS }
+function evoGroupTitle(kind, grp) { return (kind === 'exame_sangue' ? EX_GROUP_TITLES : PA_GROUP_TITLES)[grp] || grp }
+
+// Séries de um tipo ('exame_sangue' | 'fisica'). Uma série por grupo/chave/UNIDADE: se a mesma
+// chave aparece em unidades diferentes (laboratórios diferentes), vira séries separadas
+// (multiUnit = true) em vez de misturar escalas. O resultado anterior do laudo entra como
+// ponto "prev" (vazado), a menos que já exista medição real naquele dia.
+function evoBuildSeries(assessments, measurements, kind) {
+  const aById = new Map((assessments || []).filter(a => (a.kind || 'fisica') === kind).map(a => [a.id, a]))
+  const groups = evoGroupsOf(kind)
+  const map = new Map()
+  for (const m of measurements || []) {
+    const a = aById.get(m.assessment_id)
+    if (!a || !groups.includes(m.grp)) continue
+    const date = evoAssessmentDate(a)
+    const x = evoDayMs(date)
+    if (x == null) continue
+    const cat = _evoCat(kind, m.grp, m.key)
+    const qual = String(m.qual_value ?? '').trim()
+    const tipo = cat ? cat.tipo : (_evoNum(m.value) == null && qual ? 'q' : 'n')
+    const unit = tipo === 'q' ? '' : String(m.unit || '')
+    const id = `${m.grp}/${m.key}/${tipo === 'q' ? 'qual' : unit}`
+    let s = map.get(id)
+    if (!s) {
+      s = { id, grp: m.grp, key: m.key, unit, tipo, label: cat?.label || m.label || m.key,
+            order: cat ? cat.order : 9999, points: [] }
+      map.set(id, s)
+    }
+    if (tipo === 'q') {
+      if (qual) s.points.push({ x, date, text: qual.slice(0, 80), ref_text: m.ref_text || null, title: a.title || '', prev: false })
+      continue
+    }
+    const v = _evoNum(m.value)
+    if (v == null) continue
+    s.points.push({ x, date, value: v, qualifier: ['<', '<=', '>', '>='].includes(m.qualifier) ? m.qualifier : null,
+      text: m.value_text || exFmtNum(v), ref_low: _evoNum(m.ref_low), ref_high: _evoNum(m.ref_high),
+      ref_text: m.ref_text || null, title: a.title || '', prev: false })
+    const pv = _evoNum(m.prev_value), px = evoDayMs(m.prev_date)
+    if (pv != null && px != null) {
+      s.points.push({ x: px, date: m.prev_date, value: pv, qualifier: null, text: exFmtNum(pv),
+        ref_low: null, ref_high: null, ref_text: null, title: '', prev: true })
+    }
+  }
+  const series = [...map.values()]
+  const units = new Map()
+  for (const s of series) {
+    const k = s.grp + '/' + s.key
+    units.set(k, (units.get(k) || 0) + 1)
+  }
+  for (const s of series) {
+    s.multiUnit = units.get(s.grp + '/' + s.key) > 1
+    const realDays = new Set(s.points.filter(p => !p.prev).map(p => p.x))
+    const prevDays = new Set()
+    s.points = s.points.filter(p => {
+      if (!p.prev) return true
+      if (realDays.has(p.x) || prevDays.has(p.x)) return false
+      prevDays.add(p.x)
+      return true
+    }).sort((p, q) => p.x - q.x || (p.prev ? -1 : 1) - (q.prev ? -1 : 1))
+    s.count = s.points.filter(p => !p.prev).length
+  }
+  return series.filter(s => s.count > 0)
+    .sort((p, q) => groups.indexOf(p.grp) - groups.indexOf(q.grp) || p.order - q.order || p.unit.localeCompare(q.unit))
+}
+
+// Seletor: grupos na ordem do catálogo, com os itens que têm dado.
+function evoPickerGroups(series, kind) {
+  return evoGroupsOf(kind).map(grp => ({ grp, title: evoGroupTitle(kind, grp),
+    items: series.filter(s => s.grp === grp) })).filter(g => g.items.length)
+}
+
+// Pré-seleção: os preferidos que existem (até 2); senão o 1º numérico com 2+ datas; senão o 1º.
+function evoDefaultSelection(series, kind) {
+  const out = []
+  for (const key of EVO_DEFAULTS[kind] || []) {
+    const s = series.find(x => x.key === key && x.tipo === 'n')
+    if (s && out.length < 2) out.push(s.id)
+  }
+  if (!out.length) {
+    const s = series.find(x => x.tipo === 'n' && x.count >= 2) || series[0]
+    if (s) out.push(s.id)
+  }
+  return out
+}
+
+// Mantém a seleção anterior (o que ainda existe); se nada sobrar, a pré-seleção.
+function evoKeepSelection(prev, series, kind) {
+  const ids = new Set(series.map(s => s.id))
+  const kept = [...(prev || [])].filter(id => ids.has(id)).slice(0, EVO_MAX_SERIES)
+  return kept.length ? kept : evoDefaultSelection(series, kind)
+}
+
+// Modelo do gráfico de uma série numérica (o que o Chart.js recebe vem daqui).
+// marker: 'gt' (valor com > ou >=), 'lt' (< ou <=), 'prev' (resultado anterior do laudo), 'normal'.
+// Faixa = referência do ponto real mais recente que tem referência. 1 só data: eixo X de ±15 dias.
+function evoChartModel(s) {
+  const pts = s.points
+  const xs = pts.map(p => p.x)
+  let xMin = Math.min(...xs), xMax = Math.max(...xs)
+  if (xMax - xMin < 2 * EVO_DAY) { xMin -= 15 * EVO_DAY; xMax += 15 * EVO_DAY }
+  else { const pad = (xMax - xMin) * 0.06; xMin -= pad; xMax += pad }
+  const lastRef = [...pts].reverse().find(p => !p.prev && (p.ref_low != null || p.ref_high != null))
+  const band = lastRef ? { low: lastRef.ref_low, high: lastRef.ref_high } : null
+  const vals = pts.map(p => p.value)
+  const refs = band ? [band.low, band.high].filter(v => v != null) : []
+  const lo = Math.min(...vals, ...refs), hi = Math.max(...vals, ...refs)
+  let yMin = lo, yMax = hi
+  if (yMin === yMax) { const d = Math.abs(yMin) * 0.1 || 1; yMin -= d; yMax += d }
+  else { const pad = (yMax - yMin) * 0.12; yMin -= pad; yMax += pad }
+  if (lo >= 0 && yMin < 0) yMin = 0
+  const marker = p => p.qualifier?.startsWith('>') ? 'gt' : p.qualifier?.startsWith('<') ? 'lt' : p.prev ? 'prev' : 'normal'
+  return {
+    xMin, xMax, yMin, yMax, band,
+    ticks: [...new Set(xs)].sort((p, q) => p - q),
+    points: pts.map(p => ({ ...p, marker: marker(p), state: p.prev ? null : exRangeState(p) })),
+    single: s.count === 1,
+  }
+}
+
+// Linhas do tooltip: data e texto ORIGINAL (">90,0"), origem e referência.
+function evoTooltipLines(p, unit) {
+  const u = unit && unit !== 'un' ? ' ' + unit : ''
+  const lines = [`${evoFmtDay(p.x)}: ${p.text}${u}`]
+  if (p.prev) lines.push('Resultado anterior informado no laudo')
+  else {
+    if (p.title) lines.push(p.title)
+    const ref = exRefLabel(p)
+    if (ref) lines.push(`Referência: ${ref}${p.ref_low != null || p.ref_high != null ? u : ''}`)
+    if (p.state) lines.push(p.state === 'alto' ? 'Acima da referência' : 'Abaixo da referência')
+  }
+  return lines
+}
+
+// Resumo do cartão: último valor e diferença para a medição real anterior (sem sinal < >).
+function evoSummary(s) {
+  const real = s.points.filter(p => !p.prev)
+  const last = real[real.length - 1]
+  if (!last) return ''
+  const u = s.unit && s.unit !== 'un' ? ' ' + s.unit : ''
+  let txt = `Último: ${last.text}${s.tipo === 'q' ? '' : u} em ${evoFmtDay(last.x)}`
+  const before = real[real.length - 2]
+  if (s.tipo === 'n' && before && !last.qualifier && !before.qualifier) {
+    const d = Math.round((last.value - before.value) * 10000) / 10000
+    txt += ` · ${d > 0 ? '+' : d < 0 ? '−' : '±'}${exFmtNum(Math.abs(d))}${u} desde ${evoFmtDay(before.x)}`
+  }
+  return txt
+}
+
+// Linha do tempo dos qualitativos: [{ date, text, title }] da mais antiga para a mais nova.
+function evoQualTimeline(s) {
+  return s.points.filter(p => !p.prev).map(p => ({ date: evoFmtDay(p.x), text: p.text, title: p.title }))
+}
+
+// Faixa de referência sombreada (plugin do Chart.js, passado por gráfico; nada global).
+// opções: { low, high, color }. Sem mínimo, pinta até a base; sem máximo, até o topo.
+const EVO_BAND_PLUGIN = {
+  id: 'evoRefBand',
+  beforeDatasetsDraw(chart, _args, opts) {
+    if (!opts || (opts.low == null && opts.high == null)) return
+    const { ctx, chartArea: a, scales: { y } } = chart
+    if (!a || !y) return
+    const top = opts.high == null ? a.top : Math.max(a.top, y.getPixelForValue(opts.high))
+    const bot = opts.low == null ? a.bottom : Math.min(a.bottom, y.getPixelForValue(opts.low))
+    if (!(bot > top)) return
+    ctx.save()
+    ctx.fillStyle = opts.color || 'rgba(25,158,112,0.12)'
+    ctx.fillRect(a.left, top, a.right - a.left, bot - top)
+    ctx.restore()
+  },
+}
+
+// '#199e70' + 0.14 -> 'rgba(25,158,112,0.14)'
+function evoRgba(hex, alpha) {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ''))
+  return m ? `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${alpha})` : `rgba(128,128,128,${alpha})`
+}
+// @@evo-pure:end
+
 // ─────────────────────────────────────────────
 // AVALIAÇÕES FÍSICAS — fase 2: ler valores do PDF por regras (sem IA)
 // ─────────────────────────────────────────────
@@ -13119,6 +13379,235 @@ async function saveExReview() {
     _paBusy = false
     btn.disabled = false
   }
+}
+
+// ─────────────────────────────────────────────
+// EVOLUÇÃO — exames de sangue e avaliação física (só personal, só leitura)
+// ─────────────────────────────────────────────
+// Painel na ficha do aluno, abaixo de "Avaliações e exames", aberto pelo botão "Evolução".
+// Lê physical_assessments + assessment_measurements do aluno (RLS: só o personal com vínculo
+// ativo; o aluno não tem SELECT) e não grava nada. Um gráfico por exame/medida e unidade.
+let _evo       = null   // { studentId, tab, series: { exame_sangue, fisica }, sel: { exame_sangue: [], fisica: [] } }
+let _evoCharts = []
+let _evoGen    = 0      // descarta respostas de leituras antigas
+
+function _evoDestroyCharts() {
+  for (const c of _evoCharts) { try { c.destroy() } catch {} }
+  _evoCharts = []
+}
+
+function _evoReset() {
+  _evoDestroyCharts()
+  _evo = null
+  _evoGen++
+}
+
+function _evoBox(studentId) {
+  const box = document.getElementById('sheet-evolution')
+  return box && box.dataset.studentId === studentId ? box : null
+}
+
+function toggleSheetEvolution() {
+  const box = document.getElementById('sheet-evolution')
+  const sid = box?.dataset.studentId
+  if (!box || !_isUuid(sid)) return
+  if (box.dataset.open === '1') {
+    box.dataset.open = ''
+    box.innerHTML = ''
+    _evoReset()
+    return
+  }
+  box.dataset.open = '1'
+  loadSheetEvolution(sid)
+}
+
+// Lê tudo do aluno em páginas de 1000 (limite do PostgREST), na mesma ordem sempre.
+async function _evoFetchMeasurements(studentId) {
+  const all = []
+  for (let from = 0; from < 20000; from += 1000) {
+    const { data, error } = await sb.from('assessment_measurements')
+      .select('assessment_id, grp, key, label, value, unit, value_text, qualifier, qual_value, ref_low, ref_high, ref_text, prev_value, prev_date')
+      .eq('student_id', studentId).eq('personal_id', me.id)
+      .order('assessment_id').order('grp').order('key')
+      .range(from, from + 999)
+    if (error) return { error }
+    all.push(...(data || []))
+    if (!data || data.length < 1000) break
+  }
+  return { data: all }
+}
+
+async function loadSheetEvolution(studentId) {
+  const box = _evoBox(studentId)
+  if (!box || box.dataset.open !== '1') return
+  const gen = ++_evoGen
+  _evoDestroyCharts()
+  box.innerHTML = `<div class="evo-panel"><div class="section-label">Evolução</div><div class="loading"><div class="spinner"></div>Carregando…</div></div>`
+  const [aRes, mRes] = await Promise.all([
+    sb.from('physical_assessments').select('id, title, kind, assessed_at, collected_at')
+      .eq('student_id', studentId).eq('personal_id', me.id),
+    _evoFetchMeasurements(studentId),
+  ])
+  const still = _evoBox(studentId)
+  if (gen !== _evoGen || !still || still.dataset.open !== '1') return
+  if (aRes.error || mRes.error) {
+    toast('Erro ao carregar a evolução: ' + _paErrMsg(aRes.error || mRes.error), 'error')
+    still.innerHTML = '<div class="evo-panel"><div class="section-label">Evolução</div><div class="tpl-empty-folder">Não foi possível carregar a evolução.</div></div>'
+    return
+  }
+  const a = aRes.data || [], m = mRes.data || []
+  const series = { exame_sangue: evoBuildSeries(a, m, 'exame_sangue'), fisica: evoBuildSeries(a, m, 'fisica') }
+  const prev = _evo && _evo.studentId === studentId ? _evo : null
+  _evo = {
+    studentId, series,
+    tab: prev?.tab || (series.exame_sangue.length || !series.fisica.length ? 'exame_sangue' : 'fisica'),
+    sel: {
+      exame_sangue: evoKeepSelection(prev?.sel.exame_sangue, series.exame_sangue, 'exame_sangue'),
+      fisica:       evoKeepSelection(prev?.sel.fisica, series.fisica, 'fisica'),
+    },
+  }
+  renderSheetEvolution()
+}
+
+function renderSheetEvolution() {
+  const st = _evo
+  const box = st && _evoBox(st.studentId)
+  if (!box || box.dataset.open !== '1') return
+  _evoDestroyCharts()
+  const kind = st.tab
+  const series = st.series[kind]
+  const tab = (k, label, n) => `<button type="button" class="evo-tab${k === kind ? ' active' : ''}" aria-pressed="${k === kind}" onclick="_evoSetTab('${k}')">${label} <span class="evo-muted">${n}</span></button>`
+  const head = `
+    <div class="evo-head">
+      <div class="section-label" style="margin:0">Evolução</div>
+      <div class="evo-tabs" role="group" aria-label="Tipo">
+        ${tab('exame_sangue', 'Exames de sangue', st.series.exame_sangue.length)}
+        ${tab('fisica', 'Avaliação física', st.series.fisica.length)}
+      </div>
+    </div>`
+  if (!series.length) {
+    box.innerHTML = `<div class="evo-panel">${head}<div class="tpl-empty-folder">${kind === 'exame_sangue'
+      ? 'Nenhum exame salvo ainda. Use "Ler PDF" num exame de sangue e salve os marcados.'
+      : 'Nenhuma medida salva ainda. Use "Ler PDF" ou "Dados" numa avaliação física.'}</div></div>`
+    return
+  }
+  const sel = new Set(st.sel[kind])
+  const picker = evoPickerGroups(series, kind).map(g => {
+    const on = g.items.filter(s => sel.has(s.id)).length
+    return `
+      <details class="evo-group"${on ? ' open' : ''}>
+        <summary>${escHtml(g.title)} <span class="evo-muted">· ${on}/${g.items.length}</span></summary>
+        <div class="evo-items">
+          ${g.items.map(s => `
+            <label class="evo-item"><input type="checkbox" ${sel.has(s.id) ? 'checked' : ''} onchange="_evoToggle(${series.indexOf(s)}, this.checked)">
+              <span>${escHtml(s.label)}${s.tipo === 'n' && s.unit && s.unit !== 'un' ? ` <span class="evo-muted">(${escHtml(s.unit)})</span>` : ''}
+              <span class="evo-muted">· ${s.count} ${s.count === 1 ? 'data' : 'datas'}</span>${s.multiUnit ? ' <span class="evo-flag" title="Mesmo exame em outra unidade">≠ unidade</span>' : ''}</span>
+            </label>`).join('')}
+        </div>
+      </details>`
+  }).join('')
+  const chosen = st.sel[kind].map(id => series.find(s => s.id === id)).filter(Boolean)
+  const cards = chosen.map((s, i) => {
+    const notes = []
+    if (s.count === 1) notes.push('Só 1 data até agora: aparece o ponto; a linha surge a partir da 2ª coleta.')
+    if (s.multiUnit) notes.push('Este exame tem resultados em unidades diferentes: cada unidade fica num gráfico separado.')
+    const body = s.tipo === 'q'
+      ? `<ol class="evo-timeline">${evoQualTimeline(s).map(t => `<li><span class="evo-date">${escHtml(t.date)}</span><span class="evo-chip">${escHtml(t.text)}</span>${t.title ? `<span class="evo-muted">${escHtml(t.title)}</span>` : ''}</li>`).join('')}</ol>`
+      : `<div class="evo-canvas"><canvas id="evo-chart-${i}" role="img" aria-label="${escHtml(`Evolução de ${s.label}`)}"></canvas></div>`
+    return `
+      <div class="evo-card">
+        <div class="evo-card-title">${escHtml(s.label)}${s.tipo === 'n' && s.unit && s.unit !== 'un' ? ` <span class="evo-muted">${escHtml(s.unit)}</span>` : ''}</div>
+        <div class="evo-muted evo-summary">${escHtml(evoSummary(s))}</div>
+        ${body}
+        ${notes.map(n => `<div class="evo-note">${escHtml(n)}</div>`).join('')}
+      </div>`
+  }).join('')
+  const legend = kind === 'exame_sangue'
+    ? '<div class="evo-legend"><span>● resultado</span><span>▲ valor com “&gt;”</span><span>▼ valor com “&lt;”</span><span>○ resultado anterior do laudo</span><span><i class="evo-band-swatch"></i> faixa de referência mais recente</span></div>'
+    : ''
+  box.innerHTML = `
+    <div class="evo-panel">
+      ${head}
+      <div class="evo-layout">
+        <div class="evo-picker" aria-label="Escolher o que mostrar">${picker}
+          <div class="evo-muted" style="margin-top:.5rem;font-size:.72rem">Até ${EVO_MAX_SERIES} gráficos ao mesmo tempo.</div>
+        </div>
+        <div class="evo-cards">${cards || '<div class="tpl-empty-folder">Marque ao lado o que quer ver.</div>'}${legend}</div>
+      </div>
+    </div>`
+  chosen.forEach((s, i) => {
+    if (s.tipo !== 'n') return
+    const canvas = document.getElementById(`evo-chart-${i}`)
+    if (canvas) _evoCharts.push(_evoMakeChart(canvas, s))
+  })
+}
+
+function _evoMakeChart(canvas, s) {
+  const model = evoChartModel(s)
+  const pal = typeof progressPalette === 'function' ? progressPalette() : ['#3987e5', '#d95926', '#199e70']
+  const line = pal[0], warn = pal[1], band = evoRgba(pal[2], 0.14)
+  const axis = 'rgb(143,154,178)', grid = 'rgba(144,158,186,0.06)', font = { size: 11, family: 'Montserrat' }
+  const pts = model.points
+  return new Chart(canvas, {
+    type: 'line',
+    data: {
+      datasets: [{
+        label: s.label,
+        data: pts.map(p => ({ x: p.x, y: p.value, _p: p })),
+        borderColor: line,
+        borderWidth: 2,
+        tension: 0.2,
+        pointStyle: pts.map(p => p.marker === 'gt' || p.marker === 'lt' ? 'triangle' : 'circle'),
+        pointRotation: pts.map(p => p.marker === 'lt' ? 180 : 0),
+        pointRadius: pts.map(p => p.marker === 'gt' || p.marker === 'lt' ? 6 : 4),
+        pointHoverRadius: 7,
+        pointBorderWidth: 2,
+        pointBorderColor: pts.map(p => p.state ? warn : line),
+        pointBackgroundColor: pts.map(p => p.marker === 'prev' ? 'rgba(0,0,0,0)' : (p.state ? warn : line)),
+        // Trecho que liga ao resultado anterior do laudo fica tracejado.
+        segment: { borderDash: c => (c.p0?.raw?._p?.prev || c.p1?.raw?._p?.prev) ? [4, 4] : undefined },
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'nearest', intersect: false },
+      plugins: {
+        legend: { display: false },
+        evoRefBand: model.band ? { low: model.band.low, high: model.band.high, color: band } : null,
+        tooltip: { callbacks: { title: () => '', label: c => evoTooltipLines(c.raw._p, s.unit) } },
+      },
+      scales: {
+        x: { type: 'linear', min: model.xMin, max: model.xMax, grid: { color: grid },
+             afterBuildTicks: ax => { ax.ticks = model.ticks.map(v => ({ value: v })) },
+             ticks: { callback: v => evoFmtDay(v), maxRotation: 0, autoSkip: true, color: axis, font } },
+        y: { min: model.yMin, max: model.yMax, grid: { color: grid },
+             ticks: { callback: v => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 3 }), color: axis, font } },
+      },
+    },
+    plugins: [EVO_BAND_PLUGIN],
+  })
+}
+
+function _evoSetTab(kind) {
+  if (!_evo || !['exame_sangue', 'fisica'].includes(kind)) return
+  _evo.tab = kind
+  renderSheetEvolution()
+}
+
+// idx = posição da série na aba atual (o id tem "/" e unidades: não vai para o onchange).
+function _evoToggle(idx, on) {
+  const st = _evo
+  if (!st) return
+  const kind = st.tab
+  const id = st.series[kind][idx]?.id
+  if (!id) return
+  const sel = st.sel[kind].filter(x => x !== id)
+  if (on) {
+    if (sel.length >= EVO_MAX_SERIES) { toast(`Até ${EVO_MAX_SERIES} gráficos ao mesmo tempo: desmarque um antes.`, 'error'); renderSheetEvolution(); return }
+    sel.push(id)
+  }
+  st.sel[kind] = sel
+  renderSheetEvolution()
 }
 
 // ─────────────────────────────────────────────
