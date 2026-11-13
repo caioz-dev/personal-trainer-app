@@ -3581,6 +3581,44 @@ let _pdfjsPromise           = null   // carga única do pdf.js (módulo e worker
 const _tplClosedFolders     = new Set()   // pastas recolhidas na tela (só nesta aba)
 
 // Limpa TODO o estado da sessão anterior — chamado no logout e antes de boot de novo usuário
+// ── Logout sem resto de dado no DOM ──
+// O que o app preenche em tempo de execução (fichas, listas, históricos, títulos, selects de
+// aluno, corpos de modal) é, no HTML, um elemento vazio ou só com texto ("—"). No boot fica
+// guardado esse conteúdo inicial; no logout (resetAppState) ele volta e os campos de formulário
+// voltam ao valor padrão. Assim nada do usuário anterior fica oculto no DOM para a próxima
+// conta no mesmo navegador. Ficam de fora: ícones (data-icon), a tela de login (e-mail digitado
+// e mensagem são do próprio fluxo de login), a troca de senha e o carregamento inicial.
+const _USER_DOM_SKIP  = '#auth-section, #password-reset-overlay, #boot-loading'
+// Textos sem id que recebem dado (ex.: "Para: <aluno>" no formulário de treino).
+const _USER_DOM_EXTRA = '#view-workout .card-title, #view-workout .section-label'
+let _userDomInitial = null   // Map<Element, html inicial>
+
+function _snapshotUserDom() {
+  _userDomInitial = new Map()
+  const els = new Set([...document.body.querySelectorAll('[id]'), ...document.querySelectorAll(_USER_DOM_EXTRA)])
+  for (const el of els) {
+    if (el.closest(_USER_DOM_SKIP) || el.hasAttribute('data-icon')) continue
+    if (['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT'].includes(el.tagName)) continue
+    if (el.children.length) continue          // estrutura fixa (formulários, botões): não é trocada
+    _userDomInitial.set(el, el.innerHTML)
+  }
+}
+
+function _restoreUserDom() {
+  if (_userDomInitial) {
+    for (const [el, html] of _userDomInitial) if (el.innerHTML !== html) el.innerHTML = html
+  }
+  for (const f of document.querySelectorAll('input, textarea, select')) {
+    if (f.closest(_USER_DOM_SKIP)) continue
+    if (f.type === 'checkbox' || f.type === 'radio') f.checked = f.defaultChecked
+    else if (f.type === 'file') f.value = ''
+    else if (f.tagName === 'SELECT') {
+      const d = [...f.options].findIndex(o => o.defaultSelected)
+      f.selectedIndex = f.options.length ? Math.max(0, d) : -1
+    } else if (!['button', 'submit', 'reset', 'image'].includes(f.type)) f.value = f.defaultValue
+  }
+}
+
 function resetAppState() {
   // Timer: cancela interval ativo e fecha overlays relacionados
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null }
@@ -3708,12 +3746,16 @@ function resetAppState() {
   if (progressChart) { try { progressChart.destroy() } catch {} ; progressChart = null }
   if (sheetChart)    { try { sheetChart.destroy() }    catch {} ; sheetChart    = null }
   _evoReset()
+  // Folha de impressão do treino (fica no body até a impressão terminar) e o DOM com dado.
+  try { _wpdfCleanup() } catch {}
+  _restoreUserDom()
 }
 
 // ─────────────────────────────────────────────
 // BOOT
 // ─────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
+  _snapshotUserDom()   // antes de qualquer dado entrar no DOM (restaurado no logout)
   sb = window.supabase.createClient(SUPA_URL, SUPA_KEY)
 
   removeLegacyServiceWorkers()
@@ -13400,6 +13442,8 @@ function _evoReset() {
   _evoDestroyCharts()
   _evo = null
   _evoGen++
+  const box = document.getElementById('sheet-evolution')
+  if (box) { box.innerHTML = ''; box.dataset.open = '' }
 }
 
 function _evoBox(studentId) {
@@ -13513,10 +13557,10 @@ function renderSheetEvolution() {
     if (s.multiUnit) notes.push('Este exame tem resultados em unidades diferentes: cada unidade fica num gráfico separado.')
     const body = s.tipo === 'q'
       ? `<ol class="evo-timeline">${evoQualTimeline(s).map(t => `<li><span class="evo-date">${escHtml(t.date)}</span><span class="evo-chip">${escHtml(t.text)}</span>${t.title ? `<span class="evo-muted">${escHtml(t.title)}</span>` : ''}</li>`).join('')}</ol>`
-      : `<div class="evo-canvas"><canvas id="evo-chart-${i}" role="img" aria-label="${escHtml(`Evolução de ${s.label}`)}"></canvas></div>`
+      : `<div class="evo-canvas"><canvas id="evo-chart-${i}" role="img" aria-label="${escHtml(`Evolução de ${s.label} (${evoGroupTitle(kind, s.grp)})`)}"></canvas></div>`
     return `
       <div class="evo-card">
-        <div class="evo-card-title">${escHtml(s.label)}${s.tipo === 'n' && s.unit && s.unit !== 'un' ? ` <span class="evo-muted">${escHtml(s.unit)}</span>` : ''}</div>
+        <div class="evo-card-title">${escHtml(s.label)}${s.tipo === 'n' && s.unit && s.unit !== 'un' ? ` <span class="evo-muted">${escHtml(s.unit)}</span>` : ''} <span class="evo-muted">· ${escHtml(evoGroupTitle(kind, s.grp))}</span></div>
         <div class="evo-muted evo-summary">${escHtml(evoSummary(s))}</div>
         ${body}
         ${notes.map(n => `<div class="evo-note">${escHtml(n)}</div>`).join('')}
@@ -13580,7 +13624,7 @@ function _evoMakeChart(canvas, s) {
         x: { type: 'linear', min: model.xMin, max: model.xMax, grid: { color: grid },
              afterBuildTicks: ax => { ax.ticks = model.ticks.map(v => ({ value: v })) },
              ticks: { callback: v => evoFmtDay(v), maxRotation: 0, autoSkip: true, color: axis, font } },
-        y: { min: model.yMin, max: model.yMax, grid: { color: grid },
+        y: { suggestedMin: model.yMin, suggestedMax: model.yMax, grid: { color: grid },
              ticks: { callback: v => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 3 }), color: axis, font } },
       },
     },
