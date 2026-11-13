@@ -2540,6 +2540,32 @@
     .pa-rv-warn  { grid-column: 1 / -1; font-size: .72rem; color: var(--danger); }
     .pa-rv-warn:empty { display: none; }
     .pa-rv-bad .pa-rv-value { border-color: var(--danger); background: var(--danger-a08); }
+    /* Revisão dos exames de sangue (E2): caixa por exame e por grupo; só os marcados são salvos. */
+    .ex-rv-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 0 .75rem; }
+    .ex-rv-meta .form-group { margin-bottom: .5rem; }
+    .ex-rv-toolbar { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin: .25rem 0 .25rem; }
+    .ex-rv-showall { font-size: .78rem; color: var(--text-muted); display: inline-flex; gap: .35rem; align-items: center; margin-left: auto; cursor: pointer; }
+    .ex-rv-group-head { display: flex; align-items: center; gap: .5rem; margin: 1rem 0 .35rem; }
+    .ex-rv-group-head .section-label { margin: 0; cursor: pointer; }
+    .ex-rv-muted { font-weight: 400; color: var(--text-muted); }
+    .ex-rv-row { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr) 7rem 5.5rem; gap: .2rem .5rem; align-items: center; padding: .3rem 0; border-bottom: 1px solid var(--border-subtle); }
+    .ex-rv-row input[type=checkbox], .ex-rv-group-head input[type=checkbox] { width: 1.05rem; height: 1.05rem; margin: 0; accent-color: var(--accent); cursor: pointer; }
+    .ex-rv-row.off .ex-rv-label, .ex-rv-row.off .ex-rv-unit, .ex-rv-row.off .ex-rv-value { opacity: .55; }
+    .ex-rv-label { font-size: .85rem; min-width: 0; cursor: pointer; }
+    .ex-rv-unit  { font-size: .72rem; color: var(--text-muted); overflow-wrap: anywhere; }
+    .ex-rv-value { padding: .35rem .5rem; }
+    .ex-rv-value::placeholder { font-size: .72rem; }
+    .ex-rv-info  { grid-column: 2 / -1; font-size: .72rem; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: .1rem .75rem; }
+    .ex-rv-info:empty { display: none; }
+    .ex-rv-flag  { font-weight: 700; color: var(--warning); }
+    .ex-rv-bad .ex-rv-value { border-color: var(--danger); background: var(--danger-a08); }
+    .ex-rv-footer { font-size: .78rem; color: var(--text-muted); margin-top: .75rem; }
+    @media (max-width: 480px) {
+      .ex-rv-meta { grid-template-columns: 1fr; }
+      .ex-rv-row { grid-template-columns: 1.25rem minmax(0, 1fr) 6.5rem; }
+      .ex-rv-unit { grid-column: 3; }
+      .ex-rv-showall { margin-left: 0; }
+    }
     .tpl-subfolder { margin: 0; padding: .625rem .75rem; border: 1px solid var(--border-subtle); border-left: 3px solid var(--accent-a28); border-radius: var(--radius); }
     .tpl-subfolder .tpl-folder-title { font-weight: 650; font-size: .9rem; }
     .tpl-folder-actions { flex-wrap: wrap; justify-content: flex-end; }
@@ -3185,14 +3211,21 @@
 <!-- Modal: enviar/editar avaliação física (PDF) -->
 <div id="pa-modal" class="routine-modal-overlay" style="display:none" onclick="if(event.target===this)closePaModal()">
   <div class="routine-modal-card">
-    <div style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em;margin-bottom:1.25rem" id="pa-modal-title">Enviar avaliação física</div>
+    <div style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em;margin-bottom:1.25rem" id="pa-modal-title">Enviar PDF</div>
     <form id="pa-form" onsubmit="savePhysicalAssessment(event)" novalidate>
-      <div class="form-group">
-        <label>Título *</label>
-        <input id="pa-title" class="form-control" type="text" maxlength="120" required placeholder="Ex: Avaliação de novembro">
+      <div class="form-group" id="pa-kind-group">
+        <label for="pa-kind">Tipo *</label>
+        <select id="pa-kind" class="form-control">
+          <option value="fisica">Avaliação física</option>
+          <option value="exame_sangue">Exame de sangue</option>
+        </select>
       </div>
       <div class="form-group">
-        <label>Data da avaliação *</label>
+        <label>Título *</label>
+        <input id="pa-title" class="form-control" type="text" maxlength="120" required placeholder="Ex: Avaliação de novembro, Exames de novembro">
+      </div>
+      <div class="form-group">
+        <label>Data *</label>
         <input id="pa-date" class="form-control" type="date" required>
       </div>
       <div class="form-group" id="pa-file-group">
@@ -3221,6 +3254,36 @@
     <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.25rem;flex-wrap:wrap">
       <button type="button" class="btn btn-outline btn-sm" onclick="closePaReview()">Cancelar</button>
       <button type="button" id="pa-review-btn" class="btn btn-primary btn-sm" onclick="savePaReview()">Confirmar e salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: revisar os exames de sangue lidos do PDF (E2), escolhendo quais salvar -->
+<div id="ex-review-modal" class="routine-modal-overlay" style="display:none">
+  <div class="routine-modal-card" style="max-width:720px">
+    <div style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em" id="ex-review-title">Revisar exames lidos do PDF</div>
+    <div style="font-size:.8rem;color:var(--text-muted);margin:.25rem 0 .5rem" id="ex-review-sub"></div>
+    <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:.75rem">Marque os exames que quer salvar e confira cada valor com o PDF. Sorologias e espermograma vêm desmarcados. Nada é gravado até você confirmar.</div>
+    <div class="ex-rv-meta">
+      <div class="form-group">
+        <label for="ex-review-collected">Coleta</label>
+        <input id="ex-review-collected" class="form-control" type="datetime-local">
+      </div>
+      <div class="form-group">
+        <label for="ex-review-lab">Laboratório</label>
+        <input id="ex-review-lab" class="form-control" type="text" maxlength="60" placeholder="Ex.: Núcleo">
+      </div>
+    </div>
+    <div class="ex-rv-toolbar">
+      <button type="button" class="btn btn-outline btn-sm" onclick="_exToggleAll(true)">Marcar todos</button>
+      <button type="button" class="btn btn-outline btn-sm" onclick="_exToggleAll(false)">Nenhum</button>
+      <label class="ex-rv-showall"><input type="checkbox" id="ex-review-showall" onchange="_exShowAll(this.checked)"> Mostrar não encontrados</label>
+    </div>
+    <div id="ex-review-body"></div>
+    <div class="ex-rv-footer" id="ex-review-stats" aria-live="polite"></div>
+    <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1rem;flex-wrap:wrap">
+      <button type="button" class="btn btn-outline btn-sm" onclick="closeExReview()">Cancelar</button>
+      <button type="button" id="ex-review-btn" class="btn btn-primary btn-sm" onclick="saveExReview()">Salvar marcados</button>
     </div>
   </div>
 </div>
@@ -3603,6 +3666,9 @@ function resetAppState() {
   _paReview                   = null
   const paReviewModal = document.getElementById('pa-review-modal')
   if (paReviewModal) paReviewModal.style.display = 'none'
+  _exReview                   = null
+  const exReviewModal = document.getElementById('ex-review-modal')
+  if (exReviewModal) exReviewModal.style.display = 'none'
   _tplClosedFolders.clear()
   const tplList = document.getElementById('tpl-exercise-list')
   if (tplList) tplList.innerHTML = ''
@@ -11554,18 +11620,21 @@ async function _paCheckFile(file) {
 
 function _renderPaItem(a) {
   if (!_isUuid(a.id)) return ''
+  const exam = a.kind === 'exame_sangue', n = a._savedCount || 0, pl = n === 1 ? '' : 's'
+  const saved = !n ? '' : exam ? ` · ${n} exame${pl} salvo${pl}` : ` · ${n} medida${pl} salva${pl}`
+  const coleta = exam && a.collected_at ? ` · coleta ${escHtml(fmtDate(exTsToInput(a.collected_at).slice(0, 10)))}` : ''
   return `
     <div class="tpl-item">
       <div class="tpl-item-main">
-        <div class="tpl-item-name">${icon('clipboard-list')} ${escHtml(a.title)}</div>
-        <div class="tpl-item-meta">${escHtml(fmtDate(a.assessed_at))}${a._savedCount ? ` · ${a._savedCount} medida${a._savedCount === 1 ? '' : 's'} salva${a._savedCount === 1 ? '' : 's'}` : ''}${a._hasReport ? ' · relatório salvo' : ''}</div>
+        <div class="tpl-item-name">${icon(exam ? 'heart-pulse' : 'clipboard-list')} ${escHtml(a.title)}</div>
+        <div class="tpl-item-meta">${exam ? 'Exame de sangue · ' : ''}${escHtml(fmtDate(a.assessed_at))}${coleta}${saved}${a._hasReport ? ' · relatório salvo' : ''}</div>
       </div>
       <div class="tpl-item-actions">
         <button class="btn btn-outline btn-sm" title="Ler os valores do PDF e revisar" onclick="readAssessmentPdf('${a.id}')">${icon('table-2')} Ler PDF</button>
         <button class="btn btn-outline btn-sm" title="Ver e editar os dados salvos" onclick="openAssessmentData('${a.id}')">Dados</button>
         <button class="btn btn-outline btn-sm" title="Abrir PDF" onclick="openPhysicalAssessment('${a.id}')">${icon('eye')} Abrir</button>
         <button class="btn btn-outline btn-sm" title="Editar título e data" onclick="openPaModal('${a.id}')">${icon('pencil')}</button>
-        <button class="btn btn-sm btn-ghost-danger" title="Apagar avaliação" onclick="deletePhysicalAssessment('${a.id}')">${icon('trash-2')}</button>
+        <button class="btn btn-sm btn-ghost-danger" title="Apagar PDF e dados" onclick="deletePhysicalAssessment('${a.id}')">${icon('trash-2')}</button>
       </div>
     </div>`
 }
@@ -11575,14 +11644,14 @@ async function renderSheetAssessments(studentId) {
   if (!box || !_isUuid(studentId) || box.dataset.studentId !== studentId) return
   const head = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
-      <div class="section-label" style="margin-bottom:0">Avaliações físicas</div>
+      <div class="section-label" style="margin-bottom:0">Avaliações e exames</div>
       <button class="btn btn-primary btn-sm" onclick="openPaModal()">${icon('plus')} Enviar PDF</button>
     </div>`
   box.style.marginTop = '1.25rem'
   box.innerHTML = head + '<div class="loading"><div class="spinner"></div>Carregando…</div>'
 
   const { data, error } = await sb.from('physical_assessments')
-    .select('id, title, assessed_at, file_path, created_at')
+    .select('id, title, assessed_at, file_path, created_at, kind, collected_at, lab')
     .eq('student_id', studentId).eq('personal_id', me.id)
     .order('assessed_at', { ascending: false }).order('created_at', { ascending: false })
   // A ficha pode ter mudado de aluno (ou de tela) enquanto a consulta voltava.
@@ -11619,7 +11688,10 @@ function openPaModal(editId = null) {
   const a = editId ? _paList.find(x => x.id === editId) : null
   if (editId && !a) { toast('Avaliação não encontrada. Recarregue a ficha.', 'error'); return }
   _paCtx = { studentId, editId: a ? a.id : null }
-  document.getElementById('pa-modal-title').textContent = a ? 'Editar avaliação física' : 'Enviar avaliação física'
+  document.getElementById('pa-modal-title').textContent = !a ? 'Enviar PDF'
+    : a.kind === 'exame_sangue' ? 'Editar exame de sangue' : 'Editar avaliação física'
+  document.getElementById('pa-kind').value = 'fisica'
+  document.getElementById('pa-kind-group').style.display = a ? 'none' : ''
   document.getElementById('pa-title').value = a ? a.title : ''
   document.getElementById('pa-date').value  = a ? a.assessed_at : today()
   document.getElementById('pa-file').value  = ''
@@ -11661,13 +11733,14 @@ async function savePhysicalAssessment(e) {
       const file = document.getElementById('pa-file').files?.[0]
       const fileErr = await _paCheckFile(file)
       if (fileErr) { toast(fileErr, 'error'); return }
+      const kind = document.getElementById('pa-kind').value === 'exame_sangue' ? 'exame_sangue' : 'fisica'
       btn.textContent = 'Enviando…'
       const path = `${me.id}/${studentId}/${crypto.randomUUID()}.pdf`
       const { error: upErr } = await sb.storage.from(PA_BUCKET)
         .upload(path, file, { contentType: 'application/pdf', upsert: false })
       if (upErr) { toast('Erro ao enviar o PDF: ' + _paErrMsg(upErr), 'error'); return }
       const { error: insErr } = await sb.from('physical_assessments')
-        .insert({ student_id: studentId, personal_id: me.id, assessed_at: date, title, file_path: path })
+        .insert({ student_id: studentId, personal_id: me.id, assessed_at: date, title, file_path: path, kind })
         .select('id').single()
       if (insErr) {
         // Sem a linha o PDF ficaria órfão no bucket: desfaz o envio.
@@ -11675,7 +11748,7 @@ async function savePhysicalAssessment(e) {
         toast('Erro ao salvar a avaliação: ' + _paErrMsg(insErr), 'error')
         return
       }
-      toast('Avaliação enviada.', 'success')
+      toast(kind === 'exame_sangue' ? 'Exame enviado. Use "Ler PDF" para revisar os valores.' : 'Avaliação enviada.', 'success')
     }
     closePaModal()
     renderSheetAssessments(studentId)
@@ -11709,7 +11782,7 @@ async function deletePhysicalAssessment(id) {
   if (!_isUuid(id) || _paBusy) return
   const a = _paList.find(x => x.id === id)
   if (!a) { toast('Avaliação não encontrada. Recarregue a ficha.', 'error'); return }
-  if (!confirm(`Apagar a avaliação "${a.title}" de ${fmtDate(a.assessed_at)}? O PDF será apagado e isso não pode ser desfeito.`)) return
+  if (!confirm(`Apagar ${a.kind === 'exame_sangue' ? 'o exame' : 'a avaliação'} "${a.title}" de ${fmtDate(a.assessed_at)}? O PDF será apagado e isso não pode ser desfeito.`)) return
 
   _paBusy = true
   try {
@@ -12013,6 +12086,537 @@ function paBuildSavePayload(rows) {
 }
 // @@pa-parse-pure:end
 
+// @@ex-parse-pure:begin
+// Exames de sangue — laudo do laboratório Núcleo (texto selecionável): catálogo e leitura por
+// regras sobre o texto de _paExtractTextPages ([{ num, items: [{ str, x, y, w, h }] }]).
+// Usa paNorm, paRows e paPageText da seção acima. O cabeçalho do laudo (paciente, médico,
+// documento, CPF, nascimento, protocolo) e os nomes de quem assinou NUNCA viram campo: o
+// cabeçalho é pulado inteiro e da linha "Coleta:" só sai a data/hora.
+const EX_GROUPS = ['hemograma', 'leucograma', 'bioquimica', 'hepatica', 'eletroforese',
+                   'hormonios', 'vitaminas', 'sorologias', 'espermograma']
+// Unidades de exame aceitas pelo check assessment_measurements_unit_check ('qual' = qualitativo).
+const EX_UNITS = ['mg/dL', 'g/dL', 'ng/mL', 'pg/mL', 'µg/dL', 'U/L', 'µUI/mL', 'mUI/mL',
+  'tera/L', '/µL', 'fL', 'pg', '%', 'mL/min/1,73m2', 'milhões/mL', 'milhões', 'ml', 'min',
+  'pH', 'índice', 'qual', 'un']
+const EX_GROUP_TITLES = { hemograma: 'Hemograma', leucograma: 'Leucograma', bioquimica: 'Bioquímica',
+  hepatica: 'Função hepática', eletroforese: 'Eletroforese de proteínas', hormonios: 'Hormônios',
+  vitaminas: 'Vitaminas e minerais', sorologias: 'Sorologias', espermograma: 'Espermograma' }
+// Dado sensível: vêm desmarcados na revisão (o personal marca se quiser salvar).
+const EX_GROUPS_OFF = ['sorologias', 'espermograma']
+
+// Seções do laudo: título da seção (normalizado) -> id usado nas fontes do catálogo.
+const EX_SECTIONS = [
+  ['hemograma', /^hemograma\b/],
+  ['psa_lt',    /^psa livre\/total$/],
+  ['psa',       /^psa, antigeno prostatico/],
+  ['creat',     /^creatinina$/],
+  ['ureia',     /^ureia$/],
+  ['tgo',       /^transaminase glutamico oxalacetica/],
+  ['tgp',       /^transaminase glutamico piruvica/],
+  ['sifilis',   /^sifilis\b/],
+  ['tsh',       /^tsh\b/],
+  ['glicemia',  /^glicemia de jejum$/],
+  ['vitd',      /^25-hidroxivitamina d$/],
+  ['b12',       /^vitamina b12$/],
+  ['ferritina', /^ferritina$/],
+  ['ferro',     /^ferro$/],
+  ['esperm',    /^espermograma$/],
+  ['folico',    /^acido folico$/],
+  ['zinco',     /^zinco$/],
+  ['hba1c',     /^hemoglobina glicada$/],
+  ['hepatica',  /^funcao hepatica\b/],
+  ['hiv',       /^hiv\b/],
+  ['antihbs',   /^hepatite b, anticorpos, anti-hbs$/],
+]
+
+const _EX_LEUCO = [['blastos', 'Blastos'], ['promielocitos', 'Promielócitos'], ['mielocitos', 'Mielócitos'],
+  ['metamielocitos', 'Metamielócitos'], ['bastonetes', 'Bastonetes'], ['segmentados', 'Segmentados'],
+  ['eosinofilos', 'Eosinófilos'], ['basofilos', 'Basófilos'], ['linfocitos', 'Linfócitos'], ['monocitos', 'Monócitos']]
+const _EX_PROT = [['prot_totais', 'Proteínas totais', 'proteinas totais'], ['albumina', 'Albumina', 'albumina'],
+  ['alfa1', 'Alfa-1 globulina', 'alfa 1 globulina'], ['alfa2', 'Alfa-2 globulina', 'alfa 2 globulina'],
+  ['beta1', 'Beta-1 globulina', 'beta 1 globulina'], ['beta2', 'Beta-2 globulina', 'beta 2 globulina'],
+  ['gama', 'Gama globulina', 'gama globulina']]
+
+// Catálogo: [grupo, chave, rótulo, unidade, tipo ('n' numérico | 'q' qualitativo), fontes].
+// Fonte = 'seção:linha[:coluna]'; linha = rótulo antes do ":" (exLineKey); coluna 0 = 1º valor.
+const EX_CATALOG = [
+  ['hemograma', 'eritrocitos', 'Eritrócitos', 'tera/L', 'n', ['hemograma:eritrocitos']],
+  ['hemograma', 'hemoglobina', 'Hemoglobina', 'g/dL', 'n', ['hemograma:hemoglobina']],
+  ['hemograma', 'hematocrito', 'Hematócrito', '%', 'n', ['hemograma:hematocrito']],
+  ['hemograma', 'vcm', 'VCM', 'fL', 'n', ['hemograma:vcm']],
+  ['hemograma', 'hcm', 'HCM', 'pg', 'n', ['hemograma:hcm']],
+  ['hemograma', 'chcm', 'CHCM', '%', 'n', ['hemograma:chcm']],
+  ['hemograma', 'rdw', 'RDW', '%', 'n', ['hemograma:rdw']],
+  ['hemograma', 'plaquetas', 'Plaquetas', '/µL', 'n', ['hemograma:plaquetas']],
+  ['hemograma', 'vpm', 'Volume plaquetário médio', 'fL', 'n', ['hemograma:volume medio']],
+  ['leucograma', 'leucocitos', 'Leucócitos totais', '/µL', 'n', ['hemograma:leucocitos totais:1']],
+  ..._EX_LEUCO.flatMap(([k, l]) => [
+    ['leucograma', `leuco_${k}_pct`, `${l} (%)`, '%', 'n', [`hemograma:${k}:0`]],
+    ['leucograma', `leuco_${k}_abs`, `${l} (/µL)`, '/µL', 'n', [`hemograma:${k}:1`]]]),
+  ['bioquimica', 'glicemia', 'Glicemia de jejum', 'mg/dL', 'n', ['glicemia:resultado']],
+  ['bioquimica', 'hba1c', 'Hemoglobina glicada', '%', 'n', ['hba1c:resultado']],
+  ['bioquimica', 'glicemia_media', 'Glicemia média estimada', 'mg/dL', 'n', ['hba1c:glicemia media estimada']],
+  ['bioquimica', 'ureia', 'Ureia', 'mg/dL', 'n', ['ureia:resultado']],
+  ['bioquimica', 'creatinina', 'Creatinina', 'mg/dL', 'n', ['creat:resultado']],
+  ['bioquimica', 'tfg', 'Filtração glomerular estimada', 'mL/min/1,73m2', 'n', ['creat:filtracao glomerular']],
+  ['hepatica', 'tgo', 'TGO (AST)', 'U/L', 'n', ['tgo:resultado', 'hepatica:tgo']],
+  ['hepatica', 'tgp', 'TGP (ALT)', 'U/L', 'n', ['tgp:resultado', 'hepatica:tgp']],
+  ['hepatica', 'ggt', 'Gama GT', 'U/L', 'n', ['hepatica:gama gt']],
+  ['hepatica', 'fosfatase_alcalina', 'Fosfatase alcalina', 'U/L', 'n', ['hepatica:fosfatase alcalina']],
+  ['hepatica', 'bilirrubina_total', 'Bilirrubina total', 'mg/dL', 'n', ['hepatica:bilirrubina total']],
+  ['hepatica', 'bilirrubina_direta', 'Bilirrubina direta', 'mg/dL', 'n', ['hepatica:bilirrubina direta']],
+  ['hepatica', 'bilirrubina_indireta', 'Bilirrubina indireta', 'mg/dL', 'n', ['hepatica:bilirrubina indireta']],
+  ..._EX_PROT.flatMap(([k, l, line]) => [
+    ['eletroforese', `${k}_pct`, `${l} (%)`, '%', 'n', [`hepatica:${line}:0`]],
+    ['eletroforese', k, `${l} (g/dL)`, 'g/dL', 'n', [`hepatica:${line}:1`]]]),
+  ['eletroforese', 'relacao_ag', 'Relação A/G', 'un', 'n', ['hepatica:relacao a g']],
+  ['eletroforese', 'proteina_monoclonal', 'Proteína monoclonal', 'qual', 'q', ['hepatica:proteina monoclonal']],
+  ['hormonios', 'tsh', 'TSH', 'µUI/mL', 'n', ['tsh:resultado']],
+  ['hormonios', 'psa_total', 'PSA total', 'ng/mL', 'n', ['psa_lt:psa total', 'psa:resultado']],
+  ['hormonios', 'psa_livre', 'PSA livre', 'ng/mL', 'n', ['psa_lt:psa livre']],
+  ['hormonios', 'psa_relacao', 'Relação PSA livre/total', '%', 'n', ['psa_lt:relacao percentual']],
+  ['vitaminas', 'vit_d', '25-hidroxivitamina D', 'ng/mL', 'n', ['vitd:resultado']],
+  ['vitaminas', 'vit_b12', 'Vitamina B12', 'pg/mL', 'n', ['b12:resultado']],
+  ['vitaminas', 'acido_folico', 'Ácido fólico', 'ng/mL', 'n', ['folico:resultado']],
+  ['vitaminas', 'ferritina', 'Ferritina', 'ng/mL', 'n', ['ferritina:resultado']],
+  ['vitaminas', 'ferro', 'Ferro', 'µg/dL', 'n', ['ferro:resultado']],
+  ['vitaminas', 'zinco', 'Zinco', 'µg/dL', 'n', ['zinco:resultado']],
+  ['sorologias', 'sifilis', 'Sífilis (anticorpos totais)', 'qual', 'q', ['sifilis:resultado']],
+  ['sorologias', 'sifilis_indice', 'Sífilis — índice', 'índice', 'n', ['sifilis:indice']],
+  ['sorologias', 'hiv', 'HIV (anticorpos)', 'qual', 'q', ['hiv:conclusao']],
+  ['sorologias', 'hiv_indice', 'HIV — índice', 'índice', 'n', ['hiv:indice']],
+  ['sorologias', 'anti_hbs', 'Anti-HBs', 'mUI/mL', 'n', ['antihbs:resultado']],
+  ['sorologias', 'anti_hbs_conclusao', 'Anti-HBs — conclusão', 'qual', 'q', ['antihbs:conclusao']],
+  ['espermograma', 'esp_volume', 'Volume', 'ml', 'n', ['esperm:volume ml']],
+  ['espermograma', 'esp_cor', 'Cor', 'qual', 'q', ['esperm:cor']],
+  ['espermograma', 'esp_ph', 'pH', 'pH', 'n', ['esperm:ph']],
+  ['espermograma', 'esp_consistencia', 'Consistência', 'qual', 'q', ['esperm:consistencia']],
+  ['espermograma', 'esp_liquefacao', 'Tempo de liquefação', 'min', 'n', ['esperm:tempo de liquefacao']],
+  ['espermograma', 'esp_concentracao', 'Concentração', 'milhões/mL', 'n', ['esperm:concentracao ml']],
+  ['espermograma', 'esp_concentracao_total', 'Concentração total', 'milhões', 'n', ['esperm:concentracao total volume']],
+  ['espermograma', 'esp_mot_a', 'Motilidade progressiva (A)', '%', 'n', ['esperm:mot progressiva a']],
+  ['espermograma', 'esp_mot_b', 'Motilidade progressiva (B)', '%', 'n', ['esperm:mot progressiva b']],
+  ['espermograma', 'esp_mot_total', 'Motilidade total (A+B+C)', '%', 'n', ['esperm:mot total a b c']],
+  ['espermograma', 'esp_vivos', 'Espermatozoides vivos', '%', 'n', ['esperm:sptz vivos']],
+  ['espermograma', 'esp_mortos', 'Espermatozoides mortos', '%', 'n', ['esperm:sptz mortos']],
+  ['espermograma', 'esp_hemacias', 'Hemácias', '/µL', 'n', ['esperm:hemacias']],
+  ['espermograma', 'esp_leucocitos', 'Leucócitos', '/µL', 'n', ['esperm:leucocitos']],
+  ['espermograma', 'esp_outras_celulas', 'Outras células', '/µL', 'n', ['esperm:outras celulas']],
+  ['espermograma', 'esp_normais', 'Morfologia normal', '%', 'n', ['esperm:sptz normais']],
+  ['espermograma', 'esp_anormais', 'Morfologia anormal', '%', 'n', ['esperm:sptz anormais']],
+  ['espermograma', 'esp_conclusao', 'Conclusão', 'qual', 'q', ['esperm:conclusao']],
+].map(([grp, key, label, unit, tipo, src], position) => ({ grp, key, label, unit, tipo, src, position }))
+
+// 'seção:linha' -> [{ cat, col }]
+const EX_SRC = new Map()
+for (const cat of EX_CATALOG) {
+  for (const s of cat.src) {
+    const [sec, line, col] = s.split(':')
+    const id = sec + ':' + line
+    if (!EX_SRC.has(id)) EX_SRC.set(id, [])
+    EX_SRC.get(id).push({ cat, col: col == null ? 0 : Number(col) })
+  }
+}
+
+// Rótulos com ":" que não são resultado e não geram aviso.
+const EX_IGNORE = new Set(['metodo', 'altura', 'peso', 'superficie corporal', 'grafico', 'resultado',
+  'analito', 'notas', 'nota', 'obs', 'observacao', 'material'])
+const EX_HEADER_RE = /^(paciente|medico|cadastro|categoria|documento|cpf|dn|protocolo|pagina)\b/
+const EX_BOX_RE = /^(valor(es)? (de )?referencia|valores referenciais|notas?\b|estimativa da taxa|referencia\b|interpretacao|diabetes mellitus)/
+const EX_FOOTER_RE =/nucleo de analises clinicas|^cnes:|os valores dos resultados|responsavel tecnico|crm-go/
+const EX_MONTHS = { jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6, jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12 }
+
+const EX_UNIT_ALIASES = {
+  'mg/dl': 'mg/dL', 'g/dl': 'g/dL', 'ng/ml': 'ng/mL', 'pg/ml': 'pg/mL', 'µg/dl': 'µg/dL',
+  'ug/dl': 'µg/dL', 'u/l': 'U/L', 'µiu/ml': 'µUI/mL', 'uiu/ml': 'µUI/mL',
+  'µui/ml': 'µUI/mL', 'mui/ml': 'mUI/mL', 'miu/ml': 'mUI/mL', 'tera/l': 'tera/L',
+  '/µl': '/µL', '/ul': '/µL', 'fl': 'fL', 'pg': 'pg', '%': '%',
+  'ml/min/1,73m2': 'mL/min/1,73m2', 'milhoes/ml': 'milhões/mL', 'milhoes': 'milhões', 'ml': 'ml',
+  'minutos': 'min', 'min': 'min',
+}
+
+function exLineKey(s) { return paNorm(s).replace(/[^a-z0-9]+/g, ' ').trim() }
+
+// Unidade do laudo -> unidade do catálogo ("u/L" -> "U/L", "µIU/mL" -> "µUI/mL", "ﬂ" -> "fL").
+// Desconhecida -> null. NFKD desfaz ligaduras e "²"; os dois "micro" (U+00B5/U+03BC) viram U+00B5.
+function exUnit(s) {
+  const t = String(s ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .replace(/[μµ]/g, 'µ').toLowerCase().replace(/\s+/g, '').trim()
+  return t ? (EX_UNIT_ALIASES[t] ?? null) : null
+}
+
+// Número do laudo: ponto = milhar, vírgula = decimal ("1.000,00" = 1000; "7.280" = 7280;
+// "0,246"). Ponto com 1–2 ou 4+ casas é decimal ("4.4"). Prefixo <, <=, >, >= vira qualifier.
+const EX_NUM = '(\\d{1,3}(?:\\.\\d{3})+(?:,\\d+)?|\\d+(?:,\\d+)?|\\d+\\.\\d{1,2}|\\d+\\.\\d{4,})'
+const _EX_NUM_RE = new RegExp('^(<=|>=|<|>)?\\s*' + EX_NUM + '$')
+function exNum(s) {
+  const t = String(s ?? '').replace(/≤/g, '<=').replace(/≥/g, '>=').trim()
+  const m = t.match(_EX_NUM_RE)
+  if (!m) return null
+  const raw = m[2]
+  const v = raw.includes(',') || /^\d{1,3}(\.\d{3})+$/.test(raw)
+    ? Number(raw.replace(/\./g, '').replace(',', '.'))
+    : Number(raw)
+  return Number.isFinite(v) ? { qualifier: m[1] || null, value: v, text: t.replace(/\s+/g, '') } : null
+}
+
+const _EX_QUAL = new Set(['<', '<=', '>', '>='])
+// Zona de valor -> colunas [{ qualifier, value, text, unitRaw, unit }]; null se não for só número
+// (aí é qualitativo). "46 % 3.349 /µL" -> 2 colunas; "> 90,0 mL/min/1,73m2" -> 1 coluna.
+function exValues(text) {
+  const tok = String(text ?? '').replace(/≤/g, '<=').replace(/≥/g, '>=').trim().split(/\s+/).filter(Boolean)
+  if (!tok.length) return null
+  const cols = []
+  for (let i = 0; i < tok.length;) {
+    let q = null
+    if (_EX_QUAL.has(tok[i])) { q = tok[i]; i++ }
+    const n = exNum((q || '') + (tok[i] ?? ''))
+    if (!n || (q && !_EX_QUAL.has(n.qualifier))) return null
+    i++
+    let unitRaw = null
+    if (i < tok.length && !_EX_QUAL.has(tok[i]) && !exNum(tok[i])) unitRaw = tok[i++]
+    cols.push({ qualifier: n.qualifier, value: n.value, text: n.text, unitRaw, unit: exUnit(unitRaw) })
+  }
+  return cols
+}
+
+// Faixa de referência: "0,60 - 1,20 mg/dL", "<= 2,50 ng/mL", ">= 25,0 %", "Não reagente".
+const _EX_RANGE_RE = new RegExp('^' + EX_NUM + '\\s*-\\s*' + EX_NUM + '(?:\\s+(\\S+))?$')
+const _EX_BOUND_RE = new RegExp('^(<=|>=|<|>)\\s*' + EX_NUM + '(?:\\s+(\\S+))?$')
+function exRef(text) {
+  const t = String(text ?? '').replace(/≤/g, '<=').replace(/≥/g, '>=').replace(/\s+/g, ' ').trim()
+  if (!t) return null
+  const out = { ref_low: null, ref_high: null, ref_text: t.slice(0, 120), unit: null }
+  let m = t.match(_EX_RANGE_RE)
+  if (m) {
+    out.ref_low = exNum(m[1]).value; out.ref_high = exNum(m[2]).value; out.unit = exUnit(m[3])
+    if (out.ref_low > out.ref_high) { out.ref_low = null; out.ref_high = null }
+    return out
+  }
+  m = t.match(_EX_BOUND_RE)
+  if (m) {
+    const v = exNum(m[2]).value
+    if (m[1].startsWith('<')) out.ref_high = v; else out.ref_low = v
+    out.unit = exUnit(m[3])
+  }
+  return out
+}
+
+// "57 u/L em 08/fev/24" -> { value: 57, unit: 'U/L', date: '2024-02-08' }; senão null.
+function exPrev(text) {
+  const m = paNorm(text).match(/^(\S+)(?:\s+(\S+))?\s+em\s+(\d{1,2})\/([a-z]{3})\/(\d{2}|\d{4})$/)
+  if (!m || !EX_MONTHS[m[4]]) return null
+  const n = exNum(m[1])
+  if (!n || n.qualifier) return null
+  const y = m[5].length === 2 ? 2000 + Number(m[5]) : Number(m[5])
+  const mo = EX_MONTHS[m[4]], d = Number(m[3])
+  const dt = new Date(Date.UTC(y, mo - 1, d))
+  if (dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null
+  return { value: n.value, unit: exUnit(m[2]), date: dt.toISOString().slice(0, 10) }
+}
+
+// Junta itens da linha como paRows (espaço só onde há folga real entre eles).
+function _exJoin(items) {
+  return items.reduce((acc, it, k) => {
+    const s = String(it.str).trim()
+    if (!s) return acc
+    if (!acc) return s
+    const prev = items[k - 1]
+    return acc + (it.x - (prev.x + (prev.w || 0)) > 1.5 ? ' ' : '') + s
+  }, '').replace(/\s+/g, ' ').trim()
+}
+
+// Linha "Rótulo : valor   referência": divide no 1º ":" e, pela posição x, entre valor e referência.
+function exSplitRow(row, refX) {
+  const k = row.items.findIndex(i => String(i.str).includes(':'))
+  if (k < 0) return null
+  const it = row.items[k], s = String(it.str), c = s.indexOf(':')
+  const label = (_exJoin(row.items.slice(0, k)) + ' ' + s.slice(0, c)).replace(/\s+/g, ' ').trim()
+  const colonX = it.x + (it.w || 0) * c / Math.max(1, s.length)
+  const rest = row.items.slice(k + 1)
+  const head = s.slice(c + 1).trim()
+  const valItems = rest.filter(i => i.x < refX)
+  const value = [head, _exJoin(valItems)].filter(Boolean).join(' ').trim()
+  const ref = _exJoin(rest.filter(i => i.x >= refX))
+  return { label, colonX, value, ref }
+}
+
+function exIsNucleo(pages) {
+  const all = pages.map(p => paNorm(paPageText(p))).join('\n')
+  // Marca no rodapé; se o rodapé vier como imagem, vale o conjunto cabeçalho + coleta + referência.
+  const base = /valor(es)? referencia/.test(all) && /coleta: ?\d{2}\/\d{2}\/\d{4}/.test(all)
+  return base && (/nucleo de analises clinicas/.test(all) || (/\bprotocolo:/.test(all) && /\bcadastro\b/.test(all)))
+}
+
+const _exIsUpper = s => {
+  const letters = String(s).replace(/[^A-Za-zÀ-ÿ]/g, '')
+  return letters.length >= 4 && s === s.toUpperCase()
+}
+
+// Entrada: páginas de _paExtractTextPages. Saída para a revisão:
+// { layout, lab, collectedAt ('AAAA-MM-DDTHH:MM:00-03:00' | null), measurements, unknown, warnings }
+function exParseNucleo(pages) {
+  const warnings = [], unknown = [], coletas = []
+  if (!exIsNucleo(pages)) {
+    return { layout: 'desconhecido', lab: null, collectedAt: null, measurements: [], unknown,
+             warnings: ['Laudo não reconhecido (só o layout do laboratório Núcleo é lido): preencha à mão.'] }
+  }
+  const found = new Map()   // chave -> medida
+  // secHits: resultados já lidos na seção; inBox: dentro de caixa de referência/nota (ignorada).
+  let sec = null, last = [], pendingConclusao = false, secHits = 0, inBox = false
+
+  const add = (cat, m) => {
+    secHits++
+    const prev = found.get(cat.key)
+    if (!prev) { found.set(cat.key, m); last.push(m); return }
+    const same = prev.value === m.value && prev.qual_value === m.qual_value && prev.qualifier === m.qualifier
+    if (!same) warnings.push(`${cat.label} aparece duas vezes com resultados diferentes: ficou o primeiro.`)
+    for (const f of ['ref_low', 'ref_high', 'ref_text', 'prev_value', 'prev_date']) if (prev[f] == null) prev[f] = m[f]
+    last.push(prev)
+  }
+  // selected = estado inicial da caixa na revisão (sorologias e espermograma desmarcados).
+  const base = cat => ({ grp: cat.grp, key: cat.key, label: cat.label, unit: cat.unit, tipo: cat.tipo,
+    position: cat.position, selected: !EX_GROUPS_OFF.includes(cat.grp), unit_raw: null, value: null, qualifier: null, value_text: null, qual_value: null,
+    ref_low: null, ref_high: null, ref_text: null, prev_value: null, prev_date: null })
+
+  for (const page of pages) {
+    const rows = paRows(page.items)
+    const norm = rows.map(r => paNorm(r.text))
+    // Cabeçalho: tudo até a linha do "Documento"/"CPF" (inclusive) é pulado sem ler.
+    const h = norm.findIndex(t => /^documento\b|\bcpf\b/.test(t))
+    const refItem = page.items.find(i => /^valor(es)? referencia/.test(paNorm(i.str)))
+    const refX = refItem ? refItem.x - 20 : 330
+    for (let i = h + 1; i < rows.length; i++) {
+      const t = norm[i], row = rows[i]
+      if (EX_FOOTER_RE.test(t)) break                 // assinaturas e rodapé: fim da página
+      if (EX_HEADER_RE.test(t)) continue             // cabeçalho fora do lugar: nunca lido
+      const mc = t.match(/^coleta: ?(\d{2})\/(\d{2})\/(\d{4})(?: (\d{2}):(\d{2}))?/)
+      if (mc) { coletas.push(`${mc[3]}-${mc[2]}-${mc[1]}T${mc[4] || '00'}:${mc[5] || '00'}`); continue }
+      if (/^(liberacao|este laudo|assinado)/.test(t)) continue
+      if (!t.includes(':')) {
+        const s = EX_SECTIONS.find(([, re]) => re.test(t))
+        if (s) { sec = s[0]; last = []; pendingConclusao = false; secHits = 0; inBox = false; continue }
+        if (_exIsUpper(row.text) && /^(soro|sangue|plasma|esperma|urina|fezes)\b/.test(norm[i + 1] || '')) {
+          sec = null; last = []; secHits = 0; inBox = false
+          warnings.push(`Exame não reconhecido: "${row.text.slice(0, 80)}" (não lido).`)
+          continue
+        }
+      }
+      // Caixas depois dos resultados (valores de referência por idade/sexo, notas, tabela da eTFG,
+      // interpretação): repetem rótulos do exame ("ALBUMINA: DE 55,1 A 65,7%") e não são resultado.
+      // O título da coluna "Valores Referenciais" vem ANTES dos resultados, por isso o secHits.
+      if (sec && secHits > 0 && EX_BOX_RE.test(t)) { inBox = true; pendingConclusao = false; continue }
+      if (inBox) continue
+      if (!t.includes(':')) {
+        if (sec === 'esperm' && t === 'conclusao') { pendingConclusao = true; continue }
+        if (pendingConclusao) {
+          pendingConclusao = false
+          const cat = EX_SRC.get('esperm:conclusao')[0].cat
+          add(cat, { ...base(cat), qual_value: row.text.replace(/\.$/, '').trim().slice(0, 80) })
+        }
+        continue
+      }
+      pendingConclusao = false
+      if (!sec) continue
+      const sp = exSplitRow(row, refX)
+      if (!sp) continue
+      const lk = exLineKey(sp.label)
+      if (lk === 'resultados anteriores') {
+        const p = exPrev([sp.value, sp.ref].filter(Boolean).join(' '))
+        const target = last.find(m => m.tipo === 'n' && (!p?.unit || p.unit === m.unit)) || null
+        if (p && target) { target.prev_value = p.value; target.prev_date = p.date }
+        else warnings.push(`Resultado anterior não lido ("${sp.value.slice(0, 40)}").`)
+        continue
+      }
+      const targets = EX_SRC.get(sec + ':' + lk)
+      if (!targets) {
+        // Só avisa de linha com cara de resultado: ":" na coluna dos resultados, rótulo sem
+        // pontilhado e fora das notas em maiúsculas (tabelas de referência e observações).
+        const looksResult = sp.value && sp.colonX >= 120 && sp.colonX <= 230 &&
+          !/\.{2,}/.test(sp.label) && !_exIsUpper(sp.label) && !/^(nota|valores|referencia)\b/.test(lk)
+        if (!EX_IGNORE.has(lk) && looksResult) {
+          unknown.push(sp.label.slice(0, 60))
+          warnings.push(`Linha não reconhecida: "${sp.label.slice(0, 60)}" (não lida).`)
+        }
+        continue
+      }
+      last = []
+      if (!sp.value) continue
+      const cols = exValues(sp.value)
+      const ref = exRef(sp.ref)
+      targets.forEach(({ cat, col }) => {
+        const m = base(cat)
+        if (cat.tipo === 'q') {
+          if (cols) { warnings.push(`${cat.label}: esperado texto, veio número ("${sp.value.slice(0, 40)}").`); return }
+          m.qual_value = sp.value.slice(0, 80)
+          m.ref_text = ref?.ref_text ?? null
+          return add(cat, m)
+        }
+        const c = cols?.[col]
+        if (!c) { warnings.push(`${cat.label}: valor não lido ("${sp.value.slice(0, 40)}").`); return }
+        m.value = c.value; m.qualifier = c.qualifier; m.value_text = c.text.slice(0, 40)
+        if (c.unitRaw && c.unit !== cat.unit) {
+          m.unit_raw = c.unitRaw.slice(0, 20)
+          m.selected = false                       // unidade diferente: só salva se o personal marcar
+          warnings.push(`${cat.label}: unidade "${m.unit_raw}" diferente de ${cat.unit}; veio desmarcado.`)
+        }
+        // A referência vale para a coluna com a mesma unidade (ou a única/última coluna).
+        const refFits = ref && (targets.length === 1 || (ref.unit ? ref.unit === cat.unit : col === cols.length - 1))
+        if (refFits) { m.ref_low = ref.ref_low; m.ref_high = ref.ref_high; m.ref_text = ref.ref_text }
+        add(cat, m)
+      })
+    }
+  }
+
+  const dates = [...new Set(coletas.map(c => c.slice(0, 10)))].sort()
+  if (!coletas.length) warnings.push('Data da coleta não encontrada: preencha à mão.')
+  else if (dates.length > 1) warnings.push(`Datas de coleta diferentes no laudo (${dates.join(', ')}): ficou a primeira.`)
+  const collectedAt = coletas.length ? [...coletas].sort()[0] + ':00-03:00' : null
+  const measurements = [...found.values()].sort((a, b) => a.position - b.position)
+  if (!measurements.length) warnings.push('Nenhum resultado reconhecido: preencha à mão.')
+  return { layout: 'nucleo', lab: 'Núcleo', collectedAt, measurements, unknown, warnings }
+}
+
+// O que a RPC save_assessment_data recebe, a partir das linhas MARCADAS na revisão (selected).
+// Confere o mesmo que o banco antes de enviar. Devolve { ok, rows } ou { ok: false, error }.
+function exBuildSavePayload(rows) {
+  const out = [], seen = new Set()
+  const fin = v => v == null || v === '' ? null : (typeof v === 'number' ? v : exNum(v)?.value ?? NaN)
+  for (const r of rows) {
+    if (!r.selected) continue
+    const label = String(r.label || '').trim().slice(0, 60)
+    if (!label) return { ok: false, error: 'Exame sem nome.' }
+    if (!EX_GROUPS.includes(r.grp) || !EX_UNITS.includes(r.unit)) return { ok: false, error: `Unidade ou grupo inválido em "${label}".` }
+    if (!/^[a-z][a-z0-9_]{0,39}$/.test(r.key)) return { ok: false, error: `Chave inválida em "${label}".` }
+    const value = fin(r.value)
+    if (Number.isNaN(value) || (value != null && (value < 0 || value >= 1e8))) return { ok: false, error: `Valor inválido em "${label}".` }
+    const qual = r.qual_value == null ? '' : String(r.qual_value).trim().slice(0, 80)
+    if (value == null && !qual) continue                         // marcado mas vazio: não salva
+    const qualifier = value != null && _EX_QUAL.has(r.qualifier) ? r.qualifier : null
+    if (r.qualifier && !qualifier) return { ok: false, error: `"${label}": sinal (${r.qualifier}) sem valor numérico.` }
+    const lo = fin(r.ref_low), hi = fin(r.ref_high), pv = fin(r.prev_value)
+    if ([lo, hi, pv].some(Number.isNaN)) return { ok: false, error: `Referência ou resultado anterior inválido em "${label}".` }
+    if (lo != null && hi != null && lo > hi) return { ok: false, error: `Faixa de referência invertida em "${label}".` }
+    if (pv != null && (pv < 0 || pv >= 1e8)) return { ok: false, error: `Resultado anterior inválido em "${label}".` }
+    const pd = r.prev_date && /^\d{4}-\d{2}-\d{2}$/.test(r.prev_date) ? r.prev_date : null
+    const id = r.grp + '/' + r.key
+    if (seen.has(id)) return { ok: false, error: `"${label}" aparece duas vezes.` }
+    seen.add(id)
+    const cat = EX_CATALOG.find(c => c.grp === r.grp && c.key === r.key)
+    out.push({
+      grp: r.grp, key: r.key, label, unit: r.unit,
+      value: value == null ? null : Math.round(value * 10000) / 10000,
+      qualifier, value_text: r.value_text ? String(r.value_text).slice(0, 40) : null,
+      qual_value: qual || null,
+      ref_low: lo, ref_high: hi, ref_text: r.ref_text ? String(r.ref_text).slice(0, 120) : null,
+      prev_value: pd ? pv : null, prev_date: pv != null ? pd : null,
+      position: cat ? cat.position : Math.min(299, 200 + out.length),
+    })
+  }
+  if (out.length > 200) return { ok: false, error: 'Mais de 200 exames.' }
+  return { ok: true, rows: out }
+}
+// @@ex-parse-pure:end
+
+// @@ex-review-pure:begin
+// Revisão dos exames (E2): linhas da tela, faixa de referência, seleção e o que vai para a RPC.
+// Sem DOM e sem rede: testado em Node com valores inventados.
+
+// Número para mostrar quando não há o texto original: "125.000", "0,246".
+function exFmtNum(v) {
+  if (v == null || !Number.isFinite(Number(v))) return ''
+  return Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 })
+}
+
+// Fora da faixa? 'baixo' | 'alto' | null. Com sinal só conta o lado garantido:
+// ">90" com mínimo 90 está dentro; "<5" com mínimo 10 está abaixo.
+function exRangeState(m) {
+  if (m == null || m.value == null || !Number.isFinite(Number(m.value))) return null
+  const v = Number(m.value), q = m.qualifier || ''
+  const lo = m.ref_low == null ? null : Number(m.ref_low)
+  const hi = m.ref_high == null ? null : Number(m.ref_high)
+  if (lo != null && (q === '<' ? v <= lo : q === '<=' ? v < lo : !q.startsWith('>') && v < lo)) return 'baixo'
+  if (hi != null && (q === '>' ? v >= hi : q === '>=' ? v > hi : !q.startsWith('<') && v > hi)) return 'alto'
+  return null
+}
+
+// Texto da faixa para a tela: "0,6–1,2", "≤ 2,5", "≥ 25" ou o texto do laudo.
+function exRefLabel(m) {
+  const lo = m.ref_low, hi = m.ref_high
+  if (lo != null && hi != null) return `${exFmtNum(lo)}–${exFmtNum(hi)}`
+  if (hi != null) return `≤ ${exFmtNum(hi)}`
+  if (lo != null) return `≥ ${exFmtNum(lo)}`
+  return m.ref_text || ''
+}
+
+// Linhas da revisão: o catálogo inteiro, na ordem dele, com o que veio do PDF (fromPdf) ou do
+// banco (salvo). found = veio valor; text = o que aparece no campo (texto original quando há).
+// Seleção inicial: do PDF, a que o parser sugeriu; do banco, tudo o que está salvo.
+function exReviewRows(found, { fromPdf = true } = {}) {
+  const byKey = new Map((found || []).map(m => [m.grp + '/' + m.key, m]))
+  return EX_CATALOG.map(cat => {
+    const m = byKey.get(cat.grp + '/' + cat.key)
+    const hasVal = !!m && (m.value != null || (m.qual_value != null && String(m.qual_value).trim() !== ''))
+    const text = !hasVal ? ''
+      : cat.tipo === 'q' ? String(m.qual_value)
+      : (m.value_text || exFmtNum(m.value))
+    return {
+      grp: cat.grp, key: cat.key, label: cat.label, unit: cat.unit, tipo: cat.tipo, position: cat.position,
+      found: hasVal, text,
+      selected: hasVal && (fromPdf ? m.selected !== false : true),
+      unit_raw: m?.unit_raw || null,
+      ref_low: m?.ref_low ?? null, ref_high: m?.ref_high ?? null, ref_text: m?.ref_text ?? null,
+      prev_value: m?.prev_value ?? null, prev_date: m?.prev_date ?? null,
+    }
+  })
+}
+
+// Valor digitado -> { value, qualifier } (numérico) ou null se inválido. '' -> vazio.
+function exParseTyped(text) {
+  const t = String(text ?? '').trim()
+  if (!t) return { empty: true }
+  const n = exNum(t)
+  return n ? { value: n.value, qualifier: n.qualifier, value_text: t.slice(0, 40) } : null
+}
+
+// Linhas marcadas da revisão -> payload da RPC (via exBuildSavePayload). { ok, rows } | { ok:false, error }.
+function exReviewToPayload(rows) {
+  const out = []
+  for (const r of rows) {
+    if (!r.selected) continue
+    const t = String(r.text ?? '').trim()
+    if (!t) continue                                            // marcado e vazio: não salva
+    if (r.tipo === 'q') { out.push({ ...r, value: null, qualifier: null, value_text: null, qual_value: t.slice(0, 80) }); continue }
+    const p = exParseTyped(t)
+    if (!p) return { ok: false, error: `Valor inválido em "${r.label}": use número (ex.: 1,25 ou >90).` }
+    out.push({ ...r, value: p.value, qualifier: p.qualifier, value_text: p.value_text, qual_value: null })
+  }
+  return exBuildSavePayload(out)
+}
+
+// Contagem para o rodapé da revisão e para o aviso antes de salvar.
+function exReviewStats(rows) {
+  const sel = rows.filter(r => r.selected && String(r.text ?? '').trim())
+  const out = sel.filter(r => {
+    if (r.tipo !== 'n') return false
+    const p = exParseTyped(r.text)
+    return p && !p.empty && exRangeState({ ...r, value: p.value, qualifier: p.qualifier })
+  })
+  return { found: rows.filter(r => r.found).length, selected: sel.length, outOfRange: out.length }
+}
+
+// Coleta: timestamptz <-> campo datetime-local, sempre no horário de Brasília (-03:00, sem verão).
+function exTsToInput(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ''
+  return new Date(d.getTime() - 3 * 3600 * 1000).toISOString().slice(0, 16)
+}
+function exInputToTs(v) {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(v || '')) ? `${v}:00-03:00` : null
+}
+// @@ex-review-pure:end
+
 // ─────────────────────────────────────────────
 // AVALIAÇÕES FÍSICAS — fase 2: ler valores do PDF por regras (sem IA)
 // ─────────────────────────────────────────────
@@ -12110,15 +12714,25 @@ async function readAssessmentPdf(id) {
     if (blob.size > PA_MAX_BYTES) { toast('O arquivo passa de 10 MB.', 'error'); return }
     const bytes = new Uint8Array(await blob.arrayBuffer())
     if (String.fromCharCode(...bytes.slice(0, 5)) !== '%PDF-') { toast('O arquivo não é um PDF válido.', 'error'); return }
+    const exam = a.kind === 'exame_sangue'
     let parsed
     try {
       const { numPages, pages } = await _paExtractTextPages(bytes)
-      parsed = paParseInfit(pages)
+      if (exam) parsed = exParseNucleo(pages)
+      else {
+        parsed = paParseInfit(pages)
+        if (exIsNucleo(pages)) parsed.warnings.unshift('Este PDF parece um laudo de exame de sangue: envie de novo escolhendo o tipo "Exame de sangue".')
+      }
       if (numPages > PA_PARSE_MAX_PAGES) parsed.warnings.push(`Só as ${PA_PARSE_MAX_PAGES} primeiras páginas foram lidas.`)
     } catch (err) {
       console.warn('[pdf] leitura falhou', err?.name || err)
-      parsed = { layout: 'desconhecido', measurements: [], report: null,
+      parsed = { layout: 'desconhecido', measurements: [], report: null, collectedAt: null, lab: null,
                  warnings: ['Não foi possível ler o texto deste PDF: preencha os valores à mão.'] }
+    }
+    if (exam) {
+      _exOpenReview(a, { rows: exReviewRows(parsed.measurements), warnings: parsed.warnings, fromPdf: true,
+        collectedAt: parsed.collectedAt || a.collected_at || null, lab: parsed.lab || a.lab || null })
+      return
     }
     _paOpenReview(a, { rows: _paReviewRows(parsed.measurements), report: _paReportText(parsed.report),
       layout: parsed.layout, warnings: parsed.warnings, fromPdf: true })
@@ -12134,6 +12748,19 @@ async function openAssessmentData(id) {
   if (!a) { toast('Avaliação não encontrada. Recarregue a ficha.', 'error'); return }
   _paBusy = true
   try {
+    if (a.kind === 'exame_sangue') {
+      const { data, error } = await sb.from('assessment_measurements')
+        .select('grp, key, label, value, unit, position, value_text, qualifier, qual_value, ref_low, ref_high, ref_text, prev_value, prev_date')
+        .eq('assessment_id', id).order('position')
+      if (error) { toast('Erro ao carregar os exames: ' + _paErrMsg(error), 'error'); return }
+      const num = v => v == null ? null : Number(v)
+      const saved = (data || []).map(m => ({ ...m, value: num(m.value), ref_low: num(m.ref_low),
+        ref_high: num(m.ref_high), prev_value: num(m.prev_value) }))
+      _exOpenReview(a, { rows: exReviewRows(saved, { fromPdf: false }), fromPdf: false,
+        warnings: saved.length ? [] : ['Nenhum exame salvo ainda: use "Ler PDF" ou marque "Mostrar não encontrados" para preencher à mão.'],
+        collectedAt: a.collected_at || null, lab: a.lab || null })
+      return
+    }
     const [mRes, rRes] = await Promise.all([
       sb.from('assessment_measurements').select('grp, key, label, value, unit, position')
         .eq('assessment_id', id).order('position'),
@@ -12280,6 +12907,213 @@ async function savePaReview() {
     toast(`Dados salvos: ${data} medida${data === 1 ? '' : 's'}${report ? ' e o relatório' : ''}.`, 'success')
     const studentId = st.studentId
     closePaReview()
+    renderSheetAssessments(studentId)
+  } finally {
+    _paBusy = false
+    btn.disabled = false
+  }
+}
+
+// ─────────────────────────────────────────────
+// EXAMES DE SANGUE — revisão com seleção (E2)
+// ─────────────────────────────────────────────
+// "Ler PDF" ou "Dados" de um PDF do tipo exame_sangue abrem esta revisão (a da avaliação física
+// fica igual). O catálogo inteiro está por trás; por padrão só aparecem os exames encontrados.
+// Só os MARCADOS vão para a RPC save_assessment_data, que troca tudo do PDF numa transação;
+// coleta e laboratório vão por update (o app só pode alterar title, assessed_at, collected_at e lab).
+let _exReview = null   // { assessmentId, studentId, hadSaved, fromPdf, rows, warnings, collectedAt, lab, showAll }
+
+function _exOpenReview(a, st) {
+  _exReview = { assessmentId: a.id, studentId: a.student_id, hadSaved: !!a._savedCount, showAll: false, ...st }
+  document.getElementById('ex-review-title').textContent = st.fromPdf ? 'Revisar exames lidos do PDF' : 'Exames salvos'
+  document.getElementById('ex-review-sub').textContent = `${a.title} · ${fmtDate(a.assessed_at)}`
+  document.getElementById('ex-review-collected').value = exTsToInput(st.collectedAt)
+  document.getElementById('ex-review-lab').value = st.lab || ''
+  document.getElementById('ex-review-showall').checked = false
+  document.getElementById('ex-review-btn').disabled = false
+  _renderExReview()
+  document.getElementById('ex-review-modal').style.display = 'flex'
+}
+
+function closeExReview() {
+  document.getElementById('ex-review-modal').style.display = 'none'
+  document.getElementById('ex-review-body').innerHTML = ''
+  _exReview = null
+}
+
+// Linhas na tela: encontradas, marcadas ou com algo digitado; com "Mostrar não encontrados", todas.
+function _exVisible(st) {
+  return st.rows.map((r, i) => ({ r, i }))
+    .filter(x => st.showAll || x.r.found || x.r.selected || String(x.r.text).trim())
+}
+
+function _renderExReview() {
+  const st = _exReview
+  if (!st) return
+  const notes = [...(st.warnings || [])]
+  if (st.fromPdf && st.hadSaved) notes.unshift('Este PDF já tem exames salvos: salvar substitui todos eles pelos marcados agora.')
+  const warn = notes.length ? `
+    <div style="border:1px solid var(--warning-a40);background:var(--warning-a10);border-radius:var(--radius);padding:.6rem .75rem;margin-bottom:.75rem;font-size:.8rem">
+      ${notes.map(escHtml).join('<br>')}
+    </div>` : ''
+  const vis = _exVisible(st)
+  const groups = EX_GROUPS.map(g => {
+    const rows = vis.filter(x => x.r.grp === g)
+    if (!rows.length) return ''
+    const sens = EX_GROUPS_OFF.includes(g) ? ' <span class="ex-rv-muted">· dado sensível</span>' : ''
+    return `
+      <div class="ex-rv-group">
+        <div class="ex-rv-group-head">
+          <input type="checkbox" id="ex-rv-g-${g}" onchange="_exToggleGroup('${g}', this.checked)">
+          <label class="section-label" for="ex-rv-g-${g}">${escHtml(EX_GROUP_TITLES[g])} <span class="ex-rv-muted" id="ex-rv-gc-${g}"></span>${sens}</label>
+        </div>
+        ${rows.map(({ r, i }) => _renderExReviewRow(r, i)).join('')}
+      </div>`
+  }).join('')
+  document.getElementById('ex-review-body').innerHTML = warn + (groups ||
+    '<div class="tpl-empty-folder">Nenhum exame encontrado no PDF. Marque "Mostrar não encontrados" para preencher à mão.</div>')
+  _exSyncGroups()
+  _exRenderStats()
+}
+
+function _exRowInfo(r) {
+  const bits = []
+  const p = r.tipo === 'n' ? exParseTyped(r.text) : null
+  if (r.tipo === 'n' && p === null) bits.push('<span class="ex-rv-flag">número inválido (ex.: 1,25 ou >90)</span>')
+  const state = p && !p.empty ? exRangeState({ ...r, value: p.value, qualifier: p.qualifier }) : null
+  if (state) bits.push(`<span class="ex-rv-flag">${state === 'alto' ? 'acima' : 'abaixo'} da referência</span>`)
+  const ref = exRefLabel(r)
+  if (ref) bits.push(`<span>ref.: ${escHtml(ref)}</span>`)
+  if (r.prev_value != null) {
+    bits.push(`<span>antes: ${escHtml(exFmtNum(r.prev_value))}${r.prev_date ? ' em ' + escHtml(fmtDate(r.prev_date)) : ''}</span>`)
+  }
+  if (r.unit_raw) bits.push(`<span class="ex-rv-flag">unidade no laudo: ${escHtml(r.unit_raw)} (confira)</span>`)
+  return bits.join('')
+}
+
+function _renderExReviewRow(r, i) {
+  const bad = r.tipo === 'n' && exParseTyped(r.text) === null
+  return `
+    <div class="ex-rv-row${r.selected ? '' : ' off'}${bad ? ' ex-rv-bad' : ''}" id="ex-rv-row-${i}">
+      <input type="checkbox" id="ex-rv-c-${i}" ${r.selected ? 'checked' : ''} onchange="_exToggle(${i}, this.checked)">
+      <label class="ex-rv-label" for="ex-rv-c-${i}">${escHtml(r.label)}</label>
+      <input class="form-control ex-rv-value" type="text" maxlength="${r.tipo === 'n' ? 20 : 80}" value="${escHtml(r.text)}"
+             placeholder="${r.found ? '' : 'não encontrado'}" aria-label="Resultado de ${escHtml(r.label)}" oninput="_exSet(${i}, this.value)">
+      <span class="ex-rv-unit">${r.tipo === 'q' ? 'texto' : escHtml(r.unit)}</span>
+      <div class="ex-rv-info" id="ex-rv-info-${i}">${_exRowInfo(r)}</div>
+    </div>`
+}
+
+// Caixa do grupo: marcada se todos os visíveis estão marcados; "parcial" se só alguns.
+function _exSyncGroups() {
+  const st = _exReview
+  if (!st) return
+  const vis = _exVisible(st)
+  for (const g of EX_GROUPS) {
+    const box = document.getElementById(`ex-rv-g-${g}`)
+    if (!box) continue
+    const rows = vis.filter(x => x.r.grp === g)
+    const on = rows.filter(x => x.r.selected).length
+    box.checked = on > 0 && on === rows.length
+    box.indeterminate = on > 0 && on < rows.length
+    box.setAttribute('aria-label', `Marcar todos de ${EX_GROUP_TITLES[g]}`)
+    const c = document.getElementById(`ex-rv-gc-${g}`)
+    if (c) c.textContent = `· ${on}/${rows.length}`
+  }
+}
+
+function _exRenderStats() {
+  const st = _exReview
+  if (!st) return
+  const s = exReviewStats(st.rows)
+  document.getElementById('ex-review-stats').textContent =
+    `${s.selected} marcado${s.selected === 1 ? '' : 's'} para salvar · ${s.found} encontrado${s.found === 1 ? '' : 's'} no PDF` +
+    (s.outOfRange ? ` · ${s.outOfRange} fora da referência` : '')
+  document.getElementById('ex-review-btn').disabled = s.selected === 0
+}
+
+function _exUpdateRow(i) {
+  const r = _exReview?.rows[i]
+  const row = document.getElementById(`ex-rv-row-${i}`)
+  if (!r || !row) return
+  row.classList.toggle('off', !r.selected)
+  row.classList.toggle('ex-rv-bad', r.tipo === 'n' && exParseTyped(r.text) === null)
+  const box = document.getElementById(`ex-rv-c-${i}`)
+  if (box) box.checked = r.selected
+  const info = document.getElementById(`ex-rv-info-${i}`)
+  if (info) info.innerHTML = _exRowInfo(r)
+}
+
+function _exToggle(i, on) {
+  const r = _exReview?.rows[i]
+  if (!r) return
+  r.selected = !!on
+  _exUpdateRow(i); _exSyncGroups(); _exRenderStats()
+}
+
+// Digitar num exame desmarcado já o marca (o personal está preenchendo para salvar).
+function _exSet(i, val) {
+  const r = _exReview?.rows[i]
+  if (!r) return
+  r.text = String(val ?? '').slice(0, r.tipo === 'n' ? 20 : 80)
+  if (r.text.trim() && !r.selected) r.selected = true
+  _exUpdateRow(i); _exSyncGroups(); _exRenderStats()
+}
+
+function _exToggleGroup(g, on) {
+  const st = _exReview
+  if (!st || !EX_GROUPS.includes(g)) return
+  for (const { r } of _exVisible(st)) if (r.grp === g) r.selected = !!on
+  _renderExReview()
+}
+
+function _exToggleAll(on) {
+  const st = _exReview
+  if (!st) return
+  for (const { r } of _exVisible(st)) r.selected = !!on
+  _renderExReview()
+}
+
+function _exShowAll(on) {
+  if (!_exReview) return
+  _exReview.showAll = !!on
+  _renderExReview()
+}
+
+async function saveExReview() {
+  const st = _exReview
+  if (!st || _paBusy) return
+  const payload = exReviewToPayload(st.rows)
+  if (!payload.ok) { toast(payload.error, 'error'); return }
+  if (!payload.rows.length) { toast('Nada marcado para salvar.', 'error'); return }
+  const raw = document.getElementById('ex-review-collected').value
+  const collected_at = raw ? exInputToTs(raw) : null
+  if (raw && !collected_at) { toast('Data da coleta inválida.', 'error'); return }
+  if (collected_at && new Date(collected_at).getTime() > Date.now()) { toast('A coleta não pode ser no futuro.', 'error'); return }
+  const lab = document.getElementById('ex-review-lab').value.trim().slice(0, 60) || null
+  if (st.hadSaved && !confirm('Os exames já salvos deste PDF serão substituídos pelos marcados agora. Salvar?')) return
+
+  const btn = document.getElementById('ex-review-btn')
+  _paBusy = true; btn.disabled = true
+  try {
+    const { data, error } = await sb.rpc('save_assessment_data',
+      { p_assessment_id: st.assessmentId, p_measurements: payload.rows, p_report: null,
+        p_source: st.fromPdf ? 'pdf_regras' : 'manual' })
+    if (error) {
+      const msg = error.code === 'P0002' ? 'PDF não encontrado ou sem vínculo ativo com o aluno.'
+        : error.code === '22023' ? 'Algum exame não combina com o tipo deste PDF.'
+        : error.code === '23514' ? 'Algum valor ou unidade foi recusado pelo banco.'
+        : error.code === '23505' ? 'Há um exame repetido.'
+        : _paErrMsg(error)
+      toast('Erro ao salvar os exames: ' + msg, 'error')
+      return
+    }
+    const { error: upErr } = await sb.from('physical_assessments')
+      .update({ collected_at, lab }).eq('id', st.assessmentId).eq('personal_id', me.id)
+    if (upErr) toast(`Exames salvos (${data}), mas a coleta e o laboratório não: ${_paErrMsg(upErr)}`, 'error')
+    else toast(`Exames salvos: ${data}.`, 'success')
+    const studentId = st.studentId
+    closeExReview()
     renderSheetAssessments(studentId)
   } finally {
     _paBusy = false
