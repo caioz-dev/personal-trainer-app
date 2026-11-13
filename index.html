@@ -2594,6 +2594,16 @@
     .evo-legend { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: .72rem; color: var(--text-muted); }
     .evo-band-swatch { display: inline-block; width: .9rem; height: .6rem; vertical-align: middle; background: rgba(25,158,112,0.25); border-radius: 2px; }
     @media (max-width: 720px) { .evo-layout { grid-template-columns: 1fr; } }
+    /* Avaliações e exames do aluno (só leitura). */
+    .my-pa-badge { display: inline-block; font-size: .68rem; font-weight: 700; padding: .05rem .5rem; border-radius: var(--radius-pill); border: 1px solid var(--border-subtle); color: var(--text-muted); vertical-align: middle; }
+    .my-pa-badge.exam { color: var(--danger); border-color: var(--danger-a08); }
+    .my-pa-data { margin-top: 1.25rem; padding: 1rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+    .my-pa-group { font-weight: 700; font-size: .85rem; margin: 1rem 0 .35rem; color: var(--text-primary); }
+    .my-pa-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .1rem .75rem; padding: .35rem 0; border-bottom: 1px solid var(--border-subtle); font-size: .85rem; }
+    .my-pa-val { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+    .my-pa-ref { grid-column: 1 / -1; font-size: .72rem; color: var(--text-muted); }
+    .my-pa-out { color: var(--warning); font-weight: 700; }
+    .my-pa-report { white-space: pre-wrap; font-size: .85rem; line-height: 1.5; }
     .tpl-subfolder { margin: 0; padding: .625rem .75rem; border: 1px solid var(--border-subtle); border-left: 3px solid var(--accent-a28); border-radius: var(--radius); }
     .tpl-subfolder .tpl-folder-title { font-weight: 650; font-size: .9rem; }
     .tpl-folder-actions { flex-wrap: wrap; justify-content: flex-end; }
@@ -2920,6 +2930,11 @@
         <!-- VIEW: Dashboard de Progresso -->
         <div id="view-progress" class="view" style="display:none">
           <div id="progress-body"></div>
+        </div>
+
+        <!-- VIEW: Avaliações e exames (aluno, só leitura) -->
+        <div id="view-assessments" class="view" style="display:none">
+          <div id="assessments-body"></div>
         </div>
 
         <!-- VIEW: Meu Perfil (aluno) -->
@@ -3727,6 +3742,7 @@ function resetAppState() {
   _tplMoveKind                = 'template'
   _tplFolderParentId          = null
   _paList                     = []
+  _myPaPersonals              = {}
   _paCtx                      = null
   _paBusy                     = false
   _paReview                   = null
@@ -4144,7 +4160,7 @@ function toggleTheme() {
   // No Comparar, o Volume também usa a paleta.
   if (document.getElementById('progress-chart')) { renderProgressExerciseList(); renderProgressVolumeChart(); updateProgressChart() }
   // Evolução aberta na ficha: redesenha com as cores do novo tema (não relê o banco).
-  if (_evo && document.getElementById('sheet-evolution')?.dataset.open === '1') renderSheetEvolution()
+  if (_evo && _evoEl()?.dataset.open === '1') renderSheetEvolution()
 }
 
 function xlErr(m) {
@@ -4168,7 +4184,7 @@ function buildSidebar() {
 
   const items = isP
     ? [['students','users','Alunos'],['my-workout','dumbbell','Meu Treino'],['templates','clipboard-list','Modelos de Treino'],['progress','trending-up','Progresso dos Alunos'],['renewals','refresh-cw','Renovação de Treinos'],['personal-profile','user-round','Meu Perfil']]
-    : [['history','chart-column','Meu Histórico'],['profile','user-round','Meu Perfil'],['calculator','calculator','Calculadora'],['progress','trending-up','Progresso']]
+    : [['history','chart-column','Meu Histórico'],['assessments','heart-pulse','Avaliações e exames'],['profile','user-round','Meu Perfil'],['calculator','calculator','Calculadora'],['progress','trending-up','Progresso']]
 
   document.getElementById('nav-list').innerHTML = items.map(([id, iconName, label]) => `
     <li class="nav-item">
@@ -4263,12 +4279,14 @@ const VIEW_TITLES = {
   calculator: 'Calculadora', history: 'Meu Histórico',
   progress: 'Dashboard de Progresso', profile: 'Meu Perfil', 'personal-profile': 'Meu Perfil',
   'student-sheet': 'Ficha do Aluno', 'routine-detail': 'Rotina', renewals: 'Renovação de Treinos',
-  templates: 'Modelos de Treino', 'template-editor': 'Modelo de Treino'
+  templates: 'Modelos de Treino', 'template-editor': 'Modelo de Treino',
+  assessments: 'Avaliações e exames'
 }
 
 async function navigateTo(view, opts = {}) {
   if (view === 'workout' && profile?.role !== 'personal') return
   if ((view === 'templates' || view === 'template-editor') && profile?.role !== 'personal') return
+  if (view === 'assessments' && profile?.role !== 'student') return
 
   // Saindo do editor de modelo (inclusive para abri-lo de novo): as linhas de exercício
   // voltam a ser as do formulário de treino. Antes de qualquer setup de outra tela.
@@ -4324,6 +4342,7 @@ async function navigateTo(view, opts = {}) {
     else if (view === 'calculator')     await setupCalc()
     else if (view === 'history')        await renderHistory(profile.id, gen)
     else if (view === 'progress')       await renderProgress()
+    else if (view === 'assessments')    await renderMyAssessments(gen)
     else if (view === 'renewals')       await renderRenewals(gen)
     else if (view === 'templates')      await renderTemplates(gen)
     else if (view === 'template-editor') await setupTemplateEditor(opts, gen)
@@ -11816,7 +11835,7 @@ async function savePhysicalAssessment(e) {
       btn.textContent = 'Enviando…'
       const path = `${me.id}/${studentId}/${crypto.randomUUID()}.pdf`
       const { error: upErr } = await sb.storage.from(PA_BUCKET)
-        .upload(path, file, { contentType: 'application/pdf', upsert: false })
+        .upload(path, file, { contentType: 'application/pdf', upsert: false, cacheControl: '0' })
       if (upErr) { toast('Erro ao enviar o PDF: ' + _paErrMsg(upErr), 'error'); return }
       const { error: insErr } = await sb.from('physical_assessments')
         .insert({ student_id: studentId, personal_id: me.id, assessed_at: date, title, file_path: path, kind })
@@ -13424,11 +13443,13 @@ async function saveExReview() {
 }
 
 // ─────────────────────────────────────────────
-// EVOLUÇÃO — exames de sangue e avaliação física (só personal, só leitura)
+// EVOLUÇÃO — exames de sangue e avaliação física (personal e aluno, só leitura)
 // ─────────────────────────────────────────────
-// Painel na ficha do aluno, abaixo de "Avaliações e exames", aberto pelo botão "Evolução".
-// Lê physical_assessments + assessment_measurements do aluno (RLS: só o personal com vínculo
-// ativo; o aluno não tem SELECT) e não grava nada. Um gráfico por exame/medida e unidade.
+// @@evo-ui:begin
+// Painel aberto pelo botão "Evolução": na ficha do aluno (personal, #sheet-evolution) ou na
+// tela "Avaliações e exames" do aluno (#my-evolution). Lê physical_assessments +
+// assessment_measurements e não grava nada. O personal filtra pelo próprio personal_id; o aluno
+// lê só o que é dele (RLS: vínculo ativo e não arquivado). Um gráfico por exame/medida e unidade.
 let _evo       = null   // { studentId, tab, series: { exame_sangue, fisica }, sel: { exame_sangue: [], fisica: [] } }
 let _evoCharts = []
 let _evoGen    = 0      // descarta respostas de leituras antigas
@@ -13438,21 +13459,31 @@ function _evoDestroyCharts() {
   _evoCharts = []
 }
 
+// Caixa da evolução na tela atual. O personal nunca tem #my-evolution e o aluno nunca tem
+// #sheet-evolution (a ficha só monta para o personal).
+function _evoEl() {
+  return document.getElementById('sheet-evolution') || document.getElementById('my-evolution')
+}
+// Personal: só as linhas dele. Aluno: a RLS já limita às dele, de vínculos ativos.
+function _evoOwn(q) {
+  return profile?.role === 'personal' ? q.eq('personal_id', me.id) : q
+}
+
 function _evoReset() {
   _evoDestroyCharts()
   _evo = null
   _evoGen++
-  const box = document.getElementById('sheet-evolution')
+  const box = _evoEl()
   if (box) { box.innerHTML = ''; box.dataset.open = '' }
 }
 
 function _evoBox(studentId) {
-  const box = document.getElementById('sheet-evolution')
+  const box = _evoEl()
   return box && box.dataset.studentId === studentId ? box : null
 }
 
 function toggleSheetEvolution() {
-  const box = document.getElementById('sheet-evolution')
+  const box = _evoEl()
   const sid = box?.dataset.studentId
   if (!box || !_isUuid(sid)) return
   if (box.dataset.open === '1') {
@@ -13469,9 +13500,9 @@ function toggleSheetEvolution() {
 async function _evoFetchMeasurements(studentId) {
   const all = []
   for (let from = 0; from < 20000; from += 1000) {
-    const { data, error } = await sb.from('assessment_measurements')
+    const { data, error } = await _evoOwn(sb.from('assessment_measurements')
       .select('assessment_id, grp, key, label, value, unit, value_text, qualifier, qual_value, ref_low, ref_high, ref_text, prev_value, prev_date')
-      .eq('student_id', studentId).eq('personal_id', me.id)
+      .eq('student_id', studentId))
       .order('assessment_id').order('grp').order('key')
       .range(from, from + 999)
     if (error) return { error }
@@ -13488,8 +13519,8 @@ async function loadSheetEvolution(studentId) {
   _evoDestroyCharts()
   box.innerHTML = `<div class="evo-panel"><div class="section-label">Evolução</div><div class="loading"><div class="spinner"></div>Carregando…</div></div>`
   const [aRes, mRes] = await Promise.all([
-    sb.from('physical_assessments').select('id, title, kind, assessed_at, collected_at')
-      .eq('student_id', studentId).eq('personal_id', me.id),
+    _evoOwn(sb.from('physical_assessments').select('id, title, kind, assessed_at, collected_at')
+      .eq('student_id', studentId)),
     _evoFetchMeasurements(studentId),
   ])
   const still = _evoBox(studentId)
@@ -13530,9 +13561,10 @@ function renderSheetEvolution() {
       </div>
     </div>`
   if (!series.length) {
+    const forStudent = profile?.role !== 'personal'
     box.innerHTML = `<div class="evo-panel">${head}<div class="tpl-empty-folder">${kind === 'exame_sangue'
-      ? 'Nenhum exame salvo ainda. Use "Ler PDF" num exame de sangue e salve os marcados.'
-      : 'Nenhuma medida salva ainda. Use "Ler PDF" ou "Dados" numa avaliação física.'}</div></div>`
+      ? (forStudent ? 'Nenhum exame com valores salvos ainda.' : 'Nenhum exame salvo ainda. Use "Ler PDF" num exame de sangue e salve os marcados.')
+      : (forStudent ? 'Nenhuma medida salva ainda.' : 'Nenhuma medida salva ainda. Use "Ler PDF" ou "Dados" numa avaliação física.')}</div></div>`
     return
   }
   const sel = new Set(st.sel[kind])
@@ -13652,6 +13684,199 @@ function _evoToggle(idx, on) {
   }
   st.sel[kind] = sel
   renderSheetEvolution()
+}
+// @@evo-ui:end
+
+// ─────────────────────────────────────────────
+// AVALIAÇÕES E EXAMES DO ALUNO (A2) — só leitura
+// ─────────────────────────────────────────────
+// Tela "Avaliações e exames" do aluno. A RLS (A1) só devolve as linhas do próprio aluno com
+// vínculo ativo e não arquivado com o personal dono; arquivado/desvinculado = lista vazia.
+// Nada aqui grava: só SELECT, URL assinada de 60 s (openPhysicalAssessment) e a evolução.
+// Tudo é desenhado dentro de #assessments-body, que o logout restaura vazio.
+
+// @@my-pa-pure:begin
+// Textos da lista e do painel de dados. Sem DOM e sem rede: testado em Node.
+
+// Linha de detalhes do item: selo, data, coleta, laboratório, personal (se houver mais de um),
+// contagem de dados salvos e relatório.
+function myPaItemModel(a, opts = {}) {
+  const exam = a?.kind === 'exame_sangue'
+  const n = Number(a?._savedCount) || 0, pl = n === 1 ? '' : 's'
+  const parts = [fmtDate(a?.assessed_at)]
+  if (exam && a.collected_at) parts.push('coleta ' + fmtDate(exTsToInput(a.collected_at).slice(0, 10)))
+  if (a?.lab) parts.push(String(a.lab))
+  if (opts.personalName) parts.push('Personal: ' + opts.personalName)
+  if (n) parts.push(exam ? `${n} exame${pl}` : `${n} medida${pl}`)
+  if (a?._hasReport) parts.push('relatório')
+  return { badge: exam ? 'Exame de sangue' : 'Avaliação física', exam, title: String(a?.title || ''), meta: parts.join(' · '), hasData: n > 0 || !!a?._hasReport }
+}
+
+// Valor para mostrar: texto original do laudo quando há; senão o número com o sinal.
+function myPaValueText(m) {
+  if (m?.qual_value != null && String(m.qual_value).trim() !== '') return String(m.qual_value)
+  if (m?.value_text) return String(m.value_text)
+  if (m?.value == null) return ''
+  return (m.qualifier ? m.qualifier + ' ' : '') + exFmtNum(m.value)
+}
+
+// Grupos do painel, na ordem do catálogo do tipo; cada linha com valor, unidade, faixa e
+// se está fora dela ('baixo' | 'alto' | null — só exames de sangue).
+function myPaDataModel(kind, measurements) {
+  const exam = kind === 'exame_sangue'
+  const order = exam ? EX_GROUPS : PA_GROUPS
+  const titles = exam ? EX_GROUP_TITLES : PA_GROUP_TITLES
+  const byGrp = new Map()
+  for (const m of measurements || []) {
+    if (!m || !m.grp) continue
+    if (!byGrp.has(m.grp)) byGrp.set(m.grp, [])
+    byGrp.get(m.grp).push(m)
+  }
+  const grps = [...order.filter(g => byGrp.has(g)), ...[...byGrp.keys()].filter(g => !order.includes(g))]
+  return grps.map(g => ({
+    title: titles[g] || g,
+    rows: byGrp.get(g).slice().sort((x, y) => (Number(x.position) || 0) - (Number(y.position) || 0)).map(m => {
+      const num = v => v == null ? null : Number(v)
+      const mm = { ...m, value: num(m.value), ref_low: num(m.ref_low), ref_high: num(m.ref_high) }
+      return {
+        label: String(m.label || ''),
+        value: myPaValueText(mm),
+        unit: m.unit && !['qual', 'un'].includes(m.unit) ? m.unit : '',
+        ref: exam ? exRefLabel(mm) : '',
+        state: exam ? exRangeState(mm) : null,
+      }
+    }),
+  }))
+}
+
+// Relatório salvo: [{ titulo, itens: [{ rotulo, texto }] }] -> blocos de texto.
+function myPaReportBlocks(report) {
+  const out = []
+  for (const s of report?.sections || []) {
+    const texts = (s?.itens || []).map(i => String(i?.texto || '').trim()).filter(Boolean)
+    if (texts.length) out.push({ title: String(s?.titulo || 'Relatório'), text: texts.join('\n\n') })
+  }
+  return out
+}
+// @@my-pa-pure:end
+
+let _myPaPersonals = {}   // personal_id -> nome (só quando o aluno tem mais de um personal)
+
+async function renderMyAssessments(gen) {
+  const body = document.getElementById('assessments-body')
+  if (!body || profile?.role !== 'student' || !_isUuid(me?.id)) return
+  _evoReset()
+  _paList = []
+  body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando…</div>'
+
+  const { data, error } = await sb.from('physical_assessments')
+    .select('id, title, assessed_at, file_path, created_at, kind, collected_at, lab, personal_id')
+    .eq('student_id', me.id)
+    .order('assessed_at', { ascending: false }).order('created_at', { ascending: false })
+  if (gen !== navGen) return
+  if (error) {
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
+      <p>Não foi possível carregar suas avaliações.</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:.75rem" onclick="navigateTo('assessments')">Tentar novamente</button></div>`
+    return
+  }
+  const list = (data || []).filter(a => _isUuid(a.id)).map(a => ({ ...a, student_id: me.id }))
+  _myPaPersonals = {}
+  if (list.length) {
+    const ids = list.map(a => a.id)
+    const pids = [...new Set(list.map(a => a.personal_id).filter(_isUuid))]
+    const [mRes, rRes, pRes] = await Promise.all([
+      sb.from('assessment_measurements').select('assessment_id').in('assessment_id', ids),
+      sb.from('assessment_reports').select('assessment_id').in('assessment_id', ids),
+      pids.length > 1 ? sb.from('profiles').select('id, name').in('id', pids) : Promise.resolve({ data: [] }),
+    ])
+    if (gen !== navGen) return
+    for (const a of list) {
+      a._savedCount = (mRes.data || []).filter(m => m.assessment_id === a.id).length
+      a._hasReport  = (rRes.data || []).some(r => r.assessment_id === a.id)
+    }
+    for (const p of pRes.data || []) if (_isUuid(p.id)) _myPaPersonals[p.id] = p.name || ''
+  }
+  _paList = list
+
+  const items = list.map(a => {
+    const v = myPaItemModel(a, { personalName: _myPaPersonals[a.personal_id] || '' })
+    return `
+      <div class="tpl-item">
+        <div class="tpl-item-main">
+          <div class="tpl-item-name">${icon(v.exam ? 'heart-pulse' : 'clipboard-list')} ${escHtml(v.title)} <span class="my-pa-badge${v.exam ? ' exam' : ''}">${escHtml(v.badge)}</span></div>
+          <div class="tpl-item-meta">${escHtml(v.meta)}</div>
+        </div>
+        <div class="tpl-item-actions">
+          ${v.hasData ? `<button class="btn btn-outline btn-sm" title="Ver os dados salvos" onclick="openMyAssessmentData('${a.id}')">Dados</button>` : ''}
+          <button class="btn btn-outline btn-sm" title="Abrir PDF em nova aba" onclick="openPhysicalAssessment('${a.id}')">${icon('eye')} Abrir PDF</button>
+        </div>
+      </div>`
+  }).join('')
+
+  body.innerHTML = `
+    <div class="card reveal">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
+        <div class="section-label" style="margin-bottom:0">Avaliações e exames</div>
+        ${list.length ? `<button class="btn btn-outline btn-sm" title="Gráficos de evolução" onclick="toggleSheetEvolution()">${icon('chart-line')} Evolução</button>` : ''}
+      </div>
+      ${list.length
+        ? `<div style="display:flex;flex-direction:column;gap:.5rem">${items}</div>`
+        : '<div class="tpl-empty-folder">Nenhuma avaliação ou exame disponível. Eles aparecem aqui quando seu personal enviar.</div>'}
+      <div id="my-assessment-data"></div>
+      <div id="my-evolution" data-student-id="${escHtml(me.id)}"></div>
+    </div>`
+}
+
+async function openMyAssessmentData(id) {
+  if (!_isUuid(id) || profile?.role !== 'student') return
+  const a = _paList.find(x => x.id === id)
+  const box = document.getElementById('my-assessment-data')
+  if (!a || !box) { toast('Avaliação não encontrada. Abra a tela de novo.', 'error'); return }
+  const gen = navGen
+  box.innerHTML = '<div class="my-pa-data"><div class="loading"><div class="spinner"></div>Carregando…</div></div>'
+  const [mRes, rRes] = await Promise.all([
+    sb.from('assessment_measurements')
+      .select('grp, key, label, value, unit, position, value_text, qualifier, qual_value, ref_low, ref_high, ref_text')
+      .eq('assessment_id', id).order('position'),
+    sb.from('assessment_reports').select('sections').eq('assessment_id', id).maybeSingle(),
+  ])
+  const still = document.getElementById('my-assessment-data')
+  if (gen !== navGen || !still) return
+  if (mRes.error || rRes.error) {
+    still.innerHTML = '<div class="my-pa-data"><div class="tpl-empty-folder">Não foi possível carregar os dados.</div></div>'
+    return
+  }
+  const v = myPaItemModel(a)
+  const groups = myPaDataModel(a.kind, mRes.data || [])
+  const report = myPaReportBlocks(rRes.data)
+  const rows = groups.map(g => `
+    <div class="my-pa-group">${escHtml(g.title)}</div>
+    ${g.rows.map(r => `
+      <div class="my-pa-row">
+        <span>${escHtml(r.label)}</span>
+        <span class="my-pa-val${r.state ? ' my-pa-out' : ''}">${escHtml(r.value)}${r.unit ? ` <span class="evo-muted">${escHtml(r.unit)}</span>` : ''}${r.state ? ` <span class="my-pa-out">(${r.state === 'alto' ? 'acima' : 'abaixo'} da referência)</span>` : ''}</span>
+        ${r.ref ? `<span class="my-pa-ref">Referência: ${escHtml(r.ref)}</span>` : ''}
+      </div>`).join('')}`).join('')
+  const rep = report.map(b => `
+    <div class="my-pa-group">${escHtml(b.title)}</div>
+    <div class="my-pa-report">${escHtml(b.text)}</div>`).join('')
+  still.innerHTML = `
+    <div class="my-pa-data">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap">
+        <div><div class="section-label" style="margin-bottom:.15rem">${escHtml(v.badge)}</div>
+          <div style="font-weight:700">${escHtml(v.title)}</div>
+          <div class="tpl-item-meta">${escHtml(v.meta)}</div></div>
+        <button class="btn btn-outline btn-sm" onclick="closeMyAssessmentData()">Fechar</button>
+      </div>
+      ${rows || rep ? rows + rep : '<div class="tpl-empty-folder" style="margin-top:.75rem">Nenhum dado salvo nesta avaliação.</div>'}
+    </div>`
+  try { still.scrollIntoView({ behavior: 'smooth', block: 'start' }) } catch {}
+}
+
+function closeMyAssessmentData() {
+  const box = document.getElementById('my-assessment-data')
+  if (box) box.innerHTML = ''
 }
 
 // ─────────────────────────────────────────────
