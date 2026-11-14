@@ -2932,6 +2932,11 @@
           <div id="progress-body"></div>
         </div>
 
+        <!-- VIEW: Guarda de dados (personal) -->
+        <div id="view-retention" class="view" style="display:none">
+          <div id="retention-body"></div>
+        </div>
+
         <!-- VIEW: Avaliações e exames (aluno, só leitura) -->
         <div id="view-assessments" class="view" style="display:none">
           <div id="assessments-body"></div>
@@ -3385,6 +3390,22 @@
   </div>
 </div>
 
+<!-- GUARDA DE DADOS: confirmação de expurgo (palavra digitada quando pedida) -->
+<div id="ret-modal" class="routine-modal-overlay" style="display:none" onclick="if(event.target===this)closeRetModal()">
+  <div class="routine-modal-card" style="max-width:440px" role="dialog" aria-modal="true" aria-labelledby="ret-modal-title">
+    <div style="font-size:1.05rem;font-weight:800;color:var(--text-primary);letter-spacing:-0.02em;margin-bottom:.75rem" id="ret-modal-title">Apagar?</div>
+    <p id="ret-modal-body" style="font-size:.88rem;color:var(--text-secondary);line-height:1.6;margin:0 0 1rem"></p>
+    <div id="ret-modal-word-wrap" class="form-group" style="display:none">
+      <label for="ret-modal-input">Para confirmar, digite <strong id="ret-modal-word"></strong></label>
+      <input type="text" id="ret-modal-input" class="form-control" autocomplete="off" spellcheck="false" oninput="retModalInput()">
+    </div>
+    <div style="display:flex;gap:.75rem;justify-content:flex-end;flex-wrap:wrap">
+      <button type="button" class="btn btn-outline btn-sm" onclick="closeRetModal()">Cancelar</button>
+      <button type="button" id="ret-modal-btn" class="btn btn-sm" style="background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.35)" onclick="retConfirmModal()">Apagar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ARQUIVAR / DESARQUIVAR ALUNO -->
 <div id="archive-modal" class="routine-modal-overlay" style="display:none" onclick="if(event.target===this)closeArchiveModal()">
   <div class="routine-modal-card" style="max-width:420px" role="dialog" aria-modal="true" aria-labelledby="archive-modal-title">
@@ -3698,7 +3719,7 @@ function resetAppState() {
   ;['live-execution-overlay', 'live-exec-picker-overlay', 'manual-exec-modal-overlay',
     'dup-modal-overlay', 'dup-routine-modal-overlay', 'reorder-modal-overlay',
     'replicate-modal-overlay', 'bulk-delete-modal', 'unlink-modal', 'notif-panel-overlay', 'overlay',
-    'body-data-modal', 'archive-modal']
+    'body-data-modal', 'archive-modal', 'ret-modal']
     .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none' })
   _bodyDataPromptPending = false
 
@@ -3743,6 +3764,9 @@ function resetAppState() {
   _tplFolderParentId          = null
   _paList                     = []
   _myPaPersonals              = {}
+  _retGroups                  = null
+  _retBusy                    = false
+  _retAction                  = null
   _paCtx                      = null
   _paBusy                     = false
   _paReview                   = null
@@ -4183,7 +4207,7 @@ function buildSidebar() {
   badge.className   = `role-badge ${isP ? 'role-personal' : 'role-student'}`
 
   const items = isP
-    ? [['students','users','Alunos'],['my-workout','dumbbell','Meu Treino'],['templates','clipboard-list','Modelos de Treino'],['progress','trending-up','Progresso dos Alunos'],['renewals','refresh-cw','Renovação de Treinos'],['personal-profile','user-round','Meu Perfil']]
+    ? [['students','users','Alunos'],['my-workout','dumbbell','Meu Treino'],['templates','clipboard-list','Modelos de Treino'],['progress','trending-up','Progresso dos Alunos'],['renewals','refresh-cw','Renovação de Treinos'],['retention','lock-keyhole','Guarda de dados'],['personal-profile','user-round','Meu Perfil']]
     : [['history','chart-column','Meu Histórico'],['assessments','heart-pulse','Avaliações e exames'],['profile','user-round','Meu Perfil'],['calculator','calculator','Calculadora'],['progress','trending-up','Progresso']]
 
   document.getElementById('nav-list').innerHTML = items.map(([id, iconName, label]) => `
@@ -4280,13 +4304,14 @@ const VIEW_TITLES = {
   progress: 'Dashboard de Progresso', profile: 'Meu Perfil', 'personal-profile': 'Meu Perfil',
   'student-sheet': 'Ficha do Aluno', 'routine-detail': 'Rotina', renewals: 'Renovação de Treinos',
   templates: 'Modelos de Treino', 'template-editor': 'Modelo de Treino',
-  assessments: 'Avaliações e exames'
+  assessments: 'Avaliações e exames', retention: 'Guarda de dados'
 }
 
 async function navigateTo(view, opts = {}) {
   if (view === 'workout' && profile?.role !== 'personal') return
   if ((view === 'templates' || view === 'template-editor') && profile?.role !== 'personal') return
   if (view === 'assessments' && profile?.role !== 'student') return
+  if (view === 'retention' && profile?.role !== 'personal') return
 
   // Saindo do editor de modelo (inclusive para abri-lo de novo): as linhas de exercício
   // voltam a ser as do formulário de treino. Antes de qualquer setup de outra tela.
@@ -4343,6 +4368,7 @@ async function navigateTo(view, opts = {}) {
     else if (view === 'history')        await renderHistory(profile.id, gen)
     else if (view === 'progress')       await renderProgress()
     else if (view === 'assessments')    await renderMyAssessments(gen)
+    else if (view === 'retention')      await renderRetention(gen)
     else if (view === 'renewals')       await renderRenewals(gen)
     else if (view === 'templates')      await renderTemplates(gen)
     else if (view === 'template-editor') await setupTemplateEditor(opts, gen)
@@ -11742,6 +11768,7 @@ async function renderSheetAssessments(studentId) {
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         <button class="btn btn-outline btn-sm" title="Gráficos de evolução dos exames e das avaliações" onclick="toggleSheetEvolution()">${icon('chart-line')} Evolução</button>
         <button class="btn btn-primary btn-sm" onclick="openPaModal()">${icon('plus')} Enviar PDF</button>
+        <button class="btn btn-sm btn-ghost-danger" title="Apagar todas as avaliações e exames deste aluno, a pedido dele" onclick="askPurgeStudentData('${studentId}')">${icon('trash-2')} Apagar a pedido do aluno</button>
       </div>
     </div>`
   box.style.marginTop = '1.25rem'
@@ -13877,6 +13904,283 @@ async function openMyAssessmentData(id) {
 function closeMyAssessmentData() {
   const box = document.getElementById('my-assessment-data')
   if (box) box.innerHTML = ''
+}
+
+// ─────────────────────────────────────────────
+// GUARDA DE DADOS (B3) — personal, expurgo manual
+// ─────────────────────────────────────────────
+// Lista do retention_report() (sem valores de exame): vencidos (assessed_at + 5 anos), alunos
+// que apagaram a conta, ex-alunos e PDFs soltos. Expurgo sempre em duas pernas: a RPC apaga
+// a linha (medidas e relatório vão junto) e devolve o caminho; depois o app apaga o PDF.
+// Se o PDF não sair, ele aparece em "PDFs soltos" para tentar de novo. Nada roda sozinho.
+
+// @@ret-pure:begin
+// Textos e grupos da tela. Sem DOM e sem rede: testado em Node.
+const RET_GROUPS = ['vencido', 'arquivo_orfao', 'aluno_excluido', 'sem_vinculo']
+const RET_TITLES = {
+  vencido:        'Vencidos (mais de 5 anos)',
+  arquivo_orfao:  'PDFs soltos',
+  aluno_excluido: 'Alunos que apagaram a conta',
+  sem_vinculo:    'Ex-alunos (vínculo encerrado)',
+}
+const RET_HINTS = {
+  vencido:        'Passaram dos 5 anos de guarda. Podem ser apagados.',
+  arquivo_orfao:  'Arquivos sem registro (sobra de um expurgo interrompido).',
+  aluno_excluido: 'Ainda no prazo de guarda. Só apague a pedido do titular.',
+  sem_vinculo:    'Ainda no prazo de guarda. Só apague a pedido do titular.',
+}
+const RET_CONFIRM_WORD = 'APAGAR'
+
+// Linhas da RPC -> { vencido: [], arquivo_orfao: [], aluno_excluido: [], sem_vinculo: [] }.
+// Descarta o que não tem id válido (exames) ou caminho (PDFs soltos).
+function retentionGroups(rows) {
+  const out = { vencido: [], arquivo_orfao: [], aluno_excluido: [], sem_vinculo: [] }
+  for (const r of rows || []) {
+    if (!r || !RET_GROUPS.includes(r.reason)) continue
+    if (r.reason === 'arquivo_orfao') {
+      if (typeof r.file_path === 'string' && r.file_path) out.arquivo_orfao.push(r)
+    } else if (_isUuid(r.assessment_id)) out[r.reason].push(r)
+  }
+  const byDate = (a, b) => String(a.assessed_at || '').localeCompare(String(b.assessed_at || ''))
+  out.vencido.sort(byDate)
+  out.aluno_excluido.sort(byDate)
+  out.sem_vinculo.sort(byDate)
+  out.arquivo_orfao.sort((a, b) => a.file_path.localeCompare(b.file_path))
+  return out
+}
+
+// Título e linha de detalhes de um item (sem valor de exame).
+function retentionItemModel(r) {
+  if (r?.reason === 'arquivo_orfao') {
+    const file = String(r.file_path || '').split('/').pop()
+    return { title: 'Arquivo sem registro', meta: file }
+  }
+  const kind = r?.kind === 'exame_sangue' ? 'Exame de sangue' : 'Avaliação física'
+  const parts = [kind, fmtDate(r?.assessed_at), String(r?.student_label || 'Aluno')]
+  parts.push((r?.reason === 'vencido' ? 'venceu em ' : 'guarda até ') + fmtDate(r?.expires_on))
+  return { title: String(r?.title || ''), meta: parts.join(' · ') }
+}
+
+// Confirmação digitada: igual à palavra pedida, sem espaços nas pontas (maiúsculas contam).
+function retConfirmOk(typed, expected) {
+  const e = String(expected ?? '').trim()
+  return !!e && String(typed ?? '').trim() === e
+}
+
+// Mensagem final de um expurgo: { ok, pdfFail, fail } (contagens).
+function retPurgeSummary(s) {
+  const ok = s.ok || 0, pdf = s.pdfFail || 0, fail = s.fail || 0
+  const msgs = []
+  if (ok) msgs.push(`${ok} ${ok === 1 ? 'exame apagado' : 'exames apagados'}`)
+  if (pdf) msgs.push(`${pdf} PDF${pdf === 1 ? '' : 's'} não saiu do armazenamento (fica em "PDFs soltos" para tentar de novo)`)
+  if (fail) msgs.push(`${fail} não ${fail === 1 ? 'foi apagado' : 'foram apagados'}`)
+  return { text: (msgs.join('; ') || 'Nada foi apagado') + '.', kind: fail ? 'error' : pdf ? 'info' : 'success' }
+}
+// @@ret-pure:end
+
+let _retGroups = null   // última leitura da guarda (para achar o item pelo id/índice)
+let _retBusy   = false
+let _retAction = null   // ação pendente do modal de confirmação
+
+function _retErrMsg(error) {
+  if (error?.code === '22023') return 'ainda dentro do prazo de guarda.'
+  if (error?.code === 'P0002') return 'exame não encontrado (talvez já apagado).'
+  if (error?.code === '42501') return 'sem permissão.'
+  return error?.message || 'erro desconhecido'
+}
+
+async function renderRetention(gen) {
+  const body = document.getElementById('retention-body')
+  if (!body || profile?.role !== 'personal') return
+  _retGroups = null
+  body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando…</div>'
+  const { data, error } = await sb.rpc('retention_report')
+  if (gen !== navGen) return
+  if (error) {
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('triangle-alert')}</div>
+      <p>Não foi possível carregar a guarda de dados.</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:.75rem" onclick="navigateTo('retention')">Tentar novamente</button></div>`
+    return
+  }
+  const g = retentionGroups(data)
+  _retGroups = g
+  const total = RET_GROUPS.reduce((n, k) => n + g[k].length, 0)
+  const item = (r, k, i) => {
+    const v = retentionItemModel(r)
+    const btn = k === 'vencido'
+      ? `<button class="btn btn-sm btn-ghost-danger" onclick="retAskPurgeOne('${r.assessment_id}','vencido')">${icon('trash-2')} Apagar</button>`
+      : k === 'arquivo_orfao'
+        ? `<button class="btn btn-sm btn-ghost-danger" onclick="retAskDeleteOrphan(${i})">${icon('trash-2')} Apagar arquivo</button>`
+        : `<button class="btn btn-sm btn-outline" onclick="retAskPurgeOne('${r.assessment_id}','titular')">Apagar a pedido do titular</button>`
+    return `
+      <div class="tpl-item">
+        <div class="tpl-item-main">
+          <div class="tpl-item-name">${escHtml(v.title)}</div>
+          <div class="tpl-item-meta">${escHtml(v.meta)}</div>
+        </div>
+        <div class="tpl-item-actions">${btn}</div>
+      </div>`
+  }
+  const section = k => !g[k].length ? '' : `
+    <div class="card reveal" style="margin-bottom:1rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-bottom:.35rem">
+        <div class="section-label" style="margin-bottom:0">${escHtml(RET_TITLES[k])} <span class="evo-muted">· ${g[k].length}</span></div>
+        ${k === 'vencido' ? `<button class="btn btn-sm btn-ghost-danger" id="ret-purge-all-btn" onclick="retAskPurgeAllExpired()">${icon('trash-2')} Apagar todos os vencidos</button>` : ''}
+      </div>
+      <div class="tpl-item-meta" style="margin-bottom:.75rem">${escHtml(RET_HINTS[k])}</div>
+      <div style="display:flex;flex-direction:column;gap:.5rem">${g[k].map((r, i) => item(r, k, i)).join('')}</div>
+    </div>`
+  body.innerHTML = `
+    <div class="card reveal" style="margin-bottom:1rem">
+      <div class="section-label">Guarda de dados</div>
+      <p style="font-size:.85rem;color:var(--text-secondary);line-height:1.6;margin:.25rem 0 0">
+        Avaliações e exames ficam guardados por 5 anos a partir da data do PDF. Aqui aparecem os que já
+        venceram, os de ex-alunos e os PDFs soltos. Nada é apagado sozinho, e o que for apagado não volta.
+        Os valores dos exames não aparecem nesta tela.</p>
+    </div>
+    ${total ? RET_GROUPS.map(section).join('') : '<div class="tpl-empty-folder">Nada vencido, nenhum ex-aluno com exames e nenhum PDF solto.</div>'}`
+}
+
+// ── Modal de confirmação (com palavra digitada quando pedida) ──
+function _retOpenModal({ title, body, word, button, action }) {
+  _retAction = action
+  document.getElementById('ret-modal-title').textContent = title
+  document.getElementById('ret-modal-body').textContent = body
+  const wrap = document.getElementById('ret-modal-word-wrap')
+  const input = document.getElementById('ret-modal-input')
+  input.value = ''
+  input.dataset.expected = word || ''
+  wrap.style.display = word ? '' : 'none'
+  document.getElementById('ret-modal-word').textContent = word || ''
+  const btn = document.getElementById('ret-modal-btn')
+  btn.textContent = button
+  btn.disabled = !!word
+  document.getElementById('ret-modal').style.display = 'flex'
+  if (word) setTimeout(() => { try { input.focus() } catch {} }, 0)
+}
+
+function retModalInput() {
+  const input = document.getElementById('ret-modal-input')
+  document.getElementById('ret-modal-btn').disabled = !retConfirmOk(input.value, input.dataset.expected)
+}
+
+function closeRetModal() {
+  document.getElementById('ret-modal').style.display = 'none'
+  document.getElementById('ret-modal-input').value = ''
+  _retAction = null
+}
+
+async function retConfirmModal() {
+  const input = document.getElementById('ret-modal-input')
+  if (input.dataset.expected && !retConfirmOk(input.value, input.dataset.expected)) return
+  const action = _retAction
+  closeRetModal()
+  if (action && !_retBusy) {
+    _retBusy = true
+    try { await action() } finally { _retBusy = false }
+  }
+}
+
+// Uma perna de cada vez: linha (RPC) e depois o PDF. Devolve 'ok' | 'pdf' | 'fail'.
+async function _retPurgeRow(id, motivo) {
+  const { data: path, error } = await sb.rpc('purge_assessment', { p_id: id, p_motivo: motivo })
+  if (error) { console.warn('[guarda] purge_assessment:', error.code); return { r: 'fail', error } }
+  if (!path) return { r: 'ok' }
+  const { error: rmErr } = await sb.storage.from(PA_BUCKET).remove([path])
+  return { r: rmErr ? 'pdf' : 'ok' }
+}
+
+function _retFind(id) {
+  if (!_retGroups) return null
+  for (const k of ['vencido', 'aluno_excluido', 'sem_vinculo']) {
+    const r = _retGroups[k].find(x => x.assessment_id === id)
+    if (r) return r
+  }
+  return null
+}
+
+function retAskPurgeOne(id, motivo) {
+  if (!_isUuid(id) || !['vencido', 'titular'].includes(motivo)) return
+  const r = _retFind(id)
+  if (!r) { toast('Item não encontrado. Recarregue a tela.', 'error'); return }
+  const v = retentionItemModel(r)
+  const titular = motivo === 'titular'
+  _retOpenModal({
+    title: titular ? 'Apagar a pedido do titular?' : 'Apagar exame vencido?',
+    body: `"${v.title}" (${v.meta}). Apaga o exame, os valores, o relatório e o PDF. Não dá para desfazer.`
+      + (titular ? ' Este exame ainda está no prazo de guarda: só confirme se o titular pediu.' : ''),
+    word: titular ? RET_CONFIRM_WORD : '',
+    button: 'Apagar',
+    action: async () => {
+      const res = await _retPurgeRow(id, motivo)
+      const s = retPurgeSummary({ ok: res.r !== 'fail' ? 1 : 0, pdfFail: res.r === 'pdf' ? 1 : 0, fail: res.r === 'fail' ? 1 : 0 })
+      toast(res.r === 'fail' ? 'Não foi possível apagar: ' + _retErrMsg(res.error) : s.text, res.r === 'fail' ? 'error' : s.kind)
+      navigateTo('retention')
+    },
+  })
+}
+
+function retAskPurgeAllExpired() {
+  const list = (_retGroups?.vencido || []).slice()
+  if (!list.length) { toast('Nenhum exame vencido.', 'info'); return }
+  _retOpenModal({
+    title: `Apagar todos os ${list.length} vencidos?`,
+    body: `Apaga ${list.length === 1 ? 'o exame vencido' : `os ${list.length} exames vencidos`}, com valores, relatórios e PDFs. Não dá para desfazer.`,
+    word: RET_CONFIRM_WORD,
+    button: 'Apagar todos',
+    action: async () => {
+      const s = { ok: 0, pdfFail: 0, fail: 0 }
+      for (const r of list) {
+        const res = await _retPurgeRow(r.assessment_id, 'vencido')
+        if (res.r === 'fail') s.fail++
+        else { s.ok++; if (res.r === 'pdf') s.pdfFail++ }
+      }
+      const m = retPurgeSummary(s)
+      toast(m.text, m.kind)
+      navigateTo('retention')
+    },
+  })
+}
+
+function retAskDeleteOrphan(idx) {
+  const r = _retGroups?.arquivo_orfao?.[idx]
+  if (!r) { toast('Arquivo não encontrado. Recarregue a tela.', 'error'); return }
+  _retOpenModal({
+    title: 'Apagar arquivo solto?',
+    body: `${retentionItemModel(r).meta} não tem mais registro no app. Apagar o arquivo? Não dá para desfazer.`,
+    word: '',
+    button: 'Apagar arquivo',
+    action: async () => {
+      const { error } = await sb.storage.from(PA_BUCKET).remove([r.file_path])
+      toast(error ? 'Não foi possível apagar o arquivo: ' + _paErrMsg(error) : 'Arquivo apagado.', error ? 'error' : 'success')
+      navigateTo('retention')
+    },
+  })
+}
+
+// Ficha do aluno: apagar tudo do aluno com este personal, a pedido dele (digitando o nome).
+function askPurgeStudentData(studentId) {
+  if (!_isUuid(studentId) || profile?.role !== 'personal') return
+  const name = (studentNameOf(studentId) || '').trim() || RET_CONFIRM_WORD
+  _retOpenModal({
+    title: 'Apagar dados a pedido do aluno?',
+    body: `Apaga todas as avaliações e exames de ${name} enviados por você: valores, relatórios e PDFs. Não dá para desfazer. Só confirme se o aluno pediu.`,
+    word: name,
+    button: 'Apagar tudo',
+    action: async () => {
+      const { data, error } = await sb.rpc('purge_student_assessments', { p_student: studentId })
+      if (error) { toast('Não foi possível apagar: ' + _retErrMsg(error), 'error'); return }
+      const paths = (data || []).filter(p => typeof p === 'string' && p)
+      let pdfFail = 0
+      if (paths.length) {
+        const { error: rmErr } = await sb.storage.from(PA_BUCKET).remove(paths)
+        if (rmErr) pdfFail = paths.length
+      }
+      if (!paths.length) toast('Nenhuma avaliação deste aluno para apagar.', 'info')
+      else { const m = retPurgeSummary({ ok: paths.length, pdfFail }); toast(m.text, m.kind) }
+      renderSheetAssessments(studentId)
+    },
+  })
 }
 
 // ─────────────────────────────────────────────
