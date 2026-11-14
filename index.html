@@ -2522,7 +2522,7 @@
     .tpl-folder-actions { display: flex; gap: .35rem; flex-shrink: 0; }
     .tpl-folder-body { display: none; margin-top: .75rem; }
     .tpl-folder-body.open { display: flex; flex-direction: column; gap: .5rem; }
-    .tpl-item { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .625rem .75rem; border: 1px solid var(--border-subtle); border-radius: var(--radius); }
+    .tpl-item { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .625rem .75rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
     .tpl-item-main { min-width: 0; }
     .tpl-item-name { font-weight: 600; font-size: .88rem; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tpl-item-meta { font-size: .75rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2604,7 +2604,7 @@
     .my-pa-ref { grid-column: 1 / -1; font-size: .72rem; color: var(--text-muted); }
     .my-pa-out { color: var(--warning); font-weight: 700; }
     .my-pa-report { white-space: pre-wrap; font-size: .85rem; line-height: 1.5; }
-    .tpl-subfolder { margin: 0; padding: .625rem .75rem; border: 1px solid var(--border-subtle); border-left: 3px solid var(--accent-a28); border-radius: var(--radius); }
+    .tpl-subfolder { margin: 0; padding: .625rem .75rem; border: 1px solid var(--border-subtle); border-left: 3px solid var(--accent-a28); border-radius: var(--radius-md); }
     .tpl-subfolder .tpl-folder-title { font-weight: 650; font-size: .9rem; }
     .tpl-folder-actions { flex-wrap: wrap; justify-content: flex-end; }
     @media (max-width: 480px) { .tpl-folder-header { flex-wrap: wrap; } .tpl-folder-actions { width: 100%; } }
@@ -6730,6 +6730,9 @@ function closeRoutineDetail(studentId, studentName) {
 }
 
 async function renderRoutineDetail(opts = {}, gen = 0) {
+  // B25: rotina de aluno arquivado é só consulta: sem editar, adicionar, duplicar ou excluir
+  // (as travas do banco já barravam; aqui os botões nem aparecem). O "PDF" continua.
+  const canManageRoutine = profile?.role === 'personal' && !isArchivedStudent(opts.studentId)
   const { studentId, studentName, routineId } = opts
   const body = document.getElementById('routine-detail-body')
   if (!body) return
@@ -6800,14 +6803,14 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
           <div style="position:relative;padding:.75rem 1rem;cursor:pointer"
                onclick="toggleRoutineWorkoutAccordion('${uid}','${w.id}')">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem">
-              ${profile.role === 'personal' && canEditWorkout(w) ? `<input type="checkbox" class="workout-checkbox" data-workout-id="${w.id}" onclick="event.stopPropagation();toggleWorkoutCheckbox('${w.id}',this)">` : ''}
+              ${canManageRoutine && canEditWorkout(w) ? `<input type="checkbox" class="workout-checkbox" data-workout-id="${w.id}" onclick="event.stopPropagation();toggleWorkoutCheckbox('${w.id}',this)">` : ''}
               <div style="min-width:0;flex:1">
                 <div style="font-weight:700;font-size:.9rem;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(w.name || 'Treino sem nome')}</div>
                 <div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem">${exCount} exercício${exCount !== 1 ? 's' : ''} · Vol: ${workoutVolumeDisplay(w)}</div>
               </div>
               <div style="display:flex;align-items:center;gap:.4rem;flex-shrink:0">
                 ${workoutPdfButtonHTML(w.id, 'PDF')}
-                ${profile.role === 'personal'
+                ${canManageRoutine
                   ? `${canEditWorkout(w) ? `<button class="btn btn-sm btn-outline" onclick="event.stopPropagation();editWorkout('${w.id}')" title="Editar" aria-label="Editar">${icon('pencil')}</button>` : ''}
                      <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openDupModal('${w.id}')" title="Duplicar" aria-label="Duplicar">${icon('copy')}</button>
                      ${canEditWorkout(w) ? `<button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteWorkoutFromRoutine('${w.id}','${studentId}',studentNameOf('${studentId}'),'${routineId}',routineNameOf('${routineId}'))" title="Excluir" aria-label="Excluir">${icon('trash-2')}</button>` : ''}`
@@ -6823,7 +6826,7 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
 
     const workoutListHTML = workouts.length === 0
       ? `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon">${icon('clipboard-list')}</div>
-         <p>${profile.role === 'personal' ? 'Nenhum treino nesta rotina ainda.<br>Use "Adicionar Treino" para criar o primeiro!' : 'Nenhum treino nesta rotina ainda.'}</p></div>`
+         <p>${canManageRoutine ? 'Nenhum treino nesta rotina ainda.<br>Use "Adicionar Treino" para criar o primeiro!' : 'Nenhum treino nesta rotina ainda.'}</p></div>`
       : [
           ...DAY_ORDER.filter(d => byDay[d]?.length).map(d => `
             <div style="margin-bottom:1.25rem">
@@ -6848,8 +6851,8 @@ async function renderRoutineDetail(opts = {}, gen = 0) {
           <div style="font-size:1.05rem;font-weight:800;letter-spacing:-0.02em">${escHtml(routine.name)}</div>
         </div>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-          ${profile.role === 'personal' ? `<button class="btn btn-outline btn-sm" onclick="openRoutineModal('${studentId}',studentNameOf('${studentId}'),'${routineId}')" title="Editar nome/data da rotina">${icon('pencil')} Editar Rotina</button>` : ''}
-          ${profile.role === 'personal' ? `<button class="btn btn-primary btn-sm" onclick="openNewWorkoutForRoutine('${studentId}',studentNameOf('${studentId}'),'${routineId}',routineNameOf('${routineId}'),historyCtx?.fromView)">${icon('plus')} Adicionar Treino</button>` : ''}
+          ${canManageRoutine ? `<button class="btn btn-outline btn-sm" onclick="openRoutineModal('${studentId}',studentNameOf('${studentId}'),'${routineId}')" title="Editar nome/data da rotina">${icon('pencil')} Editar Rotina</button>` : ''}
+          ${canManageRoutine ? `<button class="btn btn-primary btn-sm" onclick="openNewWorkoutForRoutine('${studentId}',studentNameOf('${studentId}'),'${routineId}',routineNameOf('${routineId}'),historyCtx?.fromView)">${icon('plus')} Adicionar Treino</button>` : ''}
           <button class="btn btn-outline btn-sm" onclick="closeRoutineDetail('${studentId}',studentNameOf('${studentId}'))">${icon('arrow-left')} Voltar</button>
         </div>
       </div>
@@ -7971,8 +7974,8 @@ async function renderProgress(studentIdOverride) {
       .eq('student_id', studentId)
       .order('executed_at', { ascending: true })
     if (execErr) throw execErr
-    // Item B: agrupa pelo nome com que a série foi feita (nome do dia vira série própria).
-    window._progressExecutions = (execData || []).map(execWithDayName)
+    // Item D: agrupa pelo nome do TREINO; o nome do dia (se diferente) vai para a dica do ponto.
+    window._progressExecutions = (execData || []).map(progressExecWithDay)
 
     if (!workouts.length) {
       body.innerHTML = studentSelectorHTML + `<div class="empty-state"><div class="empty-icon">${icon('dumbbell')}</div>
@@ -8567,8 +8570,25 @@ function progressPalette() {
   return PROG_COLORS[document.documentElement.classList.contains('light') ? 'light' : 'dark']
 }
 
+// Item D: execução com o nome do dia guardado à parte (_dayName). O agrupamento continua pelo
+// nome do treino (workout_exercises.exercise_name); sem nome do dia diferente, o mesmo objeto.
+function progressExecWithDay(ex) {
+  const day  = cleanDayName(ex?.exercise_name_executed)
+  const plan = ex?.workout_exercises?.exercise_name
+  return day && plan && day !== plan ? { ...ex, _dayName: day } : ex
+}
+
+// Linha extra da dica do ponto: "Feito como: A, B, C +2". Sem nome do dia, vazio.
+function progressDayNote(days) {
+  const list = (days || []).filter(Boolean)
+  if (!list.length) return ''
+  const shown = list.slice(0, 3).join(', ')
+  return `Feito como: ${shown}${list.length > 3 ? ` +${list.length - 3}` : ''}`
+}
+
 // Nomes de exercício por tipo, em ordem alfabética. O tipo vem da ocorrência mais recente
 // (workouts chega do mais novo para o mais antigo), como no seletor de 1 exercício.
+// Item D: só nomes do treino; o nome do dia não vira exercício próprio.
 function progressExerciseCatalog(workouts, executions = []) {
   const typeByName = new Map()
   for (const w of workouts) {
@@ -8576,12 +8596,6 @@ function progressExerciseCatalog(workouts, executions = []) {
       if (!ex.exercise_name || typeByName.has(ex.exercise_name)) continue
       typeByName.set(ex.exercise_name, ex.exercise_type === 'aerobico' ? 'aerobico' : 'musculacao')
     }
-  }
-  // Item B: nomes do dia (execuções com _planName) entram no catálogo com o tipo do treino.
-  for (const ex of executions) {
-    const we = ex.workout_exercises
-    if (!we?._planName || !we.exercise_name || typeByName.has(we.exercise_name)) continue
-    typeByName.set(we.exercise_name, we.exercise_type === 'aerobico' ? 'aerobico' : 'musculacao')
   }
   const catalog = { musculacao: [], aerobico: [] }
   for (const [name, type] of typeByName) catalog[type].push(name)
@@ -8600,13 +8614,6 @@ function progressTimedNames(workouts, executions = []) {
       seen.add(ex.exercise_name)
       if (isTimedEx(ex)) timed.add(ex.exercise_name)
     }
-  }
-  // Item B: nome do dia é isométrico se a série gravou segundos.
-  for (const ex of executions) {
-    const name = ex.workout_exercises?._planName ? ex.workout_exercises.exercise_name : ''
-    if (!name || seen.has(name)) continue
-    seen.add(name)
-    if (ex.seconds_executed != null) timed.add(name)
   }
   return timed
 }
@@ -8663,7 +8670,9 @@ function progressPointsFor(executions, exerciseName, metric) {
     else if (metric === 'speed')    value = Math.max(0, ...exes.map(ex => parseFloat(ex.speed_executed_kmh)    || 0))
     else if (metric === 'duration') value = Math.max(0, ...exes.map(ex => parseFloat(ex.duration_executed_min) || 0))
     else if (metric === 'seconds')  value = Math.max(0, ...exes.map(ex => parseFloat(ex.seconds_executed)      || 0))
-    if (value > 0) points.push({ date: day, value })
+    // Item D: nomes do dia usados nesse dia (para a dica do ponto).
+    const days = [...new Set(exes.map(ex => ex._dayName).filter(Boolean))]
+    if (value > 0) points.push({ date: day, value, days })
   }
   return points
 }
@@ -8675,7 +8684,9 @@ function progressSeries(executions, selection, metric) {
   const dates = [...new Set(withPoints.flatMap(s => s.points.map(p => p.date)))].sort()
   const series = withPoints.map(s => {
     const byDate = new Map(s.points.map(p => [p.date, p.value]))
-    return { name: s.name, slot: s.slot, count: s.points.length, values: dates.map(d => byDate.has(d) ? byDate.get(d) : null) }
+    const byDays = new Map(s.points.map(p => [p.date, p.days || []]))
+    return { name: s.name, slot: s.slot, count: s.points.length, values: dates.map(d => byDate.has(d) ? byDate.get(d) : null),
+             days: dates.map(d => byDays.get(d) || []) }
   })
   return { dates, series }
 }
@@ -8815,7 +8826,8 @@ function updateProgressChart() {
         pointHoverRadius:     7,
         fill:                 false,
         spanGaps:             true,
-        tension:              0.3
+        tension:              0.3,
+        _days:                s.days
       }))
     },
     options: {
@@ -8826,7 +8838,8 @@ function updateProgressChart() {
         legend: { display: withData.length > 1,
                   labels: { usePointStyle: true, boxWidth: 8, color: 'rgb(143,154,178)', font: { size: 11, family: 'Montserrat' } } },
         tooltip: { filter: item => item.parsed.y != null,
-                   callbacks: { label: c => ` ${c.dataset.label}: ${c.parsed.y.toLocaleString('pt-BR')} ${unit}` } }
+                   callbacks: { label: c => ` ${c.dataset.label}: ${c.parsed.y.toLocaleString('pt-BR')} ${unit}`,
+                                afterLabel: c => { const n = progressDayNote(c.dataset._days?.[c.dataIndex]); return n ? `   ${n}` : '' } } }
       },
       scales: {
         x: { grid: { color: 'rgba(144,158,186,0.06)' }, ticks: { font: { size: 11, family: 'Montserrat' }, color: 'rgb(143,154,178)', maxRotation: 45 } },
@@ -9305,7 +9318,7 @@ function addExercise() {
                  oninput="refreshExerciseVolume(${id});refreshAutoCalc(${id})">
         </div>
         <div class="form-group form-full" id="ex-autocalc-${id}" style="display:none">
-          <div style="font-size:.78rem;color:var(--text-muted);background:var(--neutral-a06);border-radius:var(--radius);padding:.45rem .75rem;display:flex;gap:1.5rem;flex-wrap:wrap">
+          <div style="font-size:.78rem;color:var(--text-muted);background:var(--neutral-a06);border-radius:var(--radius-md);padding:.45rem .75rem;display:flex;gap:1.5rem;flex-wrap:wrap">
             <span>${icon('gauge')} Vel. calculada: <strong id="ex-autocalc-speed-${id}">—</strong> km/h</span>
             <span>Ritmo: <strong id="ex-autocalc-pace-${id}">—</strong></span>
           </div>
@@ -12399,10 +12412,36 @@ function exNum(s) {
 }
 
 const _EX_QUAL = new Set(['<', '<=', '>', '>='])
+
+// B28: o pdf.js às vezes cola itens vizinhos ("55 %3.520", "3.520/µL", "%3.520/µL"). Separa um
+// token em unidade conhecida + número (ou número + unidade conhecida), de forma recursiva.
+// Só separa quando os dois lados são reconhecidos (exUnit/exNum): "1,73m2" fica inteiro.
+function exSplitGlued(tok) {
+  const t = String(tok ?? '')
+  if (!t || _EX_QUAL.has(t) || exNum(t) || exUnit(t)) return [t]
+  for (let k = t.length - 1; k >= 1; k--) {          // unidade colada antes do número
+    const a = t.slice(0, k), b = t.slice(k)
+    if (exUnit(a) && /^[<>≤≥]?=?\d/.test(b)) {
+      const rest = exSplitGlued(b)
+      if (rest.length && exNum(rest[0])) return [a, ...rest]
+    }
+  }
+  for (let k = t.length - 1; k >= 1; k--) {          // número colado antes da unidade
+    const a = t.slice(0, k), b = t.slice(k)
+    if (exNum(a) && exUnit(b)) return [a, b]
+    if (exNum(a) && /^[%a-zA-Zµμ/]/.test(b)) {
+      const rest = exSplitGlued(b)
+      if (rest.length > 1 && exUnit(rest[0])) return [a, ...rest]
+    }
+  }
+  return [t]
+}
+
 // Zona de valor -> colunas [{ qualifier, value, text, unitRaw, unit }]; null se não for só número
 // (aí é qualitativo). "46 % 3.349 /µL" -> 2 colunas; "> 90,0 mL/min/1,73m2" -> 1 coluna.
 function exValues(text) {
   const tok = String(text ?? '').replace(/≤/g, '<=').replace(/≥/g, '>=').trim().split(/\s+/).filter(Boolean)
+    .flatMap(exSplitGlued)
   if (!tok.length) return null
   const cols = []
   for (let i = 0; i < tok.length;) {
@@ -13169,7 +13208,7 @@ function _renderPaReview() {
   const notes = [...st.warnings]
   if (st.fromPdf && st.hadSaved) notes.unshift('Esta avaliação já tem dados salvos: confirmar e salvar substitui todos eles.')
   const warn = notes.length ? `
-    <div style="border:1px solid var(--warning-a40);background:var(--warning-a10);border-radius:var(--radius);padding:.6rem .75rem;margin-bottom:1rem;font-size:.8rem">
+    <div style="border:1px solid var(--warning-a40);background:var(--warning-a10);border-radius:var(--radius-md);padding:.6rem .75rem;margin-bottom:1rem;font-size:.8rem">
       ${notes.map(escHtml).join('<br>')}
     </div>` : ''
   const groups = PA_GROUPS.map(g => {
@@ -13314,7 +13353,7 @@ function _renderExReview() {
   const notes = [...(st.warnings || [])]
   if (st.fromPdf && st.hadSaved) notes.unshift('Este PDF já tem exames salvos: salvar substitui todos eles pelos marcados agora.')
   const warn = notes.length ? `
-    <div style="border:1px solid var(--warning-a40);background:var(--warning-a10);border-radius:var(--radius);padding:.6rem .75rem;margin-bottom:.75rem;font-size:.8rem">
+    <div style="border:1px solid var(--warning-a40);background:var(--warning-a10);border-radius:var(--radius-md);padding:.6rem .75rem;margin-bottom:.75rem;font-size:.8rem">
       ${notes.map(escHtml).join('<br>')}
     </div>` : ''
   const vis = _exVisible(st)
@@ -13332,7 +13371,7 @@ function _renderExReview() {
       </div>`
   }).join('')
   document.getElementById('ex-review-body').innerHTML = warn + (groups ||
-    '<div class="tpl-empty-folder">Nenhum exame encontrado no PDF. Marque "Mostrar não encontrados" para preencher à mão.</div>')
+    `<div class="tpl-empty-folder">${st.fromPdf ? 'Nenhum exame encontrado no PDF.' : 'Nenhum exame salvo.'} Marque "Mostrar não encontrados" para preencher à mão.</div>`)
   _exSyncGroups()
   _exRenderStats()
 }
@@ -13388,7 +13427,7 @@ function _exRenderStats() {
   if (!st) return
   const s = exReviewStats(st.rows)
   document.getElementById('ex-review-stats').textContent =
-    `${s.selected} marcado${s.selected === 1 ? '' : 's'} para salvar · ${s.found} encontrado${s.found === 1 ? '' : 's'} no PDF` +
+    `${s.selected} marcado${s.selected === 1 ? '' : 's'} para salvar · ${s.found} ${st.fromPdf ? `encontrado${s.found === 1 ? '' : 's'} no PDF` : `salvo${s.found === 1 ? '' : 's'}`}` +
     (s.outOfRange ? ` · ${s.outOfRange} fora da referência` : '')
   document.getElementById('ex-review-btn').disabled = s.selected === 0
 }
