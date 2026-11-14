@@ -3628,6 +3628,7 @@ const _USER_DOM_SKIP  = '#auth-section, #password-reset-overlay, #boot-loading'
 // Textos sem id que recebem dado (ex.: "Para: <aluno>" no formulário de treino).
 const _USER_DOM_EXTRA = '#view-workout .card-title, #view-workout .section-label'
 let _userDomInitial = null   // Map<Element, html inicial>
+let _userDomFieldData = null // Map<campo, data-* inicial> (ex.: data-expected do modal da guarda)
 
 function _snapshotUserDom() {
   _userDomInitial = new Map()
@@ -3637,6 +3638,13 @@ function _snapshotUserDom() {
     if (['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT'].includes(el.tagName)) continue
     if (el.children.length) continue          // estrutura fixa (formulários, botões): não é trocada
     _userDomInitial.set(el, el.innerHTML)
+  }
+  // Campos guardam dado também em data-* (ex.: a palavra que o modal da guarda pede, que pode ser
+  // o nome do aluno): no logout eles voltam ao que eram no boot.
+  _userDomFieldData = new Map()
+  for (const f of document.querySelectorAll('input, textarea, select')) {
+    if (f.closest(_USER_DOM_SKIP)) continue
+    _userDomFieldData.set(f, { ...f.dataset })
   }
 }
 
@@ -3652,6 +3660,11 @@ function _restoreUserDom() {
       const d = [...f.options].findIndex(o => o.defaultSelected)
       f.selectedIndex = f.options.length ? Math.max(0, d) : -1
     } else if (!['button', 'submit', 'reset', 'image'].includes(f.type)) f.value = f.defaultValue
+    const d0 = _userDomFieldData?.get(f)
+    if (d0) {
+      for (const k of Object.keys(f.dataset)) if (!(k in d0)) delete f.dataset[k]
+      for (const [k, v] of Object.entries(d0)) f.dataset[k] = v
+    }
   }
 }
 
@@ -13961,6 +13974,12 @@ function retentionItemModel(r) {
   return { title: String(r?.title || ''), meta: parts.join(' · ') }
 }
 
+// Quantos arquivos o remove() do Storage realmente apagou. Barrado pela RLS, ele não dá erro:
+// devolve lista vazia. Por isso só conta como apagado o que vier na lista.
+function retRemovedCount(data) {
+  return Array.isArray(data) ? data.length : 0
+}
+
 // Confirmação digitada: igual à palavra pedida, sem espaços nas pontas (maiúsculas contam).
 function retConfirmOk(typed, expected) {
   const e = String(expected ?? '').trim()
@@ -13972,7 +13991,7 @@ function retPurgeSummary(s) {
   const ok = s.ok || 0, pdf = s.pdfFail || 0, fail = s.fail || 0
   const msgs = []
   if (ok) msgs.push(`${ok} ${ok === 1 ? 'exame apagado' : 'exames apagados'}`)
-  if (pdf) msgs.push(`${pdf} PDF${pdf === 1 ? '' : 's'} não saiu do armazenamento (fica em "PDFs soltos" para tentar de novo)`)
+  if (pdf) msgs.push(`${pdf} PDF${pdf === 1 ? '' : 's'} não saiu do armazenamento (se ainda existir, fica em "PDFs soltos" para tentar de novo)`)
   if (fail) msgs.push(`${fail} não ${fail === 1 ? 'foi apagado' : 'foram apagados'}`)
   return { text: (msgs.join('; ') || 'Nada foi apagado') + '.', kind: fail ? 'error' : pdf ? 'info' : 'success' }
 }
@@ -14066,7 +14085,11 @@ function retModalInput() {
 
 function closeRetModal() {
   document.getElementById('ret-modal').style.display = 'none'
-  document.getElementById('ret-modal-input').value = ''
+  const input = document.getElementById('ret-modal-input')
+  input.value = ''
+  delete input.dataset.expected   // pode ser o nome do aluno: não fica no DOM
+  document.getElementById('ret-modal-word').textContent = ''
+  document.getElementById('ret-modal-body').textContent = ''
   _retAction = null
 }
 
@@ -14086,8 +14109,12 @@ async function _retPurgeRow(id, motivo) {
   const { data: path, error } = await sb.rpc('purge_assessment', { p_id: id, p_motivo: motivo })
   if (error) { console.warn('[guarda] purge_assessment:', error.code); return { r: 'fail', error } }
   if (!path) return { r: 'ok' }
-  const { error: rmErr } = await sb.storage.from(PA_BUCKET).remove([path])
-  return { r: rmErr ? 'pdf' : 'ok' }
+  const { data: rm, error: rmErr } = await sb.storage.from(PA_BUCKET).remove([path])
+  if (rmErr || retRemovedCount(rm) < 1) {
+    console.warn('[guarda] PDF não saiu do armazenamento')
+    return { r: 'pdf' }
+  }
+  return { r: 'ok' }
 }
 
 function _retFind(id) {
@@ -14151,8 +14178,11 @@ function retAskDeleteOrphan(idx) {
     word: '',
     button: 'Apagar arquivo',
     action: async () => {
-      const { error } = await sb.storage.from(PA_BUCKET).remove([r.file_path])
-      toast(error ? 'Não foi possível apagar o arquivo: ' + _paErrMsg(error) : 'Arquivo apagado.', error ? 'error' : 'success')
+      const { data: rm, error } = await sb.storage.from(PA_BUCKET).remove([r.file_path])
+      const gone = !error && retRemovedCount(rm) >= 1
+      toast(gone ? 'Arquivo apagado.'
+        : 'Não foi possível apagar o arquivo' + (error ? ': ' + _paErrMsg(error) : ' (sem permissão ou já removido).'),
+        gone ? 'success' : 'error')
       navigateTo('retention')
     },
   })
@@ -14173,8 +14203,8 @@ function askPurgeStudentData(studentId) {
       const paths = (data || []).filter(p => typeof p === 'string' && p)
       let pdfFail = 0
       if (paths.length) {
-        const { error: rmErr } = await sb.storage.from(PA_BUCKET).remove(paths)
-        if (rmErr) pdfFail = paths.length
+        const { data: rm, error: rmErr } = await sb.storage.from(PA_BUCKET).remove(paths)
+        pdfFail = rmErr ? paths.length : Math.max(0, paths.length - retRemovedCount(rm))
       }
       if (!paths.length) toast('Nenhuma avaliação deste aluno para apagar.', 'info')
       else { const m = retPurgeSummary({ ok: paths.length, pdfFail }); toast(m.text, m.kind) }
