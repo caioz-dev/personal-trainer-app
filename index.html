@@ -3914,7 +3914,7 @@ async function boot() {
   const { data, error } = await sb.from('profiles').select('*').eq('id', me.id).maybeSingle()
   if (error || !data) { booted = false; showAuthSection(); return }
   profile = data
-  await Promise.all([detectBodyweightColumns(), detectExecNameColumn()])
+  await Promise.all([detectBodyweightColumns(), detectExecNameColumn(), detectExecDayColumns()])
   buildSidebar()
   document.getElementById('boot-loading').style.display = 'none'
   document.getElementById('auth-section').style.display = 'none'
@@ -6019,11 +6019,12 @@ async function renderStudentSheet(studentId, studentName, gen) {
         }
       }
       if (ex.notes && !execByWorkout[key].manualNotes) execByWorkout[key].manualNotes = ex.notes
-      const exId = ex.exercise_id
+      // Etapa E: exercício só de hoje (sem exercise_id) agrupa pela chave do dia.
+      const exId = execHistKey(ex)
       if (!execByWorkout[key].exerciseMap[exId]) {
         execByWorkout[key].exerciseMap[exId] = {
           exercise_id:           exId,
-          workout_exercises:     ex.workout_exercises,
+          workout_exercises:     execHistWE(ex),
           duration_executed_min: null,
           distance_executed_km:  null,
           speed_executed_kmh:    null,
@@ -6032,7 +6033,8 @@ async function renderStudentSheet(studentId, studentName, gen) {
       }
       const entry = execByWorkout[key].exerciseMap[exId]
       // Item B: série feita com nome do dia mostra esse nome (o do treino é a reserva).
-      if (execNamedWE(ex) !== ex.workout_exercises) entry.workout_exercises = execNamedWE(ex)
+      // Etapa E: com plano do dia gravado na série, o previsto é o do dia.
+      { const we = execHistWE(ex); if (we !== ex.workout_exercises) entry.workout_exercises = we }
       if (ex.duration_executed_min != null) entry.duration_executed_min = ex.duration_executed_min
       if (ex.distance_executed_km  != null) entry.distance_executed_km  = ex.distance_executed_km
       if (ex.speed_executed_kmh    != null) entry.speed_executed_kmh    = ex.speed_executed_kmh
@@ -6493,13 +6495,14 @@ async function renderMyWorkout(gen) {
       if (!execByWorkout[key]) {
         execByWorkout[key] = { workoutId: ex.workout_id, sessionId: ex.session_id || null, workoutName: ex.workouts?.name || (ex.workouts?.date ? fmtDate(ex.workouts.date) : '—'), executedAt: ex.executed_at, exerciseMap: {} }
       }
-      const exId = ex.exercise_id
+      const exId = execHistKey(ex)   // etapa E: exercício só de hoje agrupa pela chave do dia
       if (!execByWorkout[key].exerciseMap[exId]) {
-        execByWorkout[key].exerciseMap[exId] = { exercise_id: exId, workout_exercises: ex.workout_exercises, duration_executed_min: null, distance_executed_km: null, speed_executed_kmh: null, sets: [] }
+        execByWorkout[key].exerciseMap[exId] = { exercise_id: exId, workout_exercises: execHistWE(ex), duration_executed_min: null, distance_executed_km: null, speed_executed_kmh: null, sets: [] }
       }
       const entry = execByWorkout[key].exerciseMap[exId]
       // Item B: série feita com nome do dia mostra esse nome (o do treino é a reserva).
-      if (execNamedWE(ex) !== ex.workout_exercises) entry.workout_exercises = execNamedWE(ex)
+      // Etapa E: com plano do dia gravado na série, o previsto é o do dia.
+      { const we = execHistWE(ex); if (we !== ex.workout_exercises) entry.workout_exercises = we }
       if (ex.duration_executed_min != null) entry.duration_executed_min = ex.duration_executed_min
       if (ex.distance_executed_km  != null) entry.distance_executed_km  = ex.distance_executed_km
       if (ex.speed_executed_kmh    != null) entry.speed_executed_kmh    = ex.speed_executed_kmh
@@ -7993,12 +7996,13 @@ async function renderProgress(studentIdOverride) {
       // workouts!inner só pra forçar a RLS de workouts a excluir execuções de treinos de
       // outro personal (evita colisão de nome de exercício poluindo o gráfico deste aluno).
       // seconds_executed só com a migration v2 (pedir coluna inexistente derruba a consulta).
-      .select(`executed_at, session_id, workout_id, weight_executed, reps_executed, duration_executed_min, distance_executed_km, speed_executed_kmh${_bwColumnsReady ? ', seconds_executed' : ''}${_execNameColReady ? ', exercise_name_executed' : ''}, workout_exercises(exercise_name, exercise_type), workouts!inner()`)
+      .select(`executed_at, session_id, workout_id, weight_executed, reps_executed, duration_executed_min, distance_executed_km, speed_executed_kmh${_bwColumnsReady ? ', seconds_executed' : ''}${_execNameColReady ? ', exercise_name_executed' : ''}${_execDayColsReady ? ', exercise_id, exercise_type_executed, day_exercise_key' : ''}, workout_exercises(exercise_name, exercise_type), workouts!inner()`)
       .eq('student_id', studentId)
       .order('executed_at', { ascending: true })
     if (execErr) throw execErr
     // Item D: agrupa pelo nome do TREINO; o nome do dia (se diferente) vai para a dica do ponto.
-    window._progressExecutions = (execData || []).map(progressExecWithDay)
+    // Etapa E: série de exercício só de hoje vira um exercício com o próprio nome.
+    window._progressExecutions = (execData || []).map(progressDayOnly).map(progressExecWithDay)
 
     if (!workouts.length) {
       body.innerHTML = studentSelectorHTML + `<div class="empty-state"><div class="empty-icon">${icon('dumbbell')}</div>
@@ -8620,6 +8624,11 @@ function progressExerciseCatalog(workouts, executions = []) {
       typeByName.set(ex.exercise_name, ex.exercise_type === 'aerobico' ? 'aerobico' : 'musculacao')
     }
   }
+  // Etapa E: exercício só de hoje (sem linha no treino) entra pelo próprio nome.
+  for (const ex of executions || []) {
+    const n = ex?._dayOnly ? ex.workout_exercises?.exercise_name : null
+    if (n && !typeByName.has(n)) typeByName.set(n, ex.workout_exercises.exercise_type === 'aerobico' ? 'aerobico' : 'musculacao')
+  }
   const catalog = { musculacao: [], aerobico: [] }
   for (const [name, type] of typeByName) catalog[type].push(name)
   catalog.musculacao.sort()
@@ -8637,6 +8646,10 @@ function progressTimedNames(workouts, executions = []) {
       seen.add(ex.exercise_name)
       if (isTimedEx(ex)) timed.add(ex.exercise_name)
     }
+  }
+  for (const ex of executions || []) {
+    const n = ex?._dayOnly ? ex.workout_exercises?.exercise_name : null
+    if (n && !seen.has(n) && ex.seconds_executed != null) timed.add(n)
   }
   return timed
 }
@@ -15282,6 +15295,11 @@ async function saveExecSet(exerciseId, setNumber) {
   // Item B: nome do Editar hoje vai só para a série (o banco confere quem pode).
   const dayName = _execNameColReady ? cleanDayName(_execDayOverrides[exerciseId]?.exercise_name) : ''
   if (dayName) record.exercise_name_executed = dayName
+  // Etapa E: plano do dia na série (o histórico compara com ele).
+  if (_execDayColsReady) {
+    const ov = _execDayOverrides[exerciseId]
+    Object.assign(record, dayPlanFields(effectiveExecEx(ex, _execDayOverrides), !!ov && LIVE_DAY_PLAN_KEYS.some(k => k in ov)))
+  }
   let savedData
 
   if (isAero) {
@@ -15407,6 +15425,183 @@ const liveShownName = ex => liveDayName(ex) || ex?.exercise_name || ''
 // Campos ausentes (antes da migration, ou rascunho antigo) = reps e não corporal.
 const isBodyweightEx = ex => ex?.bodyweight === true
 const isTimedEx      = ex => ex?.measure === 'tempo'
+
+// ── Etapa E: ao vivo só para hoje ──
+// Colunas novas de workout_executions (exercício só de hoje e plano do dia). Sem elas, o ao vivo
+// já não grava nada em workout_exercises (carga, reps, descanso e séries ficam só no snapshot),
+// mas "Adicionar exercício" some e o histórico compara com o plano do treino salvo.
+let _execDayColsReady = false
+
+async function detectExecDayColumns() {
+  try {
+    const { error } = await sb.from('workout_executions')
+      .select('exercise_type_executed, day_exercise_key, day_sets, day_reps, day_weight_kg, day_hold_seconds').limit(0)
+    _execDayColsReady = !error
+  } catch { _execDayColsReady = false }
+}
+
+// @@live-day-pure:begin
+const LIVE_DAY_TOAST = 'Alterado só para hoje — o treino salvo não muda. Para mudar o treino, use Editar treino.'
+const LIVE_DAY_ID_RE = /^day-([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i
+const LIVE_DAY_PLAN_KEYS = ['sets', 'reps', 'hold_seconds', 'weight_kg']
+
+// Exercício do ao vivo com os valores do dia aplicados (sem alteração, o mesmo objeto).
+function liveEff(ex) { return ex && ex._day ? { ...ex, ...ex._day } : ex }
+
+// O plano do dia (séries/reps/tempo/carga) difere do treino? Exercício só de hoje: sempre.
+function liveDayPlanChanged(ex) {
+  return !!ex && (ex._dayOnly === true || (!!ex._day && LIVE_DAY_PLAN_KEYS.some(k => k in ex._day)))
+}
+
+// Plano do dia para a série (colunas day_*), só de musculação e só quando mudou.
+function dayPlanFields(eff, changed) {
+  if (!changed || !eff || eff.exercise_type === 'aerobico') return {}
+  const out = {}
+  const sets = Number(eff.sets)
+  if (Number.isInteger(sets) && sets >= 1 && sets <= EXEC_TODAY_MAX_SETS) out.day_sets = sets
+  if (isTimedEx(eff)) {
+    const h = Number(eff.hold_seconds)
+    if (Number.isInteger(h) && h >= 1 && h <= 3600) out.day_hold_seconds = h
+  } else {
+    const r = Number(eff.reps)
+    if (Number.isInteger(r) && r >= 1 && r <= 999) out.day_reps = r
+  }
+  const w = Number(eff.weight_kg)
+  if (eff.weight_kg != null && eff.weight_kg !== '' && Number.isFinite(w) && w >= 0 && w <= 1000) out.day_weight_kg = w
+  return out
+}
+
+// Lápis do ao vivo: valida carga/reps/tempo/descanso (séries vêm do ±1). Devolve { error } ou
+// { day } (diferença em relação ao treino; null = igual) e { values } (valores concretos).
+// Descanso vazio = sem descanso hoje.
+function validateLiveDay(ex, input, savedMaxSet = 0) {
+  if (!ex || ex.exercise_type === 'aerobico') return { error: 'Este exercício não pode ser editado aqui.' }
+  const plan = { ...ex }
+  delete plan._day
+  const effSets = Math.max(1, parseInt(liveEff(ex).sets) || 1)
+  const base = validateExecDayOverride(plan, {
+    sets: effSets, reps: input.reps, hold_seconds: input.hold_seconds, weight_kg: input.weight_kg
+  }, savedMaxSet)
+  if (base.error) return base
+  const day = { ...(base.override || {}) }
+  const restRaw = String(input.tempo_descanso ?? '').trim()
+  let rest = null
+  if (restRaw !== '') {
+    rest = Number(restRaw)
+    if (!Number.isInteger(rest) || rest < 0 || rest > 3600) return { error: 'Informe o descanso de 0 a 3600 s.' }
+  }
+  const planRest = plan.tempo_descanso == null || plan.tempo_descanso === '' ? null : Number(plan.tempo_descanso)
+  if (rest !== planRest) day.tempo_descanso = rest
+  const values = { ...plan, ...day }
+  return { day: Object.keys(day).length ? day : null,
+           values: { sets: values.sets, reps: values.reps, hold_seconds: values.hold_seconds,
+                     weight_kg: values.weight_kg, tempo_descanso: values.tempo_descanso } }
+}
+
+// Restore: valores do dia do snapshot, só os 5 campos e só válidos para o tipo do exercício;
+// séries nunca abaixo da maior já salva. Inválido/antigo = null.
+function sanitizeLiveDay(ex, raw, saved = {}) {
+  if (!ex || ex.exercise_type === 'aerobico' || !raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const clean = sanitizeExecDayOverrides({ [ex.id]: raw }, [ex], { [ex.id]: saved })[ex.id] || {}
+  delete clean.exercise_name
+  if (Object.prototype.hasOwnProperty.call(raw, 'tempo_descanso')) {
+    const r = raw.tempo_descanso
+    if (r === null || (Number.isInteger(r) && r >= 0 && r <= 3600)) clean.tempo_descanso = r
+  }
+  const savedMax = _execSavedMaxSet(saved)
+  const planSets = Math.max(1, parseInt(ex.sets) || 1)
+  if (clean.sets == null && savedMax > planSets) clean.sets = savedMax
+  return Object.keys(clean).length ? clean : null
+}
+
+// Restore de um exercício só de hoje: id day-<uuid> com a mesma chave, nome, tipo e números
+// válidos. Qualquer coisa fora disso = null (o card não volta; as séries salvas ficam no banco).
+function sanitizeLiveDayOnly(raw, saved = {}) {
+  if (!raw || typeof raw !== 'object' || raw._dayOnly !== true) return null
+  const m = LIVE_DAY_ID_RE.exec(String(raw.id || ''))
+  if (!m || raw._dayKey !== m[1].toLowerCase() && raw._dayKey !== m[1]) return null
+  const name = typeof raw.exercise_name === 'string' ? raw.exercise_name.trim() : ''
+  if (!name || name.length > EXEC_TODAY_NAME_MAX) return null
+  const type = raw.exercise_type === 'aerobico' ? 'aerobico' : raw.exercise_type === 'musculacao' ? 'musculacao' : null
+  if (!type) return null
+  const num = (v, lo, hi, int = false) => {
+    if (v == null || v === '') return null
+    const n = Number(v)
+    return Number.isFinite(n) && n >= lo && n <= hi && (!int || Number.isInteger(n)) ? n : undefined
+  }
+  const out = { id: raw.id, _dayOnly: true, _dayKey: raw._dayKey, workout_id: raw.workout_id,
+                exercise_name: name, exercise_type: type, position: Number.isInteger(raw.position) ? raw.position : 0 }
+  if (type === 'aerobico') {
+    const dur = num(raw.duration_min, 0, 1440), dist = num(raw.distance_km, 0, 1000), spd = num(raw.speed_kmh, 0, 100)
+    if (dur === undefined || dist === undefined || spd === undefined) return null
+    Object.assign(out, { sets: 1, duration_min: dur, distance_km: dist, speed_kmh: spd })
+    return out
+  }
+  const sets = num(raw.sets, 1, EXEC_TODAY_MAX_SETS, true), w = num(raw.weight_kg, 0, 1000)
+  const rest = num(raw.tempo_descanso, 0, 3600, true)
+  const timed = raw.measure === 'tempo'
+  const reps = timed ? null : num(raw.reps, 1, 999, true)
+  const hold = timed ? num(raw.hold_seconds, 1, 3600, true) : null
+  if (sets == null || sets === undefined || w === undefined || rest === undefined || reps === undefined || hold === undefined) return null
+  if (timed ? hold == null : reps == null) return null
+  Object.assign(out, { sets: Math.max(sets, _execSavedMaxSet(saved)), weight_kg: w ?? 0, reps: reps ?? 0,
+                       hold_seconds: hold, tempo_descanso: rest, bodyweight: raw.bodyweight === true,
+                       measure: timed ? 'tempo' : 'reps' })
+  return out
+}
+
+// Restore da lista inteira do ao vivo (snapshot): exercícios do treino com _day/_dayHidden/
+// _dayName limpos; exercícios só de hoje validados. Ordem preservada.
+function sanitizeLiveExercises(list, savedSets = {}) {
+  const out = []
+  for (const raw of Array.isArray(list) ? list : []) {
+    if (!raw || typeof raw !== 'object') continue
+    const saved = savedSets?.[raw.id] || {}
+    if (raw._dayOnly === true || String(raw.id || '').startsWith('day-')) {
+      const d = sanitizeLiveDayOnly(raw, saved)
+      if (d) out.push(d)
+      continue
+    }
+    const ex = { ...raw }
+    const day = sanitizeLiveDay(ex, raw._day, saved)
+    if (day) ex._day = day; else delete ex._day
+    if (raw._dayHidden === true && !Object.keys(saved).length) ex._dayHidden = true; else delete ex._dayHidden
+    out.push(ex)
+  }
+  return out
+}
+
+// Histórico: embed da série com o nome do dia (item B), o plano do dia (etapa E) e, para o
+// exercício só de hoje (sem exercise_id), um embed montado com o que a própria série guarda.
+function execHistWE(ex) {
+  let we = execNamedWE(ex)
+  if (!we && ex?.exercise_id == null) {
+    const name = cleanDayName(ex?.exercise_name_executed)
+    if (!name) return we
+    we = { exercise_name: `${name} (só hoje)`, exercise_type: ex.exercise_type_executed === 'aerobico' ? 'aerobico' : 'musculacao',
+           _dayOnly: true, ...(ex.seconds_executed != null || ex.day_hold_seconds != null ? { measure: 'tempo' } : {}) }
+  }
+  if (we && ex && (ex.day_sets != null || ex.day_reps != null || ex.day_weight_kg != null || ex.day_hold_seconds != null)) {
+    we = { ...we, _dayPlan: true,
+           ...(ex.day_sets         != null ? { sets: Number(ex.day_sets) } : {}),
+           ...(ex.day_reps         != null ? { reps: Number(ex.day_reps) } : {}),
+           ...(ex.day_weight_kg    != null ? { weight_kg: Number(ex.day_weight_kg) } : {}),
+           ...(ex.day_hold_seconds != null ? { hold_seconds: Number(ex.day_hold_seconds) } : {}) }
+  }
+  return we
+}
+// Chave do exercício na sessão do histórico: o id do treino ou a chave do dia.
+function execHistKey(ex) { return ex?.exercise_id ?? `day:${ex?.day_exercise_key || ex?.id}` }
+
+// Progresso: série de exercício só de hoje ganha um embed com o próprio nome e tipo.
+function progressDayOnly(ex) {
+  if (!ex || ex.workout_exercises || ex.exercise_id != null) return ex
+  const name = cleanDayName(ex.exercise_name_executed)
+  if (!name) return ex
+  return { ...ex, _dayOnly: true,
+           workout_exercises: { exercise_name: name, exercise_type: ex.exercise_type_executed === 'aerobico' ? 'aerobico' : 'musculacao' } }
+}
+// @@live-day-pure:end
 
 // Peso atual do aluno em student_profiles. { state: 'ok'|'missing'|'error', weight }
 async function fetchStudentWeight(studentId) {
@@ -15827,7 +16022,9 @@ function showComparisonModal(finalTime) {
   let totalPlanned  = 0
   let totalExecuted = 0
 
-  const rows = exes.map(ex => {
+  const rows = exes.map(exOrig => {
+    // Etapa E (M2): o previsto é o do dia (Editar hoje), não o do treino salvo.
+    const ex = effectiveExecEx(exOrig, _execDayOverrides)
     try {
       // exerciseExecutions[ex.id] agora é um mapa { setNumber: dadosDaSérie }, preenchido
       // incrementalmente por saveExecSet — não mais um objeto único por exercício.
@@ -15982,6 +16179,13 @@ function saveWorkoutExecutions(workoutId) {
     const n = cleanDayName(ov?.exercise_name)
     if (n) dayNames[id] = n
   }
+  // Etapa E: plano do dia de cada exercício alterado (lido antes de qualquer await).
+  const dayPlans   = {}
+  if (_execDayColsReady) for (const ex of exes) {
+    const ov = _execDayOverrides?.[ex.id]
+    const f = dayPlanFields(effectiveExecEx(ex, _execDayOverrides), !!ov && LIVE_DAY_PLAN_KEYS.some(k => k in ov))
+    if (Object.keys(f).length) dayPlans[ex.id] = f
+  }
   // executed_at = momento do "Finalizar Treino" (não o da gravação): num restore dias depois,
   // o "Não executado" continua com a data da sessão.
   const executedAt = new Date(_execFinishedAt || Date.now()).toISOString()
@@ -16040,7 +16244,8 @@ function saveWorkoutExecutions(workoutId) {
           duration_executed_min: null,
           distance_executed_km:  null,
           speed_executed_kmh:    null,
-          ...(dayNames[id] ? { exercise_name_executed: dayNames[id] } : {})
+          ...(dayNames[id] ? { exercise_name_executed: dayNames[id] } : {}),
+          ...(dayPlans[id] || {})
         }))
 
       // ignoreDuplicates (ON CONFLICT DO NOTHING): se a série 1 já existir — real, ou o
@@ -16445,9 +16650,10 @@ function renderLiveExecutionScreen(workout) {
   const canEdit = canEditWorkout(workout)
   document.getElementById('live-ex-edit-notice').style.display     = canEdit ? '' : 'none'
   document.getElementById('live-ex-readonly-notice').style.display = canEdit ? 'none' : ''
-  document.getElementById('live-add-ex-wrap').style.display        = canEdit ? '' : 'none'
-  if (!canEdit) cancelLiveAddExercise()
-  const exes = workout.workout_exercises || []
+  // Etapa E: adicionar exercício só para hoje depende das colunas novas.
+  document.getElementById('live-add-ex-wrap').style.display        = canEdit && _execDayColsReady ? '' : 'none'
+  if (!canEdit || !_execDayColsReady) cancelLiveAddExercise()
+  const exes = (workout.workout_exercises || []).filter(ex => !ex._dayHidden)
   document.getElementById('live-exec-exercise-list').innerHTML = exes.length
     ? exes.map(ex => renderLiveExerciseCardHTML(ex)).join('')
     : '<div class="empty-state" style="padding:2rem"><div class="empty-icon">' + icon('dumbbell') + '</div><p>Nenhum exercício neste treino.</p></div>'
@@ -16535,7 +16741,9 @@ function _readLiveExerciseMode(prefix, msgs) {
 // Gera o card de UM exercício — usada tanto na renderização inicial da lista quanto
 // em refreshLiveExerciseCard(), pra atualizar só o exercício editado sem re-renderizar
 // (e perder o estado/valores digitados) dos outros exercícios da tela.
-function renderLiveExerciseCardHTML(ex) {
+function renderLiveExerciseCardHTML(exOrig) {
+  // Etapa E: o card mostra e pré-preenche os valores do dia (ex._day), se houver.
+  const ex        = liveEff(exOrig)
   const isAero    = ex.exercise_type === 'aerobico'
   const setsCount = Math.max(1, parseInt(ex.sets) || 1)
   const planned = isAero
@@ -16551,6 +16759,9 @@ function renderLiveExerciseCardHTML(ex) {
         ex.tempo_descanso != null ? `Descanso: ${ex.tempo_descanso}s` : null,
         ex.training_method   ? `Método: ${escHtml(ex.training_method)}`    : null
       ].filter(Boolean).join(' &nbsp;·&nbsp; ')
+  const plannedHTML = exOrig._day
+    ? `${planned} <span class="exec-today-badge">alterado hoje</span><div class="exec-today-orig">Original: ${setsPrescriptionText(exOrig, Math.max(1, parseInt(exOrig.sets) || 1))}${exOrig.tempo_descanso != null ? ` · Descanso: ${exOrig.tempo_descanso}s` : ''}</div>`
+    : planned
   const restBtn = !isAero && ex.tempo_descanso > 0
     ? `<div class="rest-timer-wrap" id="rest-timer-${ex.id}">
          <span style="font-size:.72rem;color:var(--text-muted);font-weight:500">Ao terminar uma série, inicie o descanso</span>
@@ -16593,8 +16804,8 @@ function renderLiveExerciseCardHTML(ex) {
     : ''
 
   const editPanel = !canEdit ? '' : isAero
-    ? `<div class="live-ex-edit-panel" id="live-ex-editpanel-${ex.id}" style="display:none">${_execNameColReady ? `
-         <div class="live-ex-edit-notice" style="margin:0">${isAero ? 'O nome vale só para hoje.' : 'O nome vale só para hoje; carga, reps e descanso mudam também o treino salvo.'}</div>` : ''}
+    ? `<div class="live-ex-edit-panel" id="live-ex-editpanel-${ex.id}" style="display:none">
+         <div class="live-ex-edit-notice" style="margin:0">Vale só para hoje. O treino salvo não muda.</div>
          <div class="live-ex-edit-row">
            <input type="text" class="form-control" id="live-edit-name-${ex.id}" value="${escHtml(liveShownName(ex))}" list="live-exercise-catalog" placeholder="Nome do exercício">
          </div>
@@ -16603,27 +16814,18 @@ function renderLiveExerciseCardHTML(ex) {
            <button type="button" class="btn btn-primary btn-sm" onclick="saveLiveExerciseEdit('${ex.id}')">Salvar alteração</button>
          </div>
        </div>`
-    : `<div class="live-ex-edit-panel" id="live-ex-editpanel-${ex.id}" style="display:none">${_execNameColReady ? `
-         <div class="live-ex-edit-notice" style="margin:0">${isAero ? 'O nome vale só para hoje.' : 'O nome vale só para hoje; carga, reps e descanso mudam também o treino salvo.'}</div>` : ''}
+    : `<div class="live-ex-edit-panel" id="live-ex-editpanel-${ex.id}" style="display:none">
+         <div class="live-ex-edit-notice" style="margin:0">Vale só para hoje. O treino salvo não muda.</div>
          <div class="live-ex-edit-row">
            <input type="text" class="form-control" id="live-edit-name-${ex.id}" value="${escHtml(liveShownName(ex))}" list="live-exercise-catalog" placeholder="Nome do exercício">
          </div>
          <div class="live-ex-edit-row">
-           <input type="number" class="form-control" id="live-edit-weight-${ex.id}" value="${ex.weight_kg ?? ''}" step="0.5" min="0" placeholder="Carga planejada (kg)"${isBodyweightEx(ex) ? ' readonly' : ''}>
-           <input type="number" class="form-control" id="live-edit-reps-${ex.id}" value="${isTimedEx(ex) ? '' : (ex.reps ?? '')}" min="1" placeholder="Reps planejadas"${isTimedEx(ex) ? ' style="display:none"' : ''}>${_bwColumnsReady ? `
-           <input type="number" class="form-control" id="live-edit-${ex.id}-hold" value="${ex.hold_seconds ?? ''}" min="1" max="3600" placeholder="Tempo por série (s)"${isTimedEx(ex) ? '' : ' style="display:none"'}>` : ''}
-           <input type="number" class="form-control" id="live-edit-rest-${ex.id}" value="${ex.tempo_descanso ?? ''}" min="0" placeholder="Descanso (s)">
-         </div>${_bwColumnsReady ? `
-         <div class="live-ex-edit-row" style="align-items:center">
-           <select class="form-control" id="live-edit-${ex.id}-measure" onchange="_syncLiveModeFields('live-edit-${ex.id}')" style="max-width:190px;flex:initial">
-             <option value="reps"${isTimedEx(ex) ? '' : ' selected'}>Repetições</option>
-             <option value="tempo"${isTimedEx(ex) ? ' selected' : ''}>Tempo (segundos)</option>
-           </select>
-           <label style="display:flex;align-items:center;gap:.4rem;font-size:.82rem;cursor:pointer">
-             <input type="checkbox" id="live-edit-${ex.id}-bw" onchange="_syncLiveModeFields('live-edit-${ex.id}')"${isBodyweightEx(ex) ? ' checked' : ''} style="margin:0"> Peso corporal
-           </label>
-           <span id="live-edit-${ex.id}-bw-hint" style="font-size:.75rem;color:var(--text-muted)">${bodyweightHint(_liveWeightState, _liveStudentWeight, _isSelfStudent(_liveExecStudentId))}</span>
-         </div>` : ''}
+           <input type="number" class="form-control" id="live-edit-weight-${ex.id}" value="${ex.weight_kg ?? ''}" step="0.5" min="0" placeholder="Carga de hoje (kg)"${isBodyweightEx(ex) ? ' readonly' : ''}>
+           ${isTimedEx(ex)
+             ? `<input type="number" class="form-control" id="live-edit-${ex.id}-hold" value="${ex.hold_seconds ?? ''}" min="1" max="3600" placeholder="Tempo por série (s)">`
+             : `<input type="number" class="form-control" id="live-edit-reps-${ex.id}" value="${ex.reps ?? ''}" min="1" placeholder="Reps de hoje">`}
+           <input type="number" class="form-control" id="live-edit-rest-${ex.id}" value="${ex.tempo_descanso ?? ''}" min="0" max="3600" placeholder="Descanso (s)">
+         </div>
          <div class="live-ex-edit-actions">
            <button type="button" class="btn btn-outline btn-sm" onclick="cancelLiveExerciseEdit('${ex.id}')">Cancelar</button>
            <button type="button" class="btn btn-primary btn-sm" onclick="saveLiveExerciseEdit('${ex.id}')">Salvar alteração</button>
@@ -16633,14 +16835,14 @@ function renderLiveExerciseCardHTML(ex) {
   return `
   <div class="exec-exercise-card" id="live-ex-${ex.id}">
     <div class="exec-ex-header">
-      <div class="exec-ex-name">${isAero ? icon('footprints') + ' ' : ''}${escHtml(liveShownName(ex))}${liveDayName(ex) ? ' <span class="exec-today-badge">só hoje</span>' : ''}</div>
+      <div class="exec-ex-name">${isAero ? icon('footprints') + ' ' : ''}${escHtml(liveShownName(ex))}${liveDayName(ex) || ex._dayOnly ? ' <span class="exec-today-badge">só hoje</span>' : ''}</div>
       <div class="live-ex-header-actions">
         <span class="live-ex-progress" id="live-ex-progress-${ex.id}">0/${isAero ? 1 : setsCount} série${(isAero ? 1 : setsCount) > 1 ? 's' : ''}</span>
         ${canEdit ? `<button type="button" class="btn-live-ex-edit" id="live-ex-editbtn-${ex.id}" title="Editar exercício" aria-label="Editar exercício" onclick="toggleLiveExerciseEdit('${ex.id}')">${icon('pencil')}</button>
-        <button type="button" class="btn-live-ex-edit" title="Remover exercício" aria-label="Remover exercício" onclick="removeLiveExercise('${ex.id}')">${icon('trash-2')}</button>` : ''}
+        <button type="button" class="btn-live-ex-edit" title="Tirar de hoje" aria-label="Tirar de hoje" onclick="removeLiveExercise('${ex.id}')">${icon('trash-2')}</button>` : ''}
       </div>
     </div>
-    <div class="exec-ex-planned">${planned || '—'}</div>
+    <div class="exec-ex-planned">${plannedHTML || '—'}</div>
     ${setsStepper}
     ${editPanel}
     ${!isAero && ex.method_description ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.4rem;padding:.4rem .75rem;background:rgba(86,115,255,0.05);border-radius:var(--radius-md);border-left:2px solid var(--accent-a25)">${escHtml(ex.method_description)}</div>` : ''}
@@ -16719,12 +16921,10 @@ function cancelLiveExerciseEdit(exerciseId) {
   if (btn) btn.classList.remove('active')
 }
 
-// Edita o exercício (nome/carga/reps/descanso planejados) da linha existente via UPDATE
-// pontual — nunca delete+reinsert. É a mesma linha (id preservado), então não dispara o
-// cascade delete que apaga workout_executions (ver saveWorkout(), que usa delete+reinsert
-// e por isso apaga o histórico do treino inteiro a cada edição — bug pré-existente, não
-// replicado aqui de propósito).
-async function saveLiveExerciseEdit(exerciseId) {
+// Etapa E: o lápis do ao vivo vale só para hoje — nada vai para workout_exercises. Carga, reps,
+// tempo e descanso do dia ficam em ex._day (snapshot local, como o Editar hoje da guiada); o
+// nome do dia em ex._dayName (item B). Exercício adicionado só hoje muda no próprio objeto.
+function saveLiveExerciseEdit(exerciseId) {
   const ex = (_liveWorkoutData?.workout_exercises || []).find(e => e.id === exerciseId)
   if (!ex) return
   if (!canEditWorkout(_liveWorkoutData)) { toast(NO_EDIT_PERMISSION_MSG, 'error'); return }
@@ -16733,135 +16933,82 @@ async function saveLiveExerciseEdit(exerciseId) {
   const nameInput = document.getElementById(`live-edit-name-${exerciseId}`)
   const name = _resolveExerciseName(nameInput.value, window._liveExerciseCatalog)
   if (!name) { toast('Informe o nome do exercício.', 'error'); return }
+  if (name.length > EXEC_TODAY_NAME_MAX) { toast(`Use até ${EXEC_TODAY_NAME_MAX} caracteres no nome.`, 'error'); return }
 
-  // Item B: com a coluna nova o nome vale só para hoje (vai para as séries desta sessão) e
-  // não entra no UPDATE; sem ela, renomeia no treino como antes.
-  const dayOnly = _execNameColReady
-  const patch = dayOnly ? {} : { exercise_name: name }
-  const applyDayName = () => {
-    if (!dayOnly) return
-    if (name === ex.exercise_name) delete ex._dayName
-    else ex._dayName = name
-  }
+  let res = null
   if (!isAero) {
-    const mode = _readLiveExerciseMode(`live-edit-${exerciseId}`,
-      { weight: 'Informe uma carga planejada válida.', reps: 'Informe repetições planejadas válidas.' })
-    const restRaw = document.getElementById(`live-edit-rest-${exerciseId}`).value.trim()
-    if (mode.error) { toast(mode.error, 'error'); return }
-    Object.assign(patch, mode.fields)
-    patch.tempo_descanso   = restRaw === '' ? null : parseInt(restRaw)
+    const val = id => document.getElementById(id)?.value ?? ''
+    res = validateLiveDay(ex, {
+      reps:           val(`live-edit-reps-${exerciseId}`),
+      hold_seconds:   val(`live-edit-${exerciseId}-hold`),
+      weight_kg:      val(`live-edit-weight-${exerciseId}`),
+      tempo_descanso: val(`live-edit-rest-${exerciseId}`)
+    }, _execSavedMaxSet(_liveSavedSets[exerciseId]))
+    if (res.error) { toast(res.error, 'error'); return }
   }
-
-  if (dayOnly && !Object.keys(patch).length) {
-    // Aeróbico: só o nome, nada vai para o banco agora.
-    applyDayName()
-    refreshLiveExerciseCard(exerciseId)
-    saveLiveExecutionState()
-    toast(ex._dayName ? 'Nome alterado só para hoje — o treino salvo não muda.' : 'Nome igual ao do treino.', 'success')
-    return
+  if (ex._dayOnly) {
+    ex.exercise_name = name
+    if (res) Object.assign(ex, res.values)
+  } else {
+    if (res) { if (res.day) ex._day = res.day; else delete ex._day }
+    if (_execNameColReady) { if (name === ex.exercise_name) delete ex._dayName; else ex._dayName = name }
   }
-
-  const panel  = document.getElementById(`live-ex-editpanel-${exerciseId}`)
-  const saveBtn = panel?.querySelector('.btn-primary')
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Salvando…' }
-  try {
-    const { data: rows, error } = await sb.from('workout_exercises').update(patch).eq('id', exerciseId).select('id')
-    if (error) throw error
-    if (!rows?.length) {
-      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Salvar alteração' }
-      toast(NO_EDIT_PERMISSION_MSG, 'error')
-      return
-    }
-    Object.assign(ex, patch)
-    applyDayName()
-    refreshLiveExerciseCard(exerciseId)
-    saveLiveExecutionState()
-    toast(dayOnly
-      ? 'Exercício atualizado. O nome vale só para hoje; carga, reps e descanso valem também para as próximas vezes.'
-      : 'Exercício atualizado — vale também pras próximas vezes que esse treino for usado.', 'success')
-  } catch (err) {
-    console.error('[saveLiveExerciseEdit] erro:', err?.message || err)
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Salvar alteração' }
-    toast('Não foi possível salvar a alteração. Verifique sua conexão e tente novamente.', 'error')
-  }
+  refreshLiveExerciseCard(exerciseId)
+  saveLiveExecutionState()
+  toast(LIVE_DAY_TOAST, 'success')
 }
 
-// +1/-1 série: ajusta só o campo `sets` (não existe uma linha por série no banco —
-// as linhas da tela são geradas a partir desse número). Reduzir não apaga séries já
-// registradas de um set_number maior, só para de exibi-las aqui; avisa antes disso.
-async function liveAdjustSets(exerciseId, delta) {
+// +1/-1 série só para hoje (ex._day.sets; no exercício só de hoje, o próprio sets). Como no
+// Editar hoje: nunca abaixo da maior série já salva nesta sessão.
+function liveAdjustSets(exerciseId, delta) {
   const ex = (_liveWorkoutData?.workout_exercises || []).find(e => e.id === exerciseId)
   if (!ex) return
   if (!canEditWorkout(_liveWorkoutData)) { toast(NO_EDIT_PERMISSION_MSG, 'error'); return }
-  const current = Math.max(1, parseInt(ex.sets) || 1)
+  const current = Math.max(1, parseInt(liveEff(ex).sets) || 1)
   const next = current + delta
-  if (next < 1) return
-
-  if (delta < 0 && _liveSavedSets[exerciseId]?.[current]) {
-    if (!confirm(`A série ${current} já tem registro salvo. Remover mesmo assim? O registro salvo não é apagado, só deixa de aparecer aqui.`)) return
+  if (next < 1 || next > EXEC_TODAY_MAX_SETS) return
+  const savedMax = _execSavedMaxSet(_liveSavedSets[exerciseId])
+  if (next < savedMax) { toast(`A série ${savedMax} já foi salva hoje — mantenha pelo menos ${savedMax} séries.`, 'error'); return }
+  if (ex._dayOnly) ex.sets = next
+  else {
+    const day = { ...(ex._day || {}) }
+    if (next === Math.max(1, parseInt(ex.sets) || 1)) delete day.sets; else day.sets = next
+    if (Object.keys(day).length) ex._day = day; else delete ex._day
   }
-
-  const stepBtns = document.querySelectorAll(`#live-ex-${exerciseId} .btn-live-sets-step`)
-  stepBtns.forEach(b => b.disabled = true)
-  try {
-    const { data: rows, error } = await sb.from('workout_exercises').update({ sets: next }).eq('id', exerciseId).select('id')
-    if (error) throw error
-    if (!rows?.length) {
-      stepBtns.forEach(b => b.disabled = false)
-      toast(NO_EDIT_PERMISSION_MSG, 'error')
-      return
-    }
-    ex.sets = next
-    refreshLiveExerciseCard(exerciseId)
-    saveLiveExecutionState()
-  } catch (err) {
-    console.error('[liveAdjustSets] erro:', err?.message || err)
-    toast('Não foi possível ajustar o número de séries.', 'error')
-    stepBtns.forEach(b => b.disabled = false)
-  }
+  refreshLiveExerciseCard(exerciseId)
+  saveLiveExecutionState()
 }
 
-// Remove o exercício do treino (linha inteira). Ao contrário de editar campos, isso é
-// um DELETE de verdade — mas de UMA linha só (não delete+reinsert do treino inteiro
-// como em saveWorkout()), então só dispara o cascade nas execuções DESSE exercício,
-// nunca nos outros. Ainda assim avisa antes, se já existir histórico.
-async function removeLiveExercise(exerciseId) {
-  const ex = (_liveWorkoutData?.workout_exercises || []).find(e => e.id === exerciseId)
+// Etapa E: "Tirar de hoje" — o exercício do treino só some do registro de hoje (_dayHidden);
+// o exercício só de hoje sai da lista. Nada é apagado no banco. Com série salva hoje, não tira.
+function removeLiveExercise(exerciseId) {
+  const list = _liveWorkoutData?.workout_exercises || []
+  const ex = list.find(e => e.id === exerciseId)
   if (!ex) return
   if (!canEditWorkout(_liveWorkoutData)) { toast(NO_EDIT_PERMISSION_MSG, 'error'); return }
-
-  // Contagem falhou: aborta (como saveWorkout) — antes o catch vazio zerava a contagem e o
-  // aviso de que o histórico do exercício seria apagado simplesmente não aparecia.
-  let historyCount
-  try {
-    const { count, error } = await sb.from('workout_executions')
-      .select('id', { count: 'exact', head: true }).eq('exercise_id', exerciseId)
-    if (error || count == null) throw error || new Error('contagem indisponível')
-    historyCount = count
-  } catch (err) {
-    console.error('[removeLiveExercise] erro ao contar histórico:', err?.message || err)
-    toast('Não foi possível verificar o histórico deste exercício. Nada foi removido — tente novamente.', 'error')
+  if (Object.keys(_liveSavedSets[exerciseId] || {}).length) {
+    toast('Este exercício já tem série salva hoje: não dá para tirar do registro. As séries ficam no histórico.', 'error')
     return
   }
+  if (ex._dayOnly) _liveWorkoutData.workout_exercises = list.filter(e => e.id !== exerciseId)
+  else ex._dayHidden = true
+  document.getElementById(`live-ex-${exerciseId}`)?.remove()
+  saveLiveExecutionState()
+  toast(ex._dayOnly ? 'Exercício tirado do registro de hoje.' : 'Exercício tirado só de hoje — o treino salvo não muda.', 'success', {
+    actionLabel: 'Desfazer',
+    onAction: () => undoRemoveLiveExercise(ex)
+  })
+}
 
-  const warnMsg = historyCount > 0
-    ? `"${ex.exercise_name}" já tem ${historyCount} série${historyCount > 1 ? 's' : ''} registrada${historyCount > 1 ? 's' : ''} (de hoje e/ou sessões anteriores). Remover esse exercício apaga esse histórico também, permanentemente. Remover mesmo assim?`
-    : `Remover "${ex.exercise_name}" deste treino?`
-  if (!confirm(warnMsg)) return
-
-  try {
-    const { data: rows, error } = await sb.from('workout_exercises').delete().eq('id', exerciseId).select('id')
-    if (error) throw error
-    if (!rows?.length) { toast(NO_EDIT_PERMISSION_MSG, 'error'); return }
-    _liveWorkoutData.workout_exercises = (_liveWorkoutData.workout_exercises || []).filter(e => e.id !== exerciseId)
-    delete _liveSavedSets[exerciseId]
-    document.getElementById(`live-ex-${exerciseId}`)?.remove()
-    saveLiveExecutionState()
-    toast('Exercício removido do treino.', 'success')
-  } catch (err) {
-    console.error('[removeLiveExercise] erro:', err?.message || err)
-    toast('Não foi possível remover o exercício.', 'error')
-  }
+function undoRemoveLiveExercise(ex) {
+  if (!_liveWorkoutData || !ex) return
+  const list = _liveWorkoutData.workout_exercises = _liveWorkoutData.workout_exercises || []
+  if (ex._dayOnly) { if (!list.some(e => e.id === ex.id)) list.push(ex) }
+  else delete ex._dayHidden
+  if (!document.getElementById(`live-ex-${ex.id}`)) _appendLiveExerciseCard(ex)
+  hydrateLiveExerciseSavedSets(ex.id)
+  updateLiveExerciseProgress(ex.id)
+  saveLiveExecutionState()
 }
 
 // ── Adicionar exercício novo direto na tela de Registrar ao vivo ──
@@ -16907,73 +17054,49 @@ function toggleLiveAddExerciseType() {
   if (extraEl) extraEl.style.display = _bwColumnsReady && !isAero ? 'flex' : 'none'
 }
 
-async function saveLiveAddExercise() {
+// Etapa E: o exercício novo vale só para hoje — não cria linha em workout_exercises. Fica em
+// _liveWorkoutData com id local (day-<uuid>) e vai no snapshot; as séries dele gravam com
+// exercise_id nulo, o nome, o tipo e a chave do dia (colunas novas de workout_executions).
+function saveLiveAddExercise() {
   const workoutId = _liveWorkoutData?.id
   if (!workoutId) return
   if (!canEditWorkout(_liveWorkoutData)) { toast(NO_EDIT_PERMISSION_MSG, 'error'); return }
+  if (!_execDayColsReady) { toast('Adicionar exercício só para hoje ainda não está disponível.', 'error'); return }
 
   const name = _resolveExerciseName(document.getElementById('live-add-ex-name').value, window._liveExerciseCatalog)
   if (!name) { toast('Informe o nome do exercício.', 'error'); return }
+  if (name.length > EXEC_TODAY_NAME_MAX) { toast(`Use até ${EXEC_TODAY_NAME_MAX} caracteres no nome.`, 'error'); return }
   const isAero = document.getElementById('live-add-ex-type').value === 'aerobico'
-  const position = (_liveWorkoutData.workout_exercises || []).length
+  const key = uuidv4()
+  const ex = { id: `day-${key}`, _dayOnly: true, _dayKey: key, workout_id: workoutId, exercise_name: name,
+               exercise_type: isAero ? 'aerobico' : 'musculacao', position: (_liveWorkoutData.workout_exercises || []).length }
 
-  let record
   if (isAero) {
     const duration = parseFloat(document.getElementById('live-add-ex-duration').value)
     if (isNaN(duration) || duration < 0) { toast('Informe a duração (min).', 'error'); return }
-    record = {
-      workout_id: workoutId, exercise_name: name, exercise_type: 'aerobico',
-      sets: 1, weight_kg: 0, reps: 0, volume: 0,
-      cadencia: null, tempo_descanso: null,
-      duration_min: duration,
+    Object.assign(ex, {
+      sets: 1, duration_min: duration,
       distance_km: parseFloat(document.getElementById('live-add-ex-distance').value) || null,
-      speed_kmh:   parseFloat(document.getElementById('live-add-ex-speed').value)    || null,
-      pace: null, recovery_interval_min: null, recovery_speed_kmh: null,
-      hr_min: null, hr_max: null,
-      training_method: null, method_description: null,
-      position,
-      ...(_bwColumnsReady ? { bodyweight: false, measure: 'reps', hold_seconds: null } : {})
-    }
+      speed_kmh:   parseFloat(document.getElementById('live-add-ex-speed').value)    || null
+    })
   } else {
-    const sets   = parseInt(document.getElementById('live-add-ex-sets').value)
-    if (!sets || sets < 1)           { toast('Informe o número de séries.', 'error'); return }
+    const sets = parseInt(document.getElementById('live-add-ex-sets').value)
+    if (!sets || sets < 1 || sets > EXEC_TODAY_MAX_SETS) { toast(`Informe de 1 a ${EXEC_TODAY_MAX_SETS} séries.`, 'error'); return }
     const mode = _readLiveExerciseMode('live-add-ex',
-      { weight: 'Informe a carga planejada (kg).', reps: 'Informe as repetições planejadas.' })
+      { weight: 'Informe a carga de hoje (kg).', reps: 'Informe as repetições de hoje.' })
     if (mode.error) { toast(mode.error, 'error'); return }
-    // extra = { bodyweight, measure, hold_seconds } só com a migration; vai no fim do registro.
-    const { weight_kg: weight, reps, ...extra } = mode.fields
     const restRaw = document.getElementById('live-add-ex-rest').value.trim()
-    record = {
-      workout_id: workoutId, exercise_name: name, exercise_type: 'musculacao',
-      sets, weight_kg: weight, reps, volume: extra.measure === 'tempo' ? 0 : parseFloat((sets * weight * reps).toFixed(2)),
-      cadencia: null, tempo_descanso: restRaw === '' ? null : parseInt(restRaw),
-      duration_min: null, distance_km: null, speed_kmh: null, pace: null,
-      recovery_interval_min: null, recovery_speed_kmh: null,
-      hr_min: null, hr_max: null,
-      training_method: null, method_description: null,
-      position,
-      ...extra
-    }
+    const rest = restRaw === '' ? null : Number(restRaw)
+    if (rest != null && (!Number.isInteger(rest) || rest < 0 || rest > 3600)) { toast('Informe o descanso de 0 a 3600 s.', 'error'); return }
+    Object.assign(ex, { sets, tempo_descanso: rest, bodyweight: false, measure: 'reps', hold_seconds: null, ...mode.fields })
   }
 
-  const saveBtn = document.getElementById('live-add-ex-save-btn')
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Adicionando…' }
-  try {
-    const { data, error } = await sb.from('workout_exercises').insert(record).select().maybeSingle()
-    if (error) throw error
-    if (!data) throw new Error('Não foi possível obter o exercício recém-criado.')
-    if (!_liveWorkoutData.workout_exercises) _liveWorkoutData.workout_exercises = []
-    _liveWorkoutData.workout_exercises.push(data)
-    _appendLiveExerciseCard(data)
-    cancelLiveAddExercise()
-    saveLiveExecutionState()
-    toast('Exercício adicionado ao treino.', 'success')
-  } catch (err) {
-    console.error('[saveLiveAddExercise] erro:', err?.message || err)
-    toast(err?.code === '42501' ? NO_EDIT_PERMISSION_MSG : 'Não foi possível adicionar o exercício. Verifique sua conexão e tente novamente.', 'error')
-  } finally {
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '+ Adicionar' }
-  }
+  if (!_liveWorkoutData.workout_exercises) _liveWorkoutData.workout_exercises = []
+  _liveWorkoutData.workout_exercises.push(ex)
+  _appendLiveExerciseCard(ex)
+  cancelLiveAddExercise()
+  saveLiveExecutionState()
+  toast('Exercício adicionado só para hoje — o treino salvo não muda.', 'success')
 }
 
 // Anexa o card do exercício recém-criado ao final da lista sem re-renderizar os outros —
@@ -17002,16 +17125,28 @@ async function saveLiveSet(exerciseId, setNumber) {
 
   const record = {
     workout_id:  _liveWorkoutData.id,
-    exercise_id: exerciseId,
+    exercise_id: ex._dayOnly ? null : exerciseId,
     student_id:  _liveExecStudentId,
     set_number:  setNumber,
     session_id:  _liveSessionId,
     is_manual:   false,
     executed_at: new Date().toISOString()
   }
-  // Item B: nome do dia do Editar vai só para a série (o banco confere quem pode).
-  const dayName = liveDayName(ex)
-  if (dayName) record.exercise_name_executed = dayName
+  if (ex._dayOnly) {
+    // Etapa E: exercício só de hoje — sem exercise_id; nome, tipo e chave do dia na série.
+    if (!_execDayColsReady) { toast('Não é possível salvar exercício só de hoje ainda.', 'error'); return }
+    Object.assign(record, {
+      exercise_name_executed: cleanDayName(ex.exercise_name),
+      exercise_type_executed: ex.exercise_type === 'aerobico' ? 'aerobico' : 'musculacao',
+      day_exercise_key:       ex._dayKey
+    })
+  } else {
+    // Item B: nome do dia do Editar vai só para a série (o banco confere quem pode).
+    const dayName = liveDayName(ex)
+    if (dayName) record.exercise_name_executed = dayName
+  }
+  // Etapa E: plano do dia na série (o histórico compara com ele).
+  if (_execDayColsReady) Object.assign(record, dayPlanFields(liveEff(ex), liveDayPlanChanged(ex)))
   let savedData
 
   if (isAero) {
@@ -17054,7 +17189,7 @@ async function saveLiveSet(exerciseId, setNumber) {
   if (btn) { btn.disabled = true; btn.textContent = 'Salvando…' }
   try {
     const { error } = await sb.from('workout_executions')
-      .upsert(record, { onConflict: 'session_id,exercise_id,set_number' })
+      .upsert(record, { onConflict: ex._dayOnly ? 'session_id,day_exercise_key,set_number' : 'session_id,exercise_id,set_number' })
     if (error) throw error
     _liveSavedSets[exerciseId] = _liveSavedSets[exerciseId] || {}
     _liveSavedSets[exerciseId][setNumber] = savedData
@@ -17076,7 +17211,7 @@ function updateLiveExerciseProgress(exerciseId) {
   const ex = (_liveWorkoutData?.workout_exercises || []).find(e => e.id === exerciseId)
   if (!ex) return
   const isAero = ex.exercise_type === 'aerobico'
-  const total  = isAero ? 1 : Math.max(1, parseInt(ex.sets) || 1)
+  const total  = isAero ? 1 : Math.max(1, parseInt(liveEff(ex).sets) || 1)
   const done   = Object.keys(_liveSavedSets[exerciseId] || {}).length
   const el = document.getElementById(`live-ex-progress-${exerciseId}`)
   if (el) el.textContent = `${done}/${total} série${total > 1 ? 's' : ''}`
@@ -17153,6 +17288,8 @@ function restoreLiveExecutionState() {
     _liveSessionId       = state.sessionId
     _liveSavedSets        = state.savedSets || {}
     _liveStartTimestamp  = state.startTimestamp
+    // Etapa E: valores do dia, exercícios tirados e exercícios só de hoje voltam limpos.
+    _liveWorkoutData.workout_exercises = sanitizeLiveExercises(_liveWorkoutData.workout_exercises, _liveSavedSets)
 
     renderLiveExecutionScreen(_liveWorkoutData)
 
@@ -17186,9 +17323,9 @@ function restoreLiveExecutionState() {
 function _finishLiveConfirmMsg() {
   const exes = _liveWorkoutData?.workout_exercises || []
   let total = 0, done = 0, withoutSets = 0
-  exes.forEach(ex => {
+  exes.filter(ex => !ex._dayHidden).forEach(ex => {
     const saved = Object.keys(_liveSavedSets[ex.id] || {}).length
-    total += ex.exercise_type === 'aerobico' ? 1 : Math.max(1, parseInt(ex.sets) || 1)
+    total += ex.exercise_type === 'aerobico' ? 1 : Math.max(1, parseInt(liveEff(ex).sets) || 1)
     done  += saved
     if (!saved) withoutSets++
   })
@@ -17394,12 +17531,12 @@ function finishLiveExecution() {
       </div>
     </div>
     <div class="section-label" style="margin-bottom:1rem">Marque cada série assim que o aluno terminar</div>
-    <div class="live-ex-edit-notice" id="live-ex-edit-notice"><span data-icon="pencil"></span> Toque no lápis pra ajustar um exercício durante o treino — a alteração também vale para as próximas vezes que esse treino for usado.</div>
+    <div class="live-ex-edit-notice" id="live-ex-edit-notice"><span data-icon="pencil"></span> Toque no lápis para ajustar carga, reps ou descanso, e use − / + para as séries. Tudo vale só para hoje: o treino salvo não muda. Para mudar o treino, use Editar treino.</div>
     <div class="live-ex-edit-notice" id="live-ex-readonly-notice" style="display:none"><span data-icon="lock-keyhole"></span> Treino criado por outro personal: você pode registrar as séries, mas não editar, remover ou adicionar exercícios.</div>
     <datalist id="live-exercise-catalog"></datalist>
     <div id="live-exec-exercise-list"></div>
     <div style="margin:1rem 0 .5rem" id="live-add-ex-wrap">
-      <button type="button" class="btn btn-outline btn-sm" onclick="toggleLiveAddExercise()">+ Adicionar exercício</button>
+      <button type="button" class="btn btn-outline btn-sm" onclick="toggleLiveAddExercise()">+ Adicionar exercício (só hoje)</button>
     </div>
     <div class="live-ex-edit-panel" id="live-add-ex-panel" style="display:none;margin-bottom:1rem">
       <div class="live-ex-edit-row">
