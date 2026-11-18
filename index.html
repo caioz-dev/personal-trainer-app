@@ -3679,6 +3679,15 @@ function _restoreUserDom() {
   }
 }
 
+// B29: senha digitada (login, cadastro, nova senha) não fica no DOM depois de entrar ou sair.
+// Os formulários de autenticação ficam fora do _restoreUserDom; aqui só os campos de senha.
+function _clearPasswordFields() {
+  for (const f of document.querySelectorAll('input[type="password"]')) {
+    f.value = ''
+    if (f.hasAttribute('value')) f.removeAttribute('value')
+  }
+}
+
 function resetAppState() {
   // Timer: cancela interval ativo e fecha overlays relacionados
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null }
@@ -3813,6 +3822,7 @@ function resetAppState() {
   // Folha de impressão do treino (fica no body até a impressão terminar) e o DOM com dado.
   try { _wpdfCleanup() } catch {}
   _restoreUserDom()
+  _clearPasswordFields()   // roda no boot (depois de entrar) e no SIGNED_OUT (logout)
 }
 
 // ─────────────────────────────────────────────
@@ -4048,6 +4058,7 @@ async function doResetPassword(e) {
     msgEl.textContent = 'Erro ao salvar: ' + error.message; msgEl.className = 'msg error'
   } else {
     document.getElementById('password-reset-overlay').style.display = 'none'
+    _clearPasswordFields()
     toast('Senha redefinida com sucesso! Faça login com a nova senha.', 'success')
     await sb.auth.signOut()
   }
@@ -4088,7 +4099,8 @@ async function doLogin(e) {
     return
   }
 
-  if (result.error) { setMsg(xlErr(result.error.message)) }
+  if (result.error) { setMsg(xlErr(result.error.message)) }   // com erro, a senha fica para corrigir
+  else _clearPasswordFields()
   btn.textContent = 'Entrar'; btn.disabled = false
 }
 
