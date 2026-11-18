@@ -2539,6 +2539,9 @@
     .pa-rv-value::placeholder { font-size: .72rem; }
     .pa-rv-warn  { grid-column: 1 / -1; font-size: .72rem; color: var(--danger); }
     .pa-rv-warn:empty { display: none; }
+    .pa-rv-src { display: inline-block; margin-left: .3rem; padding: 0 .4rem; border-radius: 999px; font-size: .68rem;
+                 color: var(--text-muted); background: var(--accent-a10); border: 1px solid var(--accent-a20); vertical-align: 1px; }
+    .pa-rv-src[hidden] { display: none; }
     .pa-rv-bad .pa-rv-value { border-color: var(--danger); background: var(--danger-a08); }
     /* Revisão dos exames de sangue (E2): caixa por exame e por grupo; só os marcados são salvos. */
     .ex-rv-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 0 .75rem; }
@@ -12178,6 +12181,111 @@ function paParseReport(pages, startIndex) {
   return { sections: [{ titulo: 'Relatório do paciente', itens: [{ rotulo: 'Texto', texto: merged.join('\n\n') }] }] }
 }
 
+// Testes físicos: no INFIT eles só aparecem no texto do relatório. Regra: rótulo do teste e,
+// logo depois, o número (com a unidade, se houver). Números de referência ("recomendado",
+// "ideal"...), de tempo ("em 30 segundos") ou de outra medida (mm, cm, %) são pulados.
+// O que não for achado fica de fora (vazio na revisão). Tudo passa pela revisão.
+const PA_TEST_LABELS = [
+  ['preensao',        /\bpreensao\b|\bdinamometr[a-z]*/g],
+  ['sentar_levantar', /\bsentar e (se )?levantar\b|\bsentar[- ]levantar\b|\blevantar(-se)? da cadeira\b/g],
+  ['apoio',           /\bapoios?\b|\bflex(ao|oes) de bracos?\b|\bflexoes\b|\bpush[- ]?ups?\b/g],
+  ['abdominal',       /\babdomina(l|is)\b/g],
+  ['cooper',          /\bcooper\b/g],
+  ['vo2max',          /\bvo2 ?(max(imo)?)?\b|\bconsumo maximo de oxigenio\b/g],
+]
+const _PA_T_NUM  = String.raw`(\d{1,3}(?:\.\d{3})+(?![.,]?\d)|\d{1,4}(?:[.,]\d{1,3})?)`
+const _PA_T_UNIT = String.raw`(kgf|kg|quilos?|repeticoes|repeticao|reps?|vezes|x(?![a-z])|km|quilometros?|metros?|m(?![a-z0-9])` +
+  String.raw`|ml ?\/ ?kg ?[\/.] ?min|ml\/kg|segundos?|seg(?![a-z])|s(?![a-z])|minutos?|min(?![a-z])|mm|cm|%|anos?)?`
+const _PA_T_SKIP = /(recomend|referencia|ideal|esperad|\bmeta\b|\bminimo\b|classific|percentil|\bnorma|acima d|abaixo d|\bentre\b|\bate\b|\bidade\b|anterior)/
+const _PA_T_NOT_TEST = /(dobra|perimetro|circunferencia|gordura|regiao|adiposidade|cintura|cutanea|parede|massa)\s*$/
+
+function _paTestNum(raw, unit, key) {
+  if (/^\d{1,3}(\.\d{3})+$/.test(raw)) {             // "2.400": milhar só faz sentido em metros
+    return key === 'cooper' ? Number(raw.replace(/\./g, '')) : null
+  }
+  return Number(raw.replace(',', '.'))
+}
+
+// Primeiro número aceito no trecho; null se nenhum.
+function _paTestValue(win, key) {
+  const re = new RegExp(_PA_T_NUM + String.raw`\s*` + _PA_T_UNIT, 'g')
+  let m, last = 0
+  while ((m = re.exec(win))) {
+    const gap = win.slice(last, m.index)
+    last = m.index + m[0].length
+    if (_PA_T_SKIP.test(gap) || /^[ºª°]/.test(win.slice(last))) continue
+    const u = (m[2] || '').replace(/\s/g, '')
+    let v = _paTestNum(m[1], u, key)
+    if (v == null || !Number.isFinite(v)) continue
+    if (key === 'cooper') {
+      if (/^(km|quilometros?)$/.test(u)) { /* já em km */ }
+      else if (/^(m|metros?)$/.test(u) || (!u && v >= 100)) v = v / 1000
+      else if (u || v > 5) continue                    // sem unidade: só km plausível ou metros
+    } else if (key === 'vo2max') {
+      if (u && !/^ml/.test(u)) continue
+    } else if (u && !/^(repeticoes|repeticao|reps?|vezes|x)$/.test(u)) continue
+    return Math.round(v * 1000) / 1000
+  }
+  return null
+}
+
+// Preensão: lado D/E antes do número ("mão direita 38 kg", "D.: 38", "(D) 38") ou depois
+// ("38 kg na mão direita", "38 kg (D)"). Sem lado claro, o valor não é usado.
+function _paTestGrip(win) {
+  const N = String.raw`(\d{1,3}(?:[.,]\d{1,2})?)\s*(?:kgf|kg|quilos?)?`
+  const sides = {
+    d: [String.raw`(?:mao )?direita|\bdir\.|\(d\)|\bd\b\.?|\bmd\b`, String.raw`(?:na |com a )?(?:mao )?direita|\(d\)`],
+    e: [String.raw`(?:mao )?esquerda|\besq\.|\(e\)|\be\.|\be(?=\s*:)|\bme\b`, String.raw`(?:na |com a )?(?:mao )?esquerda|\(e\)`],
+  }
+  const out = {}
+  for (const [s, [before, after]] of Object.entries(sides)) {
+    const a = win.match(new RegExp(String.raw`(?:${before})\s*[:=\-–]?\s*(?:de |com |foi de )?` + N))
+    const b = win.match(new RegExp(N + String.raw`\s*(?:${after})`))
+    const pick = [a, b].filter(Boolean).sort((x, y) => x.index - y.index)[0]
+    if (pick) out[s] = Number(pick[1].replace(',', '.'))
+  }
+  return out
+}
+
+// Entrada: texto livre do relatório. Saída: { measurements, notes }.
+function paParseTestes(text) {
+  const t = paNorm(String(text ?? '').replace(/₂/g, '2'))
+  const hits = []
+  for (const [kind, re] of PA_TEST_LABELS) {
+    re.lastIndex = 0
+    let m
+    while ((m = re.exec(t))) {
+      const before = t.slice(Math.max(0, m.index - 30), m.index)
+      if (kind === 'abdominal' && _PA_T_NOT_TEST.test(before)) continue
+      if (kind === 'apoio' && /\b(sem|com)\s*$/.test(before)) continue   // "sem apoio das mãos"
+      hits.push({ kind, start: m.index, end: m.index + m[0].length })
+    }
+  }
+  hits.sort((a, b) => a.start - b.start)
+  // Trecho de cada rótulo: até o rótulo de outro teste, no máximo 180 caracteres. Um rótulo
+  // entre parênteses logo depois ("VO2máx estimado (Cooper): 45") não corta o trecho.
+  const winOf = h => {
+    const next = hits.find(o => o.start >= h.end && o.kind !== h.kind && !/\($/.test(t.slice(h.end, o.start).trimEnd()))
+    return t.slice(h.end, Math.min(next ? next.start : t.length, h.end + 180))
+  }
+  const val = {}, notes = []
+  for (const h of hits) {
+    if (h.kind === 'preensao') {
+      const g = _paTestGrip(winOf(h))
+      if (val.preensao_d == null && g.d != null) val.preensao_d = g.d
+      if (val.preensao_e == null && g.e != null) val.preensao_e = g.e
+    } else if (val[h.kind] == null) {
+      const v = _paTestValue(winOf(h), h.kind)
+      if (v != null) val[h.kind] = v
+    }
+  }
+  if (hits.some(h => h.kind === 'preensao') && (val.preensao_d == null || val.preensao_e == null))
+    notes.push('testes físicos: preensão sem lado (D/E) claro no relatório; confira.')
+  const measurements = PA_CATALOG.filter(c => c.grp === 'testes' && val[c.key] != null)
+    .map(c => ({ ...paMeasure('testes', c.key, c.label, val[c.key], c.unit), fromReport: true }))
+  return { measurements, notes }
+}
+
 function paMeasure(grp, key, label, value, unit, unknown = false) {
   return { grp, key, label, value, unit, unknown }
 }
@@ -12220,6 +12328,13 @@ function paParseInfit(pages) {
   if (!pBio) warnings.push('bioimpedância: página não encontrada.')
   const report = iRep >= 0 ? paParseReport(textPages, iRep) : null
   if (iRep < 0) warnings.push('relatório: não encontrado.')
+  if (report) {
+    const tests = paParseTestes(report.sections.map(s => s.itens.map(i => i.texto).join('\n\n')).join('\n\n'))
+    measurements.push(...tests.measurements)
+    const n = tests.measurements.length   // nenhum achado: os campos já aparecem como "não encontrado"
+    if (n) warnings.push(`testes físicos: ${n} de 7 lidos do texto do relatório (marcados "do relatório"); confira.`)
+    warnings.push(...tests.notes)
+  }
   return { layout: found === 4 ? 'infit' : 'parcial', measurements, report, warnings }
 }
 
@@ -13099,8 +13214,10 @@ function _paReviewRows(found) {
   for (const m of found) {
     const r = rows.find(x => x.grp === m.grp && x.key === m.key)
     const value = m.value == null ? '' : String(m.value).replace('.', ',')
-    if (r) r.value = value
-    else rows.push({ grp: m.grp, key: m.key, label: m.label, unit: m.unit, value, custom: true })
+    if (r) {
+      r.value = value
+      if (m.fromReport) { r.fromReport = true; r.srcValue = value }   // lido do texto do relatório
+    } else rows.push({ grp: m.grp, key: m.key, label: m.label, unit: m.unit, value, custom: true })
   }
   return rows
 }
@@ -13236,7 +13353,9 @@ function _renderPaReviewRow(r, i) {
   const w = _paRowWarn(r)
   const label = r.custom
     ? `<input class="form-control pa-rv-label" type="text" maxlength="60" value="${escHtml(r.label)}" placeholder="Nome da medida" oninput="_paReviewSet(${i},'label',this.value)">`
-    : `<span class="pa-rv-label">${escHtml(r.label)}</span>`
+    : `<span class="pa-rv-label">${escHtml(r.label)}${r.fromReport
+        ? ` <span class="pa-rv-src" id="pa-rv-src-${i}" title="Valor lido do texto do relatório: confira e edite se precisar"${r.value === r.srcValue ? '' : ' hidden'}>do relatório</span>`
+        : ''}</span>`
   const unit = r.custom
     ? `<select class="form-control pa-rv-unit" onchange="_paReviewSet(${i},'unit',this.value)">${PA_UNITS.map(u => `<option${u === r.unit ? ' selected' : ''}>${escHtml(u)}</option>`).join('')}</select>`
     : `<span class="pa-rv-unit">${escHtml(r.unit)}</span>`
@@ -13260,6 +13379,9 @@ function _paReviewSet(i, field, val) {
   document.getElementById(`pa-rv-row-${i}`)?.classList.toggle('pa-rv-bad', !!w)
   const el = document.getElementById(`pa-rv-warn-${i}`)
   if (el) el.textContent = w || ''
+  // Editado à mão: o valor deixa de ser "do relatório" (volta a marca se voltar ao lido).
+  const src = r.fromReport && document.getElementById(`pa-rv-src-${i}`)
+  if (src) src.hidden = r.value !== r.srcValue
 }
 
 function _paAddCustomRow(grp) {
