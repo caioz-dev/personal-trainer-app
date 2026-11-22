@@ -3567,6 +3567,7 @@ let historyCtx = null
 let navGen = 0        // incremented on every navigation; render fns bail if stale
 let currentView = null, currentViewOpts = {}
 let booted = false    // prevents double-boot when onAuthStateChange fires SIGNED_IN
+let _histWorkoutsSnap = null   // B5: treinos lidos pelo Meu Histórico ({ studentId, workouts }); limpo no logout
 let editingWorkoutId = null
 // "Recolher todos" no editor de treino: só visual (classe .open nos cards), nunca vai para o
 // rascunho nem para o banco. Vale até o editor abrir de novo (setupWorkoutForm/editWorkout)
@@ -3795,6 +3796,7 @@ function resetAppState() {
   _progCompareEx              = { musculacao: '', aerobico: '' }
   window._manualExecCtx       = {}
   window._compChartData       = {}
+  _histWorkoutsSnap           = null
   window._dupRoutineSource    = null
   window._wfExerciseCatalog   = null
   window._liveExerciseCatalog = null
@@ -3888,31 +3890,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (session) { me = session.user; await boot() }
   else showAuthSection()
 
-  // Check for new columns; log migration SQL if missing
-  const { error: colCheck } = await sb.from('workout_exercises').select('cadencia, tempo_descanso').limit(0)
-  if (colCheck) {
-    console.warn('⚠️ AÇÃO NECESSÁRIA: Execute o SQL abaixo no painel do Supabase (SQL Editor) antes de continuar:')
-    console.warn('ALTER TABLE workout_exercises\n  ADD COLUMN IF NOT EXISTS cadencia text,\n  ADD COLUMN IF NOT EXISTS tempo_descanso integer;')
-  }
-  const { error: nameColCheck } = await sb.from('workouts').select('name').limit(0)
-  if (nameColCheck) {
-    console.warn('⚠️ AÇÃO NECESSÁRIA: Execute o SQL abaixo no painel do Supabase (SQL Editor):')
-    console.warn('ALTER TABLE workouts ADD COLUMN IF NOT EXISTS name text;')
-  }
-  const { error: execCheck } = await sb.from('workout_executions').select('id').limit(0)
-  if (execCheck) {
-    console.warn('⚠️ AÇÃO NECESSÁRIA: Tabela workout_executions ausente. Execute o SQL de criação no Supabase.')
-  }
-  const { error: hrColCheck } = await sb.from('workout_exercises').select('hr_min, hr_max').limit(0)
-  if (hrColCheck) console.warn('⚠️ Execute no Supabase SQL Editor:\nALTER TABLE workout_exercises ADD COLUMN IF NOT EXISTS hr_min integer, ADD COLUMN IF NOT EXISTS hr_max integer;')
-  const { error: methodColCheck } = await sb.from('workout_exercises').select('training_method, method_description').limit(0)
-  if (methodColCheck) console.warn('⚠️ Execute no Supabase SQL Editor:\nALTER TABLE workout_exercises ADD COLUMN IF NOT EXISTS training_method text, ADD COLUMN IF NOT EXISTS method_description text;')
-  const { error: spColCheck } = await sb.from('student_profiles').select('id').limit(0)
-  if (spColCheck) console.warn('⚠️ AÇÃO NECESSÁRIA: Tabela student_profiles ausente. Execute o SQL de criação no Supabase.')
-  const { error: setNumCheck } = await sb.from('workout_executions').select('set_number').limit(0)
-  if (setNumCheck) console.warn('⚠️ Execute no Supabase SQL Editor:\nALTER TABLE workout_executions ADD COLUMN IF NOT EXISTS set_number integer DEFAULT 1;')
-  const { error: reviewsCheck } = await sb.from('workout_reviews').select('id').limit(0)
-  if (reviewsCheck) console.warn('⚠️ AÇÃO NECESSÁRIA: Tabela workout_reviews ausente. Execute o SQL de criação no Supabase.')
+  // B5: as 8 checagens de coluna/tabela legadas (cadencia, name, hr, método, set_number,
+  // student_profiles, workout_reviews…) saíram: só avisavam no Console e custavam 8 requisições
+  // a cada carregamento, até deslogado. As migrations estão aplicadas desde 2026-10.
 })
 
 async function boot() {
@@ -3923,15 +3903,18 @@ async function boot() {
   if (!session) { booted = false; showAuthSection(); return }
   me = session.user
 
-  const { data, error } = await sb.from('profiles').select('*').eq('id', me.id).maybeSingle()
+  // B5: perfil e checagem de colunas em paralelo (a checagem não depende do perfil).
+  const [{ data, error }] = await Promise.all([
+    sb.from('profiles').select('*').eq('id', me.id).maybeSingle(),
+    detectSchemaColumns()
+  ])
   if (error || !data) { booted = false; showAuthSection(); return }
   profile = data
-  await Promise.all([detectBodyweightColumns(), detectExecNameColumn(), detectExecDayColumns()])
   buildSidebar()
   document.getElementById('boot-loading').style.display = 'none'
   document.getElementById('auth-section').style.display = 'none'
   document.getElementById('app-section').style.display  = 'block'
-  navigateTo(profile.role === 'personal' ? 'students' : 'history')
+  const firstNav = navigateTo(profile.role === 'personal' ? 'students' : 'history')
   // Se havia uma execução guiada de treino em andamento (salva antes de um F5/fechamento),
   // retoma direto na tela de execução por cima da navegação acima — sem pedir confirmação.
   restoreExecutionState()
@@ -3943,7 +3926,7 @@ async function boot() {
   // Idem para um rascunho do modal "Registrar treino retroativo" que o personal estava
   // preenchendo quando a página fechou/recarregou.
   await restoreManualExecutionState()
-  if (profile.role === 'student') await checkNewWorkout()
+  if (profile.role === 'student') { await firstNav; await checkNewWorkout() }
   await handleDeepLink()
   // Depois dos restores: se um treino foi retomado, a janela fica para o fim dele.
   if (profile.role === 'student') await checkBodyDataPrompt()
@@ -4549,6 +4532,22 @@ async function fetchStudents() {
 }
 
 async function fetchStudentPersonal(studentId) {
+  // B5: vínculo + perfil do personal numa consulta (embed pela FK personal_id). Perfil que a RLS
+  // não deixa ler vem null, como na consulta separada. Erro no embed: segue o caminho antigo.
+  {
+    const { data: links, error } = await sb
+      .from('personal_students')
+      .select('personal_id, profiles!personal_students_personal_id_fkey(id, name, username, avatar_url)')
+      .eq('student_id', studentId)
+      .eq('active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (!error) {
+      const link = links?.[0]
+      if (!link?.personal_id) return null
+      return link.profiles || null
+    }
+  }
   // Usa order+limit(1) em vez de .maybeSingle(): se por engano existir mais de um
   // vínculo ativo para o mesmo aluno, .maybeSingle() falharia e retornaria null
   // silenciosamente. Aqui, pega o vínculo ativo mais recente em vez de quebrar.
@@ -4591,16 +4590,39 @@ async function fetchWorkouts(studentId) {
   return data || []
 }
 
-async function fetchLastWorkout(studentId) {
-  const { data, error } = await sb.from('workouts')
-    .select('*, workout_exercises(*)')
-    .eq('student_id', studentId)
-    .order('date', { ascending: false })
-    .order('created_at', { ascending: false })
-    .order('position', { ascending: true, foreignTable: 'workout_exercises' })
-    .limit(1).maybeSingle()
-  if (error) throw error
-  return data || null
+// Lê todas as páginas de uma consulta (o PostgREST do Supabase devolve até 1000 linhas por vez).
+// build() devolve a consulta já filtrada e ordenada, sem .range().
+const PAGE_ROWS = 1000
+async function _fetchAllRows(build) {
+  const all = []
+  for (let from = 0; ; from += PAGE_ROWS) {
+    const { data, error } = await build().range(from, from + PAGE_ROWS - 1)
+    if (error) throw error
+    all.push(...(data || []))
+    if (!data || data.length < PAGE_ROWS) return all
+  }
+}
+// Pedaços para .in() (URL curta mesmo com muitos alunos).
+function _chunks(arr, n = 100) {
+  const out = []
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
+  return out
+}
+
+// B5: último treino de cada aluno numa consulta só (antes: uma por aluno, com os exercícios).
+// A tela de Alunos só usa a data e o volume; mesma ordem de antes (data, depois criação).
+async function fetchLastWorkoutsByStudent(ids) {
+  const lastById = {}
+  for (const part of _chunks(ids)) {
+    const rows = await _fetchAllRows(() => sb.from('workouts')
+      .select('id, student_id, date, created_at, total_volume, volume')
+      .in('student_id', part)
+      .order('date', { ascending: false })
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: true }))
+    for (const w of rows) if (!(w.student_id in lastById)) lastById[w.student_id] = w
+  }
+  return lastById
 }
 
 function getWorkoutVolume(w) {
@@ -4669,9 +4691,8 @@ async function renderStudents() {
       return
     }
 
-    const withLast = await Promise.all(students.map(async s => ({
-      ...s, last: await fetchLastWorkout(s.id)
-    })))
+    const lastById = students.length ? await fetchLastWorkoutsByStudent(students.map(s => s.id)) : {}
+    const withLast = students.map(s => ({ ...s, last: lastById[s.id] || null }))
 
     const withData = withLast.filter(s => s.last).length
     // Abas e botões de arquivar só com a coluna archived_at no banco (migration de 2026-11-10).
@@ -4798,15 +4819,19 @@ async function renderRenewals(gen = 0) {
 
     const todayStr = today()
 
-    const rows = await Promise.all(students.map(async s => {
-      const { data: routines, error } = await sb.from('routines')
-        .select('id, name, start_date, end_date, created_at')
-        .eq('student_id', s.id)
+    // B8: rotinas de todos os alunos numa consulta (paginada, em pedaços de 100 ids), agrupadas
+    // aqui; antes era uma consulta por aluno. Mesma RLS, mesmas colunas, mesma ordem.
+    const routinesByStudent = {}
+    for (const part of _chunks(students.map(s => s.id))) {
+      const list = await _fetchAllRows(() => sb.from('routines')
+        .select('id, student_id, name, start_date, end_date, created_at')
+        .in('student_id', part)
         .order('created_at', { ascending: false })
-      if (error) throw error
-      return { student: s, routine: pickRelevantRoutine(routines || [], todayStr) }
-    }))
+        .order('id', { ascending: true }))
+      for (const r of list) (routinesByStudent[r.student_id] = routinesByStudent[r.student_id] || []).push(r)
+    }
     if (gen && navGen !== gen) return
+    const rows = students.map(s => ({ student: s, routine: pickRelevantRoutine(routinesByStudent[s.id] || [], todayStr) }))
 
     // Ordena: urgente (vencida/≤3d) primeiro, depois atenção (≤7d), normal e por fim sem rotina.
     const order = { danger: 0, warning: 1, normal: 2, none: 3 }
@@ -5061,17 +5086,32 @@ async function renderHistory(studentId, gen = 0) {
   body.innerHTML = '<div class="loading"><div class="spinner"></div>Carregando histórico…</div>'
 
   try {
-    const [workouts, routinesRes, personalProfile] = await Promise.all([
+    const isStudentView = profile.role === 'student'
+    const [workouts, routinesRes, personalProfile, execRes, reviewsRes] = await Promise.all([
       fetchWorkouts(studentId),
       profile.role === 'student'
         ? sb.from('routines').select('*').eq('student_id', studentId).order('created_at', { ascending: false })
         : Promise.resolve({ data: [], error: null }),
       profile.role === 'student'
         ? fetchStudentPersonal(studentId)
+        : Promise.resolve(null),
+      // B30: previsto x executado por sessão, só leitura (RLS: o aluno lê as próprias execuções
+      // e autoavaliações). Falha aqui não derruba o histórico: a seção mostra um aviso.
+      isStudentView
+        ? sb.from('workout_executions')
+            .select(`*, workout_exercises(${histExerciseCols()}), workouts!inner(name, date)`)
+            .eq('student_id', studentId)
+            .order('executed_at', { ascending: false })
+            .then(r => r, () => ({ data: null, error: true }))
+        : Promise.resolve(null),
+      isStudentView
+        ? sb.from('workout_reviews').select('*').eq('student_id', studentId).order('created_at', { ascending: false })
+            .then(r => r, () => ({ data: null, error: true }))
         : Promise.resolve(null)
     ])
     window._workoutsCache = window._workoutsCache || {}
     workouts.forEach(w => { window._workoutsCache[w.id] = w })
+    _histWorkoutsSnap = { studentId, workouts }
     if (gen && navGen !== gen) return
 
     const routineNameById = {}
@@ -5142,6 +5182,7 @@ async function renderHistory(studentId, gen = 0) {
       }
     }
     body.innerHTML = personalCardHTML + bannerHTML + historyHTML(workouts, profile.name, 'evo-chart', routinesCardsHTML, routineNameById)
+      + (isStudentView ? studentExecSectionHTML(studentId, execRes, reviewsRes) : '')
     if (workouts.length) initChart('evo-chart', [...workouts].reverse())
     bindWorkoutRowClicks(body)
   } catch (err) {
@@ -5151,6 +5192,25 @@ async function renderHistory(studentId, gen = 0) {
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
               onclick="renderHistory('${studentId}')">Tentar novamente</button></div>`
   }
+}
+
+// B30: seção "Execuções realizadas" do Meu Histórico (aluno). Mesmo agrupamento e HTML da ficha
+// do personal (inclusive a observação do personal, que é pública), sem "Apagar execução".
+function studentExecSectionHTML(studentId, execRes, reviewsRes) {
+  let inner
+  if (!execRes || execRes.error) {
+    inner = `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">${icon('triangle-alert')}</div><p>Não foi possível carregar as execuções agora.</p></div>`
+  } else {
+    const reviewsBySession = {}
+    for (const r of (reviewsRes?.data || [])) {
+      if (r.session_id) reviewsBySession[r.session_id] = r
+    }
+    inner = execGroupsSectionHTML(buildExecGroups(execRes.data || []), { studentId, reviewsBySession })
+  }
+  return `<div id="hist-exec-section" style="margin-top:1.75rem;padding-top:1.5rem;border-top:1px solid var(--border-subtle)">
+      <div class="section-label" style="margin-bottom:.875rem">Execuções realizadas — previsto × executado</div>
+      ${inner}
+    </div>`
 }
 
 function historyHTML(ws, name, canvasId = 'evo-chart', routinesCardsHTML = '', routineNameById = {}) {
@@ -6013,265 +6073,11 @@ async function renderStudentSheet(studentId, studentName, gen) {
         </tr>`
     }).join('')
 
-    // Agrupa por session_id quando existir — é o identificador real de uma sessão do
-    // "Registrar ao vivo", onde cada série é salva com seu próprio executed_at (upsert
-    // série a série), então agrupar por executed_at exato quebrava isso em um card por
-    // série. Execuções antigas/manuais sem session_id caem no fallback por
-    // workout_id + executed_at exato (mesmo insert em lote); só workout_id juntaria
-    // sessões diferentes do mesmo treino-modelo (ex: duas semanas de "Treino A") num único card.
-    const execByWorkout = {}
-    for (const ex of executions) {
-      const key = ex.session_id ? `sid:${ex.session_id}` : (ex.workout_id + '|' + ex.executed_at)
-      if (!execByWorkout[key]) {
-        execByWorkout[key] = {
-          workoutId:    ex.workout_id,
-          sessionId:    ex.session_id || null,
-          workoutName:  ex.workouts?.name || (ex.workouts?.date ? fmtDate(ex.workouts.date) : '—'),
-          executedAt:   ex.executed_at,
-          manualNotes:  null,
-          exerciseMap:  {}
-        }
-      }
-      if (ex.notes && !execByWorkout[key].manualNotes) execByWorkout[key].manualNotes = ex.notes
-      // Etapa E: exercício só de hoje (sem exercise_id) agrupa pela chave do dia.
-      const exId = execHistKey(ex)
-      if (!execByWorkout[key].exerciseMap[exId]) {
-        execByWorkout[key].exerciseMap[exId] = {
-          exercise_id:           exId,
-          workout_exercises:     execHistWE(ex),
-          duration_executed_min: null,
-          distance_executed_km:  null,
-          speed_executed_kmh:    null,
-          sets:                  []
-        }
-      }
-      const entry = execByWorkout[key].exerciseMap[exId]
-      // Item B: série feita com nome do dia mostra esse nome (o do treino é a reserva).
-      // Etapa E: com plano do dia gravado na série, o previsto é o do dia.
-      { const we = execHistWE(ex); if (we !== ex.workout_exercises) entry.workout_exercises = we }
-      if (ex.duration_executed_min != null) entry.duration_executed_min = ex.duration_executed_min
-      if (ex.distance_executed_km  != null) entry.distance_executed_km  = ex.distance_executed_km
-      if (ex.speed_executed_kmh    != null) entry.speed_executed_kmh    = ex.speed_executed_kmh
-      if (ex.weight_executed != null || ex.reps_executed != null) {
-        entry.sets.push({ set_number: ex.set_number || 1, weight_executed: ex.weight_executed, reps_executed: ex.reps_executed })
-      }
-    }
-    const execGroups = Object.values(execByWorkout).map(g => ({
-      workoutId:   g.workoutId,
-      sessionId:   g.sessionId,
-      workoutName: g.workoutName,
-      executedAt:  g.executedAt,
-      manualNotes: g.manualNotes,
-      items:       Object.values(g.exerciseMap).sort((a, b) => (a.exercise_id > b.exercise_id ? 1 : -1))
-    }))
+    const execGroups = buildExecGroups(executions)
     rememberStudentName(studentId, studentName)
 
-    const execSectionHTML = execGroups.length
-      ? execGroups.map(group => {
-          let totalPlannedMusc = 0, totalExecutedMusc = 0
-          let totalPlannedAero = 0, totalExecutedAero = 0
-
-          const exItems = group.items.map(ex => {
-            const we     = ex.workout_exercises
-            const isAero = we?.exercise_type === 'aerobico'
-              || we?.duration_min != null
-              || ex.duration_executed_min != null
-
-            if (isAero) {
-              const planDur  = parseFloat(we?.duration_min) || 0
-              const planDist = parseFloat(we?.distance_km)  || 0
-              const planSpd  = parseFloat(we?.speed_kmh)    || 0
-              const notExecuted = ex.duration_executed_min == null && ex.distance_executed_km == null && ex.speed_executed_kmh == null
-              const execDur  = parseFloat(ex.duration_executed_min) || 0
-              const execDist = parseFloat(ex.distance_executed_km)  || 0
-              const execSpd  = parseFloat(ex.speed_executed_kmh)    || 0
-              const planned  = planDist > 0 ? planDist : planDur
-              const executed = execDist > 0 ? execDist : execDur
-              const unit     = planDist > 0 ? 'km' : 'min'
-              const diff     = executed - planned
-              totalPlannedAero  += planned
-              if (!notExecuted) totalExecutedAero += executed
-
-              const plannedTxt  = [planDur > 0 ? planDur + ' min' : null, planDist > 0 ? planDist + ' km' : null, planSpd > 0 ? planSpd + ' km/h' : null, (we?.hr_min || we?.hr_max) ? `${icon('heart-pulse')} FC: ${we.hr_min || '?'}–${we.hr_max || '?'} bpm` : null].filter(Boolean).join(' · ') || '—'
-              const executedTxt = notExecuted
-                ? '<span style="color:var(--text-muted)">Não executado</span>'
-                : [execDur > 0 ? execDur.toLocaleString('pt-BR') + ' min' : null, execDist > 0 ? execDist.toLocaleString('pt-BR') + ' km' : null, execSpd > 0 ? execSpd.toLocaleString('pt-BR') + ' km/h' : null].filter(Boolean).join(' · ') || '—'
-              const diffCell    = notExecuted ? '—'
-                : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>`
-                : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} ${unit}</span>`
-                :             `<span style="color:var(--text-muted)">= 0 ${unit}</span>`
-              const exName = `${icon('footprints')} ${escHtml(we?.exercise_name || '—')}`
-
-              const row = `<tr>
-                <td style="font-weight:500;color:var(--text-secondary)">${exName}</td>
-                <td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td>
-                <td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td>
-                <td style="font-size:.82rem">${diffCell}</td>
-              </tr>`
-              const card = `<div class="comp-card">
-                <div class="comp-card-name">${exName}</div>
-                <div class="comp-card-row"><span class="label">Previsto</span><span>${plannedTxt}</span></div>
-                <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--success);font-weight:600">${executedTxt}</span></div>
-                <div class="comp-card-row"><span class="label">Diferença</span><span>${diffCell}</span></div>
-              </div>`
-              return { row, card, chart: null }
-            } else {
-              const planSets   = we?.sets || 0
-              const planWeight = parseFloat(we?.weight_kg) || 0
-              const planReps   = we?.reps || 0
-              const planned    = planSets * planReps * planWeight
-              totalPlannedMusc += planned
-
-              const sortedSets  = (ex.sets || []).sort((a, b) => a.set_number - b.set_number)
-              const notExecuted = sortedSets.length === 0
-              let executed = 0
-              sortedSets.forEach(s => { executed += (parseFloat(s.weight_executed) || 0) * (s.reps_executed || 0) })
-              if (!notExecuted) totalExecutedMusc += executed
-
-              const diff        = executed - planned
-              const plannedTxt  = isTimedEx(we) ? `${loadLabel(we, planWeight)} × ${we.hold_seconds} s × ${planSets} séries (por tempo)` : planned > 0 ? `${loadLabel(we, planWeight)} × ${planReps} reps × ${planSets} séries = ${planned.toLocaleString('pt-BR')} kg` : '—'
-              const executedTxt = notExecuted
-                ? '<span style="color:var(--text-muted)">Não executado</span>'
-                : sortedSets.map(s => execSetText(s.set_number, s)).join(' · ') + ` = ${executed.toLocaleString('pt-BR')} kg`
-              const diffCell    = notExecuted ? '—'
-                : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>`
-                : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>`
-                :             `<span style="color:var(--text-muted)">= 0 kg</span>`
-              const methodTag = we?.training_method ? `${icon('zap')} ${escHtml(we.training_method)}` : ''
-
-              const row = `<tr>
-                <td style="font-weight:500;color:var(--text-secondary)">
-                  ${escHtml(we?.exercise_name || '—')}
-                  ${methodTag ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">${methodTag}</div>` : ''}
-                </td>
-                <td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td>
-                <td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td>
-                <td style="font-size:.82rem">${diffCell}</td>
-              </tr>`
-              const card = `<div class="comp-card">
-                <div class="comp-card-name">${escHtml(we?.exercise_name || '—')}${methodTag ? ` <span style="font-size:.72rem;color:var(--accent-soft);font-weight:400">${methodTag}</span>` : ''}</div>
-                <div class="comp-card-row"><span class="label">Previsto</span><span>${plannedTxt}</span></div>
-                <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--success);font-weight:600">${executedTxt}</span></div>
-                <div class="comp-card-row"><span class="label">Diferença</span><span>${diffCell}</span></div>
-              </div>`
-              return { row, card, chart: { name: we?.exercise_name || '—', planned, executed } }
-            }
-          })
-          const exRows     = exItems.map(i => i.row).join('')
-          const exCards    = exItems.map(i => i.card).join('')
-          const chartItems = exItems.map(i => i.chart).filter(Boolean)
-
-          const footerRows = []
-          const footerCards = []
-          if (totalPlannedMusc > 0 || totalExecutedMusc > 0) {
-            const d = totalExecutedMusc - totalPlannedMusc
-            const dCell = d > 0 ? `<span style="color:var(--success)">+${d.toLocaleString('pt-BR')} kg</span>` : d < 0 ? `<span style="color:var(--danger)">${d.toLocaleString('pt-BR')} kg</span>` : `<span style="color:var(--text-muted)">= 0 kg</span>`
-            footerRows.push(`<tr style="border-top:1px solid var(--neutral-a15)">
-              <td style="font-weight:700;color:var(--text-primary);font-size:.82rem">Total musculação</td>
-              <td style="color:var(--text-muted);font-size:.82rem">${totalPlannedMusc.toLocaleString('pt-BR')} kg</td>
-              <td class="vol-cell" style="font-size:.82rem">${totalExecutedMusc.toLocaleString('pt-BR')} kg</td>
-              <td style="font-size:.82rem">${dCell}</td>
-            </tr>`)
-            footerCards.push(`<div class="comp-summary-block">
-              <div class="comp-summary-title">Total musculação</div>
-              <div class="comp-card-row"><span class="label">Previsto</span><span>${totalPlannedMusc.toLocaleString('pt-BR')} kg</span></div>
-              <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--accent-soft);font-weight:700">${totalExecutedMusc.toLocaleString('pt-BR')} kg</span></div>
-              <div class="comp-card-row"><span class="label">Diferença</span><span>${dCell}</span></div>
-            </div>`)
-          }
-          if (totalPlannedAero > 0 || totalExecutedAero > 0) {
-            const d = totalExecutedAero - totalPlannedAero
-            const dCell = d > 0 ? `<span style="color:var(--success)">+${d.toLocaleString('pt-BR')}</span>` : d < 0 ? `<span style="color:var(--danger)">${d.toLocaleString('pt-BR')}</span>` : `<span style="color:var(--text-muted)">= 0</span>`
-            footerRows.push(`<tr style="border-top:1px solid var(--neutral-a15)">
-              <td style="font-weight:700;color:var(--text-primary);font-size:.82rem">Total aeróbico</td>
-              <td style="color:var(--text-muted);font-size:.82rem">${totalPlannedAero.toLocaleString('pt-BR')}</td>
-              <td class="vol-cell" style="font-size:.82rem">${totalExecutedAero.toLocaleString('pt-BR')}</td>
-              <td style="font-size:.82rem">${dCell}</td>
-            </tr>`)
-            footerCards.push(`<div class="comp-summary-block">
-              <div class="comp-summary-title">Total aeróbico</div>
-              <div class="comp-card-row"><span class="label">Previsto</span><span>${totalPlannedAero.toLocaleString('pt-BR')}</span></div>
-              <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--accent-soft);font-weight:700">${totalExecutedAero.toLocaleString('pt-BR')}</span></div>
-              <div class="comp-card-row"><span class="label">Diferença</span><span>${dCell}</span></div>
-            </div>`)
-          }
-
-          const deleteExecBtn = profile.role === 'personal'
-            ? `<button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}',studentNameOf('${studentId}'),'${group.sessionId || ''}')">${icon('trash-2')} Apagar execução</button>`
-            : ''
-          // Inclui executedAt no uid: o mesmo workoutId pode ter várias execuções em datas
-          // diferentes (grupos separados), e usar só o workoutId gerava ids duplicados no
-          // DOM — getElementById sempre pegava o primeiro card daquele treino-modelo.
-          const execUid = 'exg' + (group.workoutId + group.executedAt).replace(/[^a-zA-Z0-9]/g, '')
-
-          window._compChartData = window._compChartData || {}
-          window._compChartData[execUid] = chartItems
-          const compViewToggle = chartItems.length ? `
-            <div class="comp-view-toggle">
-              <button class="comp-view-tab active" id="comp-view-tablebtn-${execUid}"
-                      onclick="event.stopPropagation();setCompView('${execUid}','table')">${icon('table-2')} Tabela</button>
-              <button class="comp-view-tab" id="comp-view-chartbtn-${execUid}"
-                      onclick="event.stopPropagation();setCompView('${execUid}','chart')">${icon('chart-line')} Gráfico</button>
-            </div>` : ''
-
-          const review = group.sessionId ? reviewsBySession[group.sessionId] : null
-          const feelingEmojis = ['😩','😕','😐','🙂','😄']
-          const reviewHTML = review ? `
-            <div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--neutral-a08)">
-              <div style="font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted);margin-bottom:.5rem">Autoavaliação do aluno</div>
-              <div style="display:flex;gap:1.25rem;flex-wrap:wrap;align-items:flex-start">
-                ${review.feeling ? `<div style="text-align:center"><div style="font-size:1.6rem;line-height:1">${feelingEmojis[review.feeling - 1]}</div><div style="font-size:.62rem;color:var(--text-muted);margin-top:.2rem">Sensação</div></div>` : ''}
-                ${review.perceived_effort ? `<div style="text-align:center"><div style="font-size:1.15rem;font-weight:800;color:var(--accent-soft);line-height:1">${review.perceived_effort}<span style="font-size:.65rem;color:var(--text-muted)">/10</span></div><div style="font-size:.62rem;color:var(--text-muted);margin-top:.2rem">Esforço (PSE)</div></div>` : ''}
-                ${review.notes ? `<div style="flex:1;min-width:120px;font-size:.78rem;color:var(--text-muted);font-style:italic;padding-top:.1rem">"${escHtml(review.notes)}"</div>` : ''}
-              </div>
-            </div>` : ''
-
-          const manualNotesHTML = group.manualNotes ? `
-            <div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--neutral-a08)">
-              <div style="font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted);margin-bottom:.5rem">Observação do personal</div>
-              <div style="font-size:.78rem;color:var(--text-muted);font-style:italic">"${escHtml(group.manualNotes)}"</div>
-            </div>` : ''
-
-          return `
-          <div style="background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:1rem 1.1rem;margin-bottom:.875rem">
-            <div class="exercise-row-header exec-group-header" style="margin-bottom:0" onclick="toggleExerciseBody('${execUid}')">
-              <div class="exec-group-title" style="display:flex;align-items:center;gap:.625rem;min-width:0">
-                <span class="ex-chevron" id="ex-chevron-${execUid}">${icon('chevron-right')}</span>
-                <div class="exec-group-name" style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${escHtml(group.workoutName)}</div>
-              </div>
-              <div class="exec-group-meta" style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-                <div style="font-size:.75rem;color:var(--text-muted)">${fmtDateTime(group.executedAt)}</div>
-                ${deleteExecBtn}
-              </div>
-            </div>
-            <div class="ex-body" id="ex-body-${execUid}">
-              ${compViewToggle}
-              <div id="comp-table-view-${execUid}">
-                <div class="table-wrap comp-table" style="margin-top:.75rem">
-                  <table>
-                    <thead><tr>
-                      <th>Exercício</th><th>Previsto</th><th>Executado</th><th>Diferença</th>
-                    </tr></thead>
-                    <tbody>${exRows}</tbody>
-                    <tfoot>${footerRows.join('')}</tfoot>
-                  </table>
-                </div>
-                <div class="comp-cards">
-                  ${exCards}
-                  ${footerCards.length ? `<div class="comp-summary">${footerCards.join('')}</div>` : ''}
-                </div>
-              </div>
-              ${chartItems.length ? `
-              <div id="comp-chart-view-${execUid}" style="display:none">
-                <div class="chart-container" style="height:260px;margin-top:.75rem"><canvas id="comp-chart-${execUid}"></canvas></div>
-                ${(totalPlannedAero > 0 || totalExecutedAero > 0) ? `<p style="font-size:.72rem;color:var(--text-muted);margin-top:.5rem;font-style:italic">Exercícios aeróbicos não entram no gráfico (unidade diferente de kg) — veja-os na tabela.</p>` : ''}
-              </div>` : ''}
-              ${reviewHTML}
-              ${manualNotesHTML}
-            </div>
-          </div>`
-        }).join('')
-      : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">${icon('chart-column')}</div><p>Nenhuma execução registrada ainda.</p></div>`
+    const execSectionHTML = execGroupsSectionHTML(execGroups, {
+      studentId, reviewsBySession, canDelete: profile.role === 'personal' })
 
     rememberStudentName(studentId, studentName)
     const routineCardsHTML = routinesData.length === 0
@@ -6409,6 +6215,274 @@ async function renderStudentSheet(studentId, studentName, gen) {
       <button class="btn btn-outline btn-sm" style="margin-top:.75rem"
               onclick="openStudentSheet('${studentId}',studentNameOf('${studentId}'))">Tentar novamente</button></div>`
   }
+}
+
+// Execuções agrupadas por sessão (Previsto × Executado). Usado na ficha do aluno (personal) e
+// no "Meu Histórico" do aluno (B30). Etapa E: plano do dia e exercício só de hoje via
+// execHistKey/execHistWE. Só lê: nada aqui grava.
+function buildExecGroups(executions) {
+    // Agrupa por session_id quando existir — é o identificador real de uma sessão do
+    // "Registrar ao vivo", onde cada série é salva com seu próprio executed_at (upsert
+    // série a série), então agrupar por executed_at exato quebrava isso em um card por
+    // série. Execuções antigas/manuais sem session_id caem no fallback por
+    // workout_id + executed_at exato (mesmo insert em lote); só workout_id juntaria
+    // sessões diferentes do mesmo treino-modelo (ex: duas semanas de "Treino A") num único card.
+    const execByWorkout = {}
+    for (const ex of executions) {
+      const key = ex.session_id ? `sid:${ex.session_id}` : (ex.workout_id + '|' + ex.executed_at)
+      if (!execByWorkout[key]) {
+        execByWorkout[key] = {
+          workoutId:    ex.workout_id,
+          sessionId:    ex.session_id || null,
+          workoutName:  ex.workouts?.name || (ex.workouts?.date ? fmtDate(ex.workouts.date) : '—'),
+          executedAt:   ex.executed_at,
+          manualNotes:  null,
+          exerciseMap:  {}
+        }
+      }
+      if (ex.notes && !execByWorkout[key].manualNotes) execByWorkout[key].manualNotes = ex.notes
+      // Etapa E: exercício só de hoje (sem exercise_id) agrupa pela chave do dia.
+      const exId = execHistKey(ex)
+      if (!execByWorkout[key].exerciseMap[exId]) {
+        execByWorkout[key].exerciseMap[exId] = {
+          exercise_id:           exId,
+          workout_exercises:     execHistWE(ex),
+          duration_executed_min: null,
+          distance_executed_km:  null,
+          speed_executed_kmh:    null,
+          sets:                  []
+        }
+      }
+      const entry = execByWorkout[key].exerciseMap[exId]
+      // Item B: série feita com nome do dia mostra esse nome (o do treino é a reserva).
+      // Etapa E: com plano do dia gravado na série, o previsto é o do dia.
+      { const we = execHistWE(ex); if (we !== ex.workout_exercises) entry.workout_exercises = we }
+      if (ex.duration_executed_min != null) entry.duration_executed_min = ex.duration_executed_min
+      if (ex.distance_executed_km  != null) entry.distance_executed_km  = ex.distance_executed_km
+      if (ex.speed_executed_kmh    != null) entry.speed_executed_kmh    = ex.speed_executed_kmh
+      if (ex.weight_executed != null || ex.reps_executed != null) {
+        entry.sets.push({ set_number: ex.set_number || 1, weight_executed: ex.weight_executed, reps_executed: ex.reps_executed })
+      }
+    }
+    return Object.values(execByWorkout).map(g => ({
+      workoutId:   g.workoutId,
+      sessionId:   g.sessionId,
+      workoutName: g.workoutName,
+      executedAt:  g.executedAt,
+      manualNotes: g.manualNotes,
+      items:       Object.values(g.exerciseMap).sort((a, b) => (a.exercise_id > b.exercise_id ? 1 : -1))
+    }))
+}
+
+// HTML dos cards de sessão. canDelete: botão "Apagar execução" (só o personal na ficha).
+// "Observação do personal" é pública: aparece na ficha e no Meu Histórico (escapada, só leitura).
+function execGroupsSectionHTML(execGroups, { studentId, reviewsBySession = {}, canDelete = false }) {
+    return execGroups.length
+      ? execGroups.map(group => {
+          let totalPlannedMusc = 0, totalExecutedMusc = 0
+          let totalPlannedAero = 0, totalExecutedAero = 0
+
+          const exItems = group.items.map(ex => {
+            const we     = ex.workout_exercises
+            const isAero = we?.exercise_type === 'aerobico'
+              || we?.duration_min != null
+              || ex.duration_executed_min != null
+
+            if (isAero) {
+              const planDur  = parseFloat(we?.duration_min) || 0
+              const planDist = parseFloat(we?.distance_km)  || 0
+              const planSpd  = parseFloat(we?.speed_kmh)    || 0
+              const notExecuted = ex.duration_executed_min == null && ex.distance_executed_km == null && ex.speed_executed_kmh == null
+              const execDur  = parseFloat(ex.duration_executed_min) || 0
+              const execDist = parseFloat(ex.distance_executed_km)  || 0
+              const execSpd  = parseFloat(ex.speed_executed_kmh)    || 0
+              const planned  = planDist > 0 ? planDist : planDur
+              const executed = execDist > 0 ? execDist : execDur
+              const unit     = planDist > 0 ? 'km' : 'min'
+              const diff     = executed - planned
+              totalPlannedAero  += planned
+              if (!notExecuted) totalExecutedAero += executed
+
+              const plannedTxt  = [planDur > 0 ? planDur + ' min' : null, planDist > 0 ? planDist + ' km' : null, planSpd > 0 ? planSpd + ' km/h' : null, (we?.hr_min || we?.hr_max) ? `${icon('heart-pulse')} FC: ${we.hr_min || '?'}–${we.hr_max || '?'} bpm` : null].filter(Boolean).join(' · ') || '—'
+              const executedTxt = notExecuted
+                ? '<span style="color:var(--text-muted)">Não executado</span>'
+                : [execDur > 0 ? execDur.toLocaleString('pt-BR') + ' min' : null, execDist > 0 ? execDist.toLocaleString('pt-BR') + ' km' : null, execSpd > 0 ? execSpd.toLocaleString('pt-BR') + ' km/h' : null].filter(Boolean).join(' · ') || '—'
+              const diffCell    = notExecuted ? '—'
+                : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} ${unit}</span>`
+                : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} ${unit}</span>`
+                :             `<span style="color:var(--text-muted)">= 0 ${unit}</span>`
+              const exName = `${icon('footprints')} ${escHtml(we?.exercise_name || '—')}`
+
+              const row = `<tr>
+                <td style="font-weight:500;color:var(--text-secondary)">${exName}</td>
+                <td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td>
+                <td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td>
+                <td style="font-size:.82rem">${diffCell}</td>
+              </tr>`
+              const card = `<div class="comp-card">
+                <div class="comp-card-name">${exName}</div>
+                <div class="comp-card-row"><span class="label">Previsto</span><span>${plannedTxt}</span></div>
+                <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--success);font-weight:600">${executedTxt}</span></div>
+                <div class="comp-card-row"><span class="label">Diferença</span><span>${diffCell}</span></div>
+              </div>`
+              return { row, card, chart: null }
+            } else {
+              const planSets   = we?.sets || 0
+              const planWeight = parseFloat(we?.weight_kg) || 0
+              const planReps   = we?.reps || 0
+              const planned    = planSets * planReps * planWeight
+              totalPlannedMusc += planned
+
+              const sortedSets  = (ex.sets || []).sort((a, b) => a.set_number - b.set_number)
+              const notExecuted = sortedSets.length === 0
+              let executed = 0
+              sortedSets.forEach(s => { executed += (parseFloat(s.weight_executed) || 0) * (s.reps_executed || 0) })
+              if (!notExecuted) totalExecutedMusc += executed
+
+              const diff        = executed - planned
+              const plannedTxt  = isTimedEx(we) ? `${loadLabel(we, planWeight)} × ${we.hold_seconds} s × ${planSets} séries (por tempo)` : planned > 0 ? `${loadLabel(we, planWeight)} × ${planReps} reps × ${planSets} séries = ${planned.toLocaleString('pt-BR')} kg` : '—'
+              const executedTxt = notExecuted
+                ? '<span style="color:var(--text-muted)">Não executado</span>'
+                : sortedSets.map(s => execSetText(s.set_number, s)).join(' · ') + ` = ${executed.toLocaleString('pt-BR')} kg`
+              const diffCell    = notExecuted ? '—'
+                : diff > 0 ? `<span style="color:var(--success)">+${diff.toLocaleString('pt-BR')} kg</span>`
+                : diff < 0 ? `<span style="color:var(--danger)">${diff.toLocaleString('pt-BR')} kg</span>`
+                :             `<span style="color:var(--text-muted)">= 0 kg</span>`
+              const methodTag = we?.training_method ? `${icon('zap')} ${escHtml(we.training_method)}` : ''
+
+              const row = `<tr>
+                <td style="font-weight:500;color:var(--text-secondary)">
+                  ${escHtml(we?.exercise_name || '—')}
+                  ${methodTag ? `<div style="font-size:.68rem;color:var(--accent-soft);margin-top:.1rem">${methodTag}</div>` : ''}
+                </td>
+                <td style="color:var(--text-muted);font-size:.82rem">${plannedTxt}</td>
+                <td style="color:var(--success);font-weight:600;font-size:.82rem">${executedTxt}</td>
+                <td style="font-size:.82rem">${diffCell}</td>
+              </tr>`
+              const card = `<div class="comp-card">
+                <div class="comp-card-name">${escHtml(we?.exercise_name || '—')}${methodTag ? ` <span style="font-size:.72rem;color:var(--accent-soft);font-weight:400">${methodTag}</span>` : ''}</div>
+                <div class="comp-card-row"><span class="label">Previsto</span><span>${plannedTxt}</span></div>
+                <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--success);font-weight:600">${executedTxt}</span></div>
+                <div class="comp-card-row"><span class="label">Diferença</span><span>${diffCell}</span></div>
+              </div>`
+              return { row, card, chart: { name: we?.exercise_name || '—', planned, executed } }
+            }
+          })
+          const exRows     = exItems.map(i => i.row).join('')
+          const exCards    = exItems.map(i => i.card).join('')
+          const chartItems = exItems.map(i => i.chart).filter(Boolean)
+
+          const footerRows = []
+          const footerCards = []
+          if (totalPlannedMusc > 0 || totalExecutedMusc > 0) {
+            const d = totalExecutedMusc - totalPlannedMusc
+            const dCell = d > 0 ? `<span style="color:var(--success)">+${d.toLocaleString('pt-BR')} kg</span>` : d < 0 ? `<span style="color:var(--danger)">${d.toLocaleString('pt-BR')} kg</span>` : `<span style="color:var(--text-muted)">= 0 kg</span>`
+            footerRows.push(`<tr style="border-top:1px solid var(--neutral-a15)">
+              <td style="font-weight:700;color:var(--text-primary);font-size:.82rem">Total musculação</td>
+              <td style="color:var(--text-muted);font-size:.82rem">${totalPlannedMusc.toLocaleString('pt-BR')} kg</td>
+              <td class="vol-cell" style="font-size:.82rem">${totalExecutedMusc.toLocaleString('pt-BR')} kg</td>
+              <td style="font-size:.82rem">${dCell}</td>
+            </tr>`)
+            footerCards.push(`<div class="comp-summary-block">
+              <div class="comp-summary-title">Total musculação</div>
+              <div class="comp-card-row"><span class="label">Previsto</span><span>${totalPlannedMusc.toLocaleString('pt-BR')} kg</span></div>
+              <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--accent-soft);font-weight:700">${totalExecutedMusc.toLocaleString('pt-BR')} kg</span></div>
+              <div class="comp-card-row"><span class="label">Diferença</span><span>${dCell}</span></div>
+            </div>`)
+          }
+          if (totalPlannedAero > 0 || totalExecutedAero > 0) {
+            const d = totalExecutedAero - totalPlannedAero
+            const dCell = d > 0 ? `<span style="color:var(--success)">+${d.toLocaleString('pt-BR')}</span>` : d < 0 ? `<span style="color:var(--danger)">${d.toLocaleString('pt-BR')}</span>` : `<span style="color:var(--text-muted)">= 0</span>`
+            footerRows.push(`<tr style="border-top:1px solid var(--neutral-a15)">
+              <td style="font-weight:700;color:var(--text-primary);font-size:.82rem">Total aeróbico</td>
+              <td style="color:var(--text-muted);font-size:.82rem">${totalPlannedAero.toLocaleString('pt-BR')}</td>
+              <td class="vol-cell" style="font-size:.82rem">${totalExecutedAero.toLocaleString('pt-BR')}</td>
+              <td style="font-size:.82rem">${dCell}</td>
+            </tr>`)
+            footerCards.push(`<div class="comp-summary-block">
+              <div class="comp-summary-title">Total aeróbico</div>
+              <div class="comp-card-row"><span class="label">Previsto</span><span>${totalPlannedAero.toLocaleString('pt-BR')}</span></div>
+              <div class="comp-card-row"><span class="label">Executado</span><span style="color:var(--accent-soft);font-weight:700">${totalExecutedAero.toLocaleString('pt-BR')}</span></div>
+              <div class="comp-card-row"><span class="label">Diferença</span><span>${dCell}</span></div>
+            </div>`)
+          }
+
+          const deleteExecBtn = canDelete
+            ? `<button class="btn btn-sm btn-ghost-danger" onclick="event.stopPropagation();deleteExecutionGroup('${group.workoutId}','${group.executedAt}','${studentId}',studentNameOf('${studentId}'),'${group.sessionId || ''}')">${icon('trash-2')} Apagar execução</button>`
+            : ''
+          // Inclui executedAt no uid: o mesmo workoutId pode ter várias execuções em datas
+          // diferentes (grupos separados), e usar só o workoutId gerava ids duplicados no
+          // DOM — getElementById sempre pegava o primeiro card daquele treino-modelo.
+          const execUid = 'exg' + (group.workoutId + group.executedAt).replace(/[^a-zA-Z0-9]/g, '')
+
+          window._compChartData = window._compChartData || {}
+          window._compChartData[execUid] = chartItems
+          const compViewToggle = chartItems.length ? `
+            <div class="comp-view-toggle">
+              <button class="comp-view-tab active" id="comp-view-tablebtn-${execUid}"
+                      onclick="event.stopPropagation();setCompView('${execUid}','table')">${icon('table-2')} Tabela</button>
+              <button class="comp-view-tab" id="comp-view-chartbtn-${execUid}"
+                      onclick="event.stopPropagation();setCompView('${execUid}','chart')">${icon('chart-line')} Gráfico</button>
+            </div>` : ''
+
+          const review = group.sessionId ? reviewsBySession[group.sessionId] : null
+          const feelingEmojis = ['😩','😕','😐','🙂','😄']
+          const reviewHTML = review ? `
+            <div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--neutral-a08)">
+              <div style="font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted);margin-bottom:.5rem">Autoavaliação do aluno</div>
+              <div style="display:flex;gap:1.25rem;flex-wrap:wrap;align-items:flex-start">
+                ${review.feeling ? `<div style="text-align:center"><div style="font-size:1.6rem;line-height:1">${feelingEmojis[review.feeling - 1]}</div><div style="font-size:.62rem;color:var(--text-muted);margin-top:.2rem">Sensação</div></div>` : ''}
+                ${review.perceived_effort ? `<div style="text-align:center"><div style="font-size:1.15rem;font-weight:800;color:var(--accent-soft);line-height:1">${review.perceived_effort}<span style="font-size:.65rem;color:var(--text-muted)">/10</span></div><div style="font-size:.62rem;color:var(--text-muted);margin-top:.2rem">Esforço (PSE)</div></div>` : ''}
+                ${review.notes ? `<div style="flex:1;min-width:120px;font-size:.78rem;color:var(--text-muted);font-style:italic;padding-top:.1rem">"${escHtml(review.notes)}"</div>` : ''}
+              </div>
+            </div>` : ''
+
+          const manualNotesHTML = group.manualNotes ? `
+            <div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--neutral-a08)">
+              <div style="font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted);margin-bottom:.5rem">Observação do personal</div>
+              <div style="font-size:.78rem;color:var(--text-muted);font-style:italic">"${escHtml(group.manualNotes)}"</div>
+            </div>` : ''
+
+          return `
+          <div style="background:var(--bg-dark-a50);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:1rem 1.1rem;margin-bottom:.875rem">
+            <div class="exercise-row-header exec-group-header" style="margin-bottom:0" onclick="toggleExerciseBody('${execUid}')">
+              <div class="exec-group-title" style="display:flex;align-items:center;gap:.625rem;min-width:0">
+                <span class="ex-chevron" id="ex-chevron-${execUid}">${icon('chevron-right')}</span>
+                <div class="exec-group-name" style="font-weight:700;font-size:.9rem;color:var(--text-primary)">${escHtml(group.workoutName)}</div>
+              </div>
+              <div class="exec-group-meta" style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+                <div style="font-size:.75rem;color:var(--text-muted)">${fmtDateTime(group.executedAt)}</div>
+                ${deleteExecBtn}
+              </div>
+            </div>
+            <div class="ex-body" id="ex-body-${execUid}">
+              ${compViewToggle}
+              <div id="comp-table-view-${execUid}">
+                <div class="table-wrap comp-table" style="margin-top:.75rem">
+                  <table>
+                    <thead><tr>
+                      <th>Exercício</th><th>Previsto</th><th>Executado</th><th>Diferença</th>
+                    </tr></thead>
+                    <tbody>${exRows}</tbody>
+                    <tfoot>${footerRows.join('')}</tfoot>
+                  </table>
+                </div>
+                <div class="comp-cards">
+                  ${exCards}
+                  ${footerCards.length ? `<div class="comp-summary">${footerCards.join('')}</div>` : ''}
+                </div>
+              </div>
+              ${chartItems.length ? `
+              <div id="comp-chart-view-${execUid}" style="display:none">
+                <div class="chart-container" style="height:260px;margin-top:.75rem"><canvas id="comp-chart-${execUid}"></canvas></div>
+                ${(totalPlannedAero > 0 || totalExecutedAero > 0) ? `<p style="font-size:.72rem;color:var(--text-muted);margin-top:.5rem;font-style:italic">Exercícios aeróbicos não entram no gráfico (unidade diferente de kg) — veja-os na tabela.</p>` : ''}
+              </div>` : ''}
+              ${reviewHTML}
+              ${manualNotesHTML}
+            </div>
+          </div>`
+        }).join('')
+      : `<div class="empty-state" style="padding:1.5rem 1rem"><div class="empty-icon" style="font-size:1.8rem;margin-bottom:.5rem">${icon('chart-column')}</div><p>Nenhuma execução registrada ainda.</p></div>`
 }
 
 function closeStudentSheet() {
@@ -7524,14 +7598,26 @@ async function saveBodyDataModal() {
 
 async function checkNewWorkout() {
   try {
-    const { data, error } = await sb
-      .from('workouts')
-      .select('id, created_at')
-      .eq('student_id', profile.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (error || !data) return
+    // B5: o Meu Histórico do boot já leu todos os treinos do aluno (mesmo filtro); com a lista
+    // completa (< 1000 linhas), o mais recente por created_at sai dela, sem nova consulta.
+    let data = null
+    const snap = _histWorkoutsSnap
+    if (snap && snap.studentId === profile.id && snap.workouts.length < PAGE_ROWS) {
+      for (const w of snap.workouts) {
+        if (w.created_at && (!data || new Date(w.created_at) > new Date(data.created_at))) data = w
+      }
+    } else {
+      const res = await sb
+        .from('workouts')
+        .select('id, created_at')
+        .eq('student_id', profile.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (res.error) return
+      data = res.data
+    }
+    if (!data) return
     const diffHours = (Date.now() - new Date(data.created_at).getTime()) / 36e5
     if (diffHours < 24) {
       const navEl = document.getElementById('nav-history')
@@ -15478,6 +15564,21 @@ async function detectExecDayColumns() {
       .select('exercise_type_executed, day_exercise_key, day_sets, day_reps, day_weight_kg, day_hold_seconds').limit(0)
     _execDayColsReady = !error
   } catch { _execDayColsReady = false }
+}
+
+// B5: uma consulta por tabela em vez de quatro. Se a combinada falhar (alguma coluna ausente),
+// volta às checagens separadas — o resultado de cada flag é o mesmo de antes.
+async function detectSchemaColumns() {
+  try {
+    const [a, b] = await Promise.all([
+      sb.from('workout_exercises').select('bodyweight, measure, hold_seconds').limit(0),
+      sb.from('workout_executions')
+        .select('seconds_executed, exercise_name_executed, exercise_type_executed, day_exercise_key, day_sets, day_reps, day_weight_kg, day_hold_seconds')
+        .limit(0)
+    ])
+    if (!a.error && !b.error) { _bwColumnsReady = true; _execNameColReady = true; _execDayColsReady = true; return }
+  } catch {}
+  await Promise.all([detectBodyweightColumns(), detectExecNameColumn(), detectExecDayColumns()])
 }
 
 // @@live-day-pure:begin
