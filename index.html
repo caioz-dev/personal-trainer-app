@@ -1133,6 +1133,8 @@
 
     .add-ex-bar { display: flex; align-items: center; justify-content: space-between; margin: 1.25rem 0 .5rem; }
     .add-ex-title { font-size: .875rem; font-weight: 700; color: var(--text-primary); }
+    .add-ex-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; align-items: center; min-width: 0; }
+    .add-ex-actions .btn { white-space: nowrap; }
 
     /* ---- TABLE ---- */
     .table-wrap { overflow-x: auto; }
@@ -1719,6 +1721,9 @@
       .link-form-row .btn { width: 100%; justify-content: center; }
       .total-vol-bar { flex-direction: column; gap: .5rem; text-align: center; align-items: center; }
       .add-ex-bar { flex-wrap: wrap; gap: .5rem; }
+      .add-ex-actions { width: 100%; justify-content: stretch; }
+      .add-ex-actions .btn { flex: 1 1 7.5rem; min-width: 0; padding-left: .6rem; padding-right: .6rem; white-space: normal; text-align: center; line-height: 1.25; }
+      .add-ex-actions .add-ex-main { flex: 1 0 100%; white-space: nowrap; }
       .section-grid { gap: 1rem; }
       .prog-controls { flex-direction: column; align-items: stretch; }
       .prog-controls select { width: 100%; }
@@ -2868,11 +2873,11 @@
 
               <div class="add-ex-bar">
                 <span class="add-ex-title"><span data-icon="dumbbell"></span> Exercícios</span>
-                <div style="display:flex;gap:.5rem;align-items:center">
+                <div class="add-ex-actions">
                   <button type="button" id="reorder-ex-btn" class="btn btn-outline btn-sm" onclick="openReorderModal()" style="display:none"><span data-icon="arrow-up-down"></span> Reordenar</button>
                   <button type="button" id="replicate-ex-btn" class="btn btn-outline btn-sm" onclick="openReplicateModal()" style="display:none"><span data-icon="copy-check"></span> Replicar configuração</button>
                   <button type="button" id="use-tpl-btn" class="btn btn-outline btn-sm" onclick="openUseTemplateModal()" style="display:none"><span data-icon="clipboard-list"></span> Usar modelo</button>
-                  <button type="button" class="btn btn-outline btn-sm" onclick="addExercise()">+ Adicionar exercício</button>
+                  <button type="button" class="btn btn-outline btn-sm add-ex-main" onclick="addExercise()">+ Adicionar exercício</button>
                 </div>
               </div>
 
