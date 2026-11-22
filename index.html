@@ -2874,6 +2874,8 @@
               <div class="add-ex-bar">
                 <span class="add-ex-title"><span data-icon="dumbbell"></span> Exercícios</span>
                 <div class="add-ex-actions">
+                  <button type="button" id="collapse-all-ex-btn" class="btn btn-outline btn-sm" onclick="wfSetAllExercisesOpen(false)" style="display:none"><span data-icon="chevron-up"></span> Recolher todos</button>
+                  <button type="button" id="expand-all-ex-btn" class="btn btn-outline btn-sm" onclick="wfSetAllExercisesOpen(true)" style="display:none"><span data-icon="chevron-down"></span> Expandir todos</button>
                   <button type="button" id="reorder-ex-btn" class="btn btn-outline btn-sm" onclick="openReorderModal()" style="display:none"><span data-icon="arrow-up-down"></span> Reordenar</button>
                   <button type="button" id="replicate-ex-btn" class="btn btn-outline btn-sm" onclick="openReplicateModal()" style="display:none"><span data-icon="copy-check"></span> Replicar configuração</button>
                   <button type="button" id="use-tpl-btn" class="btn btn-outline btn-sm" onclick="openUseTemplateModal()" style="display:none"><span data-icon="clipboard-list"></span> Usar modelo</button>
@@ -3566,6 +3568,10 @@ let navGen = 0        // incremented on every navigation; render fns bail if sta
 let currentView = null, currentViewOpts = {}
 let booted = false    // prevents double-boot when onAuthStateChange fires SIGNED_IN
 let editingWorkoutId = null
+// "Recolher todos" no editor de treino: só visual (classe .open nos cards), nunca vai para o
+// rascunho nem para o banco. Vale até o editor abrir de novo (setupWorkoutForm/editWorkout)
+// ou o logout (resetAppState).
+let _wfAllCollapsed = false
 let _wfEditingCreatedBy = null   // workout.created_by do treino sendo editado — usado para revalidar acesso ao restaurar um rascunho
 let _wfSaveDebounceTimer = null
 const WF_STATE_KEY = 'personalpro-wf-state'   // localStorage: rascunho do formulário de criação/edição de treino
@@ -3814,6 +3820,7 @@ function resetAppState() {
   const exReviewModal = document.getElementById('ex-review-modal')
   if (exReviewModal) exReviewModal.style.display = 'none'
   _tplClosedFolders.clear()
+  _wfAllCollapsed = false
   const tplList = document.getElementById('tpl-exercise-list')
   if (tplList) tplList.innerHTML = ''
   for (const k in compCharts) { try { compCharts[k].destroy() } catch {} }
@@ -5749,6 +5756,7 @@ async function editWorkout(workoutId) {
   const list = document.getElementById('exercise-list')
   list.innerHTML = ''
   exerciseCounter = 0
+  _wfAllCollapsed = false
 
   const exes = (workout.workout_exercises || []).slice().sort((a, b) =>
     (a.position ?? 9999) - (b.position ?? 9999) || (a.id > b.id ? 1 : -1)
@@ -5819,6 +5827,7 @@ function _populateExerciseRows(exesArray, { withDbId = false } = {}) {
       refreshExerciseVolume(exerciseCounter)
     }
   })
+  if (_wfAllCollapsed) _wfApplyOpenToRows(false)
 }
 
 function openStudentSheet(studentId, studentName) {
@@ -9184,6 +9193,7 @@ function _resolveExerciseName(rawName, catalog) {
 
 async function setupWorkoutForm(opts = {}) {
   editingWorkoutId    = null
+  _wfAllCollapsed     = false
   _wfEditingCreatedBy = null
   document.querySelector('#view-workout .card-title').textContent    = 'Novo Treino'
   document.querySelector('#view-workout .section-label').textContent = 'Registrar Atividade'
@@ -10549,10 +10559,35 @@ async function confirmDupRoutine() {
 }
 
 function updateReorderButton() {
+  _updateCollapseAllButtons()
   const btn = document.getElementById('reorder-ex-btn')
   if (!btn) return
   const count = document.querySelectorAll('#exercise-list .exercise-row').length
   btn.style.display = count >= 2 ? 'inline-flex' : 'none'
+}
+
+// Recolher/Expandir todos: aparecem com 2+ exercícios, como Reordenar.
+function _updateCollapseAllButtons() {
+  const count = document.querySelectorAll('#exercise-list .exercise-row').length
+  for (const id of ['collapse-all-ex-btn', 'expand-all-ex-btn']) {
+    const btn = document.getElementById(id)
+    if (btn) btn.style.display = count >= 2 ? 'inline-flex' : 'none'
+  }
+}
+
+function _wfApplyOpenToRows(open) {
+  document.querySelectorAll('#exercise-list .exercise-row').forEach(row => {
+    const id = row.id.replace(/^ex-/, '')
+    document.getElementById(`ex-body-${id}`)?.classList.toggle('open', open)
+    document.getElementById(`ex-chevron-${id}`)?.classList.toggle('open', open)
+  })
+}
+
+// Só mexe na classe .open de cada card (o cabeçalho continua mostrando o nome do exercício).
+// Não chama saveWorkoutFormState nem toca em valores de campo.
+function wfSetAllExercisesOpen(open) {
+  _wfAllCollapsed = !open
+  _wfApplyOpenToRows(open)
 }
 
 function updateReplicateButton() {
